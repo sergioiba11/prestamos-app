@@ -29,7 +29,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: isWeb ? webStorage : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: isWeb,
+    detectSessionInUrl: isWeb && !isSSR,
     lock: processLock,
   },
 })
