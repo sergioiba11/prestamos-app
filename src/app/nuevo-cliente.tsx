@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity
+  TouchableOpacity,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
 
@@ -50,75 +50,36 @@ export default function NuevoCliente() {
     try {
       setLoading(true)
 
-      console.log('INICIO crear cliente')
-
-      // 1) Crear usuario auth
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: emailLimpio,
-        password: passwordLimpia,
+      const { data, error } = await supabase.functions.invoke('crear-cliente', {
+        body: {
+          nombre: nombreLimpio,
+          telefono: telefonoLimpio,
+          direccion: direccionLimpia,
+          dni: dniLimpio,
+          email: emailLimpio,
+          password: passwordLimpia,
+        },
       })
 
-      console.log('SIGNUP DATA:', signUpData)
-      console.log('SIGNUP ERROR:', signUpError)
-
-      if (signUpError) {
-        throw signUpError
+      if (error) {
+        throw new Error(error.message || 'No se pudo invocar la función')
       }
 
-      if (!signUpData.user?.id) {
-        throw new Error('No se pudo crear el usuario en auth')
-      }
-
-      const userId = signUpData.user.id
-
-      // 2) Insertar en usuarios
-      const { error: errorUsuario } = await supabase
-        .from('usuarios')
-        .insert({
-          id: userId,
-          nombre: nombreLimpio,
-          email: emailLimpio,
-          rol: 'cliente',
-        })
-
-      console.log('INSERT usuarios ERROR:', errorUsuario)
-
-      if (errorUsuario) {
-        throw new Error(`Error en usuarios: ${errorUsuario.message}`)
-      }
-
-      // 3) Insertar en clientes
-      const { data: clienteInsertado, error: errorCliente } = await supabase
-        .from('clientes')
-        .insert({
-          nombre: nombreLimpio,
-          telefono: telefonoLimpio || null,
-          direccion: direccionLimpia || null,
-          dni: dniLimpio || null,
-          usuario_id: userId,
-        })
-        .select()
-        .single()
-
-      console.log('INSERT cliente DATA:', clienteInsertado)
-      console.log('INSERT cliente ERROR:', errorCliente)
-
-      if (errorCliente) {
-        throw new Error(`Error en clientes: ${errorCliente.message}`)
+      if (!data?.ok) {
+        throw new Error(data?.error || 'No se pudo crear el cliente')
       }
 
       mostrarMensaje('Éxito', 'Cliente creado correctamente')
 
-      if (clienteInsertado?.id) {
-        router.replace(`/cliente-detalle?cliente_id=${clienteInsertado.id}` as any)
+      if (data?.cliente?.id) {
+        router.replace(`/cliente-detalle?cliente_id=${data.cliente.id}` as any)
       } else {
         router.replace('/admin-home' as any)
       }
     } catch (error: any) {
-      console.log('ERROR CREAR CLIENTE:', error)
-
       const mensaje =
-        error?.message?.includes('User already registered')
+        error?.message?.includes('already') ||
+        error?.message?.includes('registrado')
           ? 'Ese email ya está registrado'
           : error?.message || 'No se pudo crear el cliente'
 
