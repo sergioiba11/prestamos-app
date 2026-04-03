@@ -61,20 +61,30 @@ export default function NuevoCliente() {
 
       const adminId = adminSession.user.id
 
-      const { data, error } = await supabase.functions.invoke('crear-cliente', {
-        body: {
-          nombre: nombreLimpio,
-          telefono: telefonoLimpio,
-          direccion: direccionLimpia,
-          dni: dniLimpio,
-          email: emailLimpio,
-          password: passwordLimpia,
-        },
-      })
+      const res = await fetch(
+  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminSession.access_token}`,
+    },
+    body: JSON.stringify({
+      nombre: nombreLimpio,
+      telefono: telefonoLimpio,
+      direccion: direccionLimpia,
+      dni: dniLimpio,
+      email: emailLimpio,
+      password: passwordLimpia,
+    }),
+  }
+)
 
-      if (error) {
-        throw new Error(error.message || 'No se pudo invocar la función')
-      }
+const data = await res.json()
+
+if (!res.ok) {
+  throw new Error(data.error || 'Error en la función')
+}
 
       if (!data?.ok) {
         throw new Error(data?.error || 'No se pudo crear el cliente')
