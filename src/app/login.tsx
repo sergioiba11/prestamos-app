@@ -112,18 +112,17 @@ export default function Login() {
       })()
     })
 
-    const {
-      data: { subscription: authSubscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      void (async () => {
-        if (!mounted) return
+   const {
+  data: { subscription: authSubscription },
+} = supabase.auth.onAuthStateChange((event, session) => {
+  void (async () => {
+    if (!mounted) return
 
-        if (session?.user) {
-          await goByRole(session.user.id)
-        }
-      })()
-    })
-
+    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+      await goByRole(session.user.id)
+    }
+  })()
+})
     return () => {
       mounted = false
       linkingSub.remove()
