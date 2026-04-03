@@ -61,7 +61,7 @@ export default function NuevoCliente() {
 
       const adminId = adminSession.user.id
 
-      const res = await fetch(
+     const res = await fetch(
   'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
   {
     method: 'POST',
@@ -82,13 +82,13 @@ export default function NuevoCliente() {
 
 const data = await res.json()
 
-if (!res.ok) {
-  throw new Error(data.error || 'Error en la función')
-}
+// 👇 AGREGÁ ESTO
+console.log('STATUS:', res.status)
+console.log('DATA:', data)
 
-      if (!data?.ok) {
-        throw new Error(data?.error || 'No se pudo crear el cliente')
-      }
+if (!res.ok) {
+  throw new Error(`${res.status} - ${data.error}`)
+}
 
       // FORZAR SIEMPRE la sesión del admin otra vez
       const { error: restoreError } = await supabase.auth.setSession({
