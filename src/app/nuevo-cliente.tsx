@@ -27,18 +27,6 @@ export default function NuevoCliente() {
     }
   }
 
-  const restaurarSesionAdmin = async () => {
-    try {
-      const {
-        data: { session: sessionActual },
-      } = await supabase.auth.getSession()
-
-      return sessionActual
-    } catch {
-      return null
-    }
-  }
-
   const guardarCliente = async () => {
     if (loading) return
 
@@ -62,13 +50,16 @@ export default function NuevoCliente() {
     try {
       setLoading(true)
 
-      // Guardamos la sesión actual del admin ANTES de crear el cliente
-      const sessionAntes = await restaurarSesionAdmin()
-      const adminIdAntes = sessionAntes?.user?.id || null
+      const {
+        data: { session: adminSession },
+        error: adminSessionError,
+      } = await supabase.auth.getSession()
 
-      if (!sessionAntes?.access_token || !sessionAntes?.refresh_token) {
-        throw new Error('Tu sesión expiró. Volvé a iniciar sesión.')
+      if (adminSessionError || !adminSession?.access_token || !adminSession?.refresh_token) {
+        throw new Error('Tu sesión de admin expiró. Volvé a iniciar sesión.')
       }
+
+      const adminId = adminSession.user.id
 
       const { data, error } = await supabase.functions.invoke('crear-cliente', {
         body: {
@@ -89,31 +80,26 @@ export default function NuevoCliente() {
         throw new Error(data?.error || 'No se pudo crear el cliente')
       }
 
-      // Verificamos que siga la sesión del admin
+      // FORZAR SIEMPRE la sesión del admin otra vez
+      const { error: restoreError } = await supabase.auth.setSession({
+        access_token: adminSession.access_token,
+        refresh_token: adminSession.refresh_token,
+      })
+
+      if (restoreError) {
+        throw new Error(
+          'Se creó el cliente, pero no se pudo restaurar la sesión del admin'
+        )
+      }
+
       const {
-        data: { session: sessionDespues },
+        data: { session: sessionFinal },
       } = await supabase.auth.getSession()
 
-      const usuarioDespues = sessionDespues?.user?.id || null
-
-      // Si por alguna razón cambió la sesión, restauramos la del admin
-      if (
-        adminIdAntes &&
-        sessionAntes?.access_token &&
-        sessionAntes?.refresh_token &&
-        usuarioDespues &&
-        usuarioDespues !== adminIdAntes
-      ) {
-        const { error: restoreError } = await supabase.auth.setSession({
-          access_token: sessionAntes.access_token,
-          refresh_token: sessionAntes.refresh_token,
-        })
-
-        if (restoreError) {
-          throw new Error(
-            'Se creó el cliente, pero no se pudo restaurar la sesión del admin'
-          )
-        }
+      if (!sessionFinal?.user || sessionFinal.user.id !== adminId) {
+        throw new Error(
+          'Se creó el cliente, pero la sesión activa ya no es la del admin'
+        )
       }
 
       mostrarMensaje('Éxito', 'Cliente creado correctamente')
@@ -125,11 +111,8 @@ export default function NuevoCliente() {
       setEmail('')
       setPassword('')
 
-      if (data?.cliente?.id) {
-        router.replace(`/cliente-detalle?cliente_id=${data.cliente.id}` as any)
-      } else {
-        router.replace('/admin-home' as any)
-      }
+      // IMPORTANTE: volver al panel admin
+      router.replace('/admin-home' as any)
     } catch (error: any) {
       const mensaje =
         error?.message?.includes('already') ||
