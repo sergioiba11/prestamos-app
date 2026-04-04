@@ -1,5 +1,5 @@
-import { Stack, router } from 'expo-router'
-import { Image, TouchableOpacity } from 'react-native'
+import { Stack } from 'expo-router'
+import { Image, View } from 'react-native'
 import { AuthProvider } from '../context/AuthContext'
 
 export default function RootLayout() {
@@ -14,12 +14,8 @@ export default function RootLayout() {
           headerTintColor: '#fff',
           headerTitleAlign: 'center',
           headerShadowVisible: false,
-
           headerTitle: () => (
-            <TouchableOpacity
-              onPress={() => router.replace('/admin-home' as any)}
-              activeOpacity={0.8}
-            >
+            <View>
               <Image
                 source={require('../../assets/images/logo.png')}
                 style={{
@@ -28,7 +24,7 @@ export default function RootLayout() {
                 }}
                 resizeMode="contain"
               />
-            </TouchableOpacity>
+            </View>
           ),
         }}
       />
