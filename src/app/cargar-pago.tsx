@@ -217,12 +217,25 @@ export default function CargarPago() {
     try {
       setGuardando(true)
 
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        Alert.alert('Error', 'Sesión inválida o vencida')
+        return
+      }
+
       const { data, error } = await supabase.functions.invoke('registrar-pago', {
         body: {
           prestamo_id: prestamoSeleccionado.id,
           cliente_id: clienteSeleccionado.id,
           monto: montoNumero,
-          metodo: metodo,
+          metodo,
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
         },
       })
 

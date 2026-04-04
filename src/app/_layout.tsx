@@ -1,8 +1,17 @@
 import { Stack } from 'expo-router'
+import { useEffect, useState } from 'react'
 import { Image, View } from 'react-native'
 import { AuthProvider } from '../context/AuthContext'
 
 export default function RootLayout() {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null
+
   return (
     <AuthProvider>
       <Stack
