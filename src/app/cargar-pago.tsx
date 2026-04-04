@@ -189,81 +189,92 @@ export default function CargarPago() {
   }
 
   const registrarPago = async () => {
-    if (guardando) return
+  if (guardando) return
 
-    if (!clienteSeleccionado) {
-      Alert.alert('Error', 'Seleccioná un cliente')
-      return
-    }
-
-    if (!prestamoSeleccionado) {
-      Alert.alert('Error', 'Seleccioná un préstamo')
-      return
-    }
-
-    if (!montoNumero || montoNumero <= 0) {
-      Alert.alert('Error', 'Ingresá un monto válido')
-      return
-    }
-
-    if (montoNumero > deudaActual) {
-      Alert.alert(
-        'Error',
-        `El pago no puede ser mayor a la deuda actual (${formatearMoneda(deudaActual)})`
-      )
-      return
-    }
-
-    try {
-      setGuardando(true)
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError || !session?.access_token) {
-        Alert.alert('Error', 'Sesión inválida o vencida')
-        return
-      }
-
-      const { data, error } = await supabase.functions.invoke('registrar-pago', {
-        body: {
-          prestamo_id: prestamoSeleccionado.id,
-          cliente_id: clienteSeleccionado.id,
-          monto: montoNumero,
-          metodo,
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      })
-
-      if (error) {
-        Alert.alert('Error', error.message || 'No se pudo registrar el pago')
-        return
-      }
-
-      if (!data?.ok) {
-        Alert.alert('Error', data?.error || 'No se pudo registrar el pago')
-        return
-      }
-
-      Alert.alert('Éxito', 'Pago cargado correctamente', [
-        {
-          text: 'OK',
-          onPress: () => {
-            router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
-          },
-        },
-      ])
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
-    } finally {
-      setGuardando(false)
-    }
+  if (!clienteSeleccionado) {
+    Alert.alert('Error', 'Seleccioná un cliente')
+    return
   }
 
+  if (!prestamoSeleccionado) {
+    Alert.alert('Error', 'Seleccioná un préstamo')
+    return
+  }
+
+  if (!montoNumero || montoNumero <= 0) {
+    Alert.alert('Error', 'Ingresá un monto válido')
+    return
+  }
+
+  if (montoNumero > deudaActual) {
+    Alert.alert(
+      'Error',
+      `El pago no puede ser mayor a la deuda actual (${formatearMoneda(deudaActual)})`
+    )
+    return
+  }
+
+  try {
+    setGuardando(true)
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    console.log('SESSION ERROR:', sessionError)
+    console.log('SESSION USER:', session?.user)
+    console.log('ACCESS TOKEN:', session?.access_token)
+
+    if (sessionError || !session?.access_token) {
+      Alert.alert('Error', 'Sesión inválida o vencida')
+      return
+    }
+
+    const payload = {
+      prestamo_id: prestamoSeleccionado.id,
+      cliente_id: prestamoSeleccionado.cliente_id,
+      monto: montoNumero,
+      metodo,
+    }
+
+    console.log('PAYLOAD REGISTRAR PAGO:', payload)
+
+    const { data, error } = await supabase.functions.invoke('registrar-pago', {
+      body: payload,
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+
+    console.log('RESPUESTA REGISTRAR-PAGO DATA:', data)
+    console.log('RESPUESTA REGISTRAR-PAGO ERROR:', error)
+
+    if (error) {
+      Alert.alert('Error', error.message || 'No se pudo registrar el pago')
+      return
+    }
+
+    if (!data?.ok) {
+      Alert.alert('Error', data?.error || 'No se pudo registrar el pago')
+      return
+    }
+
+    Alert.alert('Éxito', 'Pago cargado correctamente', [
+      {
+        text: 'OK',
+        onPress: () => {
+          router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+        },
+      },
+    ])
+  } catch (error: any) {
+    console.log('ERROR REGISTRAR PAGO CATCH:', error)
+    Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
+  } finally {
+    setGuardando(false)
+  }
+}
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
