@@ -262,14 +262,16 @@ export default function CargarPago() {
         return
       }
 
-      Alert.alert('Éxito', 'Pago cargado correctamente', [
-        {
-          text: 'OK',
-          onPress: () => {
-            router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
-          },
-        },
-      ])
+      router.replace({
+  pathname: '/pago-aprobado' as any,
+  params: {
+    cliente_id: clienteSeleccionado.id,
+    prestamo_id: prestamoSeleccionado.id,
+    monto: String(montoNumero),
+    metodo: metodo,
+    saldo_restante: String(json.saldo_restante),
+  },
+})
     } catch (error: any) {
       console.log('ERROR REGISTRAR PAGO CATCH:', error)
       Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
