@@ -217,29 +217,22 @@ export default function CargarPago() {
     try {
       setGuardando(true)
 
-      const nuevoSaldo = Math.max(0, deudaActual - montoNumero)
-      const nuevoEstado = nuevoSaldo <= 0 ? 'pagado' : 'activo'
+      const { data, error } = await supabase.functions.invoke('registrar-pago', {
+        body: {
+          prestamo_id: prestamoSeleccionado.id,
+          cliente_id: clienteSeleccionado.id,
+          monto: montoNumero,
+          metodo: metodo,
+        },
+      })
 
-      const { error: pagoError } = await supabase.from('pagos').insert({
-  prestamo_id: prestamoSeleccionado.id,
-  monto: montoNumero,
-  fecha_pago: new Date().toISOString().slice(0, 10),
-})
-      if (pagoError) {
-        Alert.alert('Error al guardar pago', pagoError.message)
+      if (error) {
+        Alert.alert('Error', error.message || 'No se pudo registrar el pago')
         return
       }
 
-      const { error: updateError } = await supabase
-        .from('prestamos')
-        .update({
-          total_a_pagar: nuevoSaldo,
-          estado: nuevoEstado,
-        })
-        .eq('id', prestamoSeleccionado.id)
-
-      if (updateError) {
-        Alert.alert('Error al actualizar préstamo', updateError.message)
+      if (!data?.ok) {
+        Alert.alert('Error', data?.error || 'No se pudo registrar el pago')
         return
       }
 
