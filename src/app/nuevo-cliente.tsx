@@ -66,25 +66,24 @@ export default function NuevoCliente() {
       const adminIdAntes = session.user.id
       const tokenAntes = session.access_token
 
-      const res = await fetch(
-        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tokenAntes}`,
-            apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
-          },
-          body: JSON.stringify({
-            nombre: nombreLimpio,
-            telefono: telefonoLimpio,
-            direccion: direccionLimpia,
-            dni: dniLimpio,
-            email: emailLimpio,
-            password: passwordLimpia,
-          }),
-        }
-      )
+     const res = await fetch(
+  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${tokenAntes}`,
+    },
+    body: JSON.stringify({
+      nombre: nombreLimpio,
+      telefono: telefonoLimpio,
+      direccion: direccionLimpia,
+      dni: dniLimpio,
+      email: emailLimpio,
+      password: passwordLimpia,
+    }),
+  }
+)
 
       const data = await res.json().catch(() => null)
 

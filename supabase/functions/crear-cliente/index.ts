@@ -1,239 +1,277 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
-    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    if (req.method !== 'POST') {
       return new Response(
-        JSON.stringify({ error: "Faltan variables de entorno en la función" }),
+        JSON.stringify({ ok: false, error: 'Método no permitido' }),
         {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    const authHeader = req.headers.get("Authorization") || ""
-    const token = authHeader.replace("Bearer ", "").trim()
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    if (!token) {
-      return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'Faltan variables de entorno de Supabase',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey,
-        },
-      },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    })
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Falta token de autorización' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
 
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    })
+    const token = authHeader.replace('Bearer ', '').trim()
 
     const body = await req.json()
 
-    const nombre = body?.nombre?.trim?.() || ""
-    const telefono = body?.telefono?.trim?.() || ""
-    const direccion = body?.direccion?.trim?.() || ""
-    const dni = body?.dni?.trim?.() || ""
-    const email = body?.email?.trim?.().toLowerCase?.() || ""
-    const password = body?.password?.trim?.() || ""
+    const nombre = String(body?.nombre || '').trim()
+    const telefono = String(body?.telefono || '').trim()
+    const direccion = String(body?.direccion || '').trim()
+    const dni = String(body?.dni || '').trim()
+    const email = String(body?.email || '').trim().toLowerCase()
+    const password = String(body?.password || '').trim()
 
     if (!nombre || !email || !password) {
       return new Response(
-        JSON.stringify({ error: "Completá nombre, email y contraseña" }),
+        JSON.stringify({
+          ok: false,
+          error: 'Completá nombre, email y contraseña',
+        }),
         {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
     if (password.length < 6) {
       return new Response(
-        JSON.stringify({ error: "La contraseña debe tener al menos 6 caracteres" }),
+        JSON.stringify({
+          ok: false,
+          error: 'La contraseña debe tener al menos 6 caracteres',
+        }),
         {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+
+    const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(token)
+    } = await userClient.auth.getUser()
+
+    console.log('USER VALIDATION:', { userId: user?.id, userError })
 
     if (userError || !user) {
       return new Response(
-        JSON.stringify({
-          error: "Sesión inválida o expirada. Volvé a iniciar sesión como admin.",
-        }),
+        JSON.stringify({ ok: false, error: 'Sesión inválida o expirada' }),
         {
           status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    const { data: usuarioActual, error: rolError } = await supabaseAdmin
-      .from("usuarios")
-      .select("id, rol")
-      .eq("id", user.id)
-      .single()
+    const { data: adminRow, error: adminRowError } = await adminClient
+      .from('usuarios')
+      .select('id, email, rol, nombre')
+      .eq('id', user.id)
+      .maybeSingle()
 
-    if (rolError || !usuarioActual) {
+    console.log('ADMIN ROW:', { adminRow, adminRowError })
+
+    if (adminRowError) {
       return new Response(
-        JSON.stringify({ error: "No se pudo verificar el rol del usuario" }),
+        JSON.stringify({
+          ok: false,
+          error: 'No se pudo validar el rol del usuario',
+          detalle: adminRowError.message,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    if (!adminRow || adminRow.rol !== 'admin') {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'No tenés permisos para crear clientes',
+        }),
         {
           status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    if (usuarioActual.rol !== "admin") {
+    const { data: existingUsuario, error: existingUsuarioError } =
+      await adminClient
+        .from('usuarios')
+        .select('id, email')
+        .eq('email', email)
+        .maybeSingle()
+
+    console.log('EXISTING USUARIO:', {
+      existingUsuario,
+      existingUsuarioError,
+    })
+
+    if (existingUsuarioError) {
       return new Response(
-        JSON.stringify({ error: "Solo un admin puede crear clientes" }),
+        JSON.stringify({
+          ok: false,
+          error: 'No se pudo verificar si el email ya existe',
+          detalle: existingUsuarioError.message,
+        }),
         {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    const { data: usuariosAuth, error: listError } =
-      await supabaseAdmin.auth.admin.listUsers()
-
-    if (listError) {
+    if (existingUsuario) {
       return new Response(
-        JSON.stringify({ error: `No se pudo verificar usuarios auth: ${listError.message}` }),
+        JSON.stringify({
+          ok: false,
+          error: 'Ya existe un usuario con ese email',
+        }),
         {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    const yaExiste = usuariosAuth.users.find(
-      (u) => (u.email || "").toLowerCase() === email
-    )
+    console.log('INTENTANDO CREAR AUTH USER:', { nombre, email })
 
-    if (yaExiste) {
-      return new Response(
-        JSON.stringify({ error: "Ese email ya está registrado" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      )
-    }
-
-    const { data: nuevoAuth, error: createUserError } =
-      await supabaseAdmin.auth.admin.createUser({
+    const { data: createdAuth, error: createAuthError } =
+      await adminClient.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: {
           nombre,
-          rol: "cliente",
+          rol: 'cliente',
         },
       })
 
-    if (createUserError) {
+    console.log('RESULTADO CREATE USER:', {
+      createdAuth,
+      createAuthError,
+    })
+
+    if (createAuthError || !createdAuth.user) {
       return new Response(
         JSON.stringify({
-          error: createUserError.message || "No se pudo crear el usuario auth",
+          ok: false,
+          error: createAuthError?.message || 'No se pudo crear el auth user',
+          detalle: createAuthError,
         }),
         {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    const userId = nuevoAuth.user?.id
+    const clienteId = createdAuth.user.id
 
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: "No se pudo obtener el id del usuario creado" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      )
-    }
+    console.log('INTENTANDO INSERT EN USUARIOS:', {
+      id: clienteId,
+      nombre,
+      email,
+      telefono,
+      direccion,
+      dni,
+      rol: 'cliente',
+    })
 
-    const { error: errorUsuario } = await supabaseAdmin
-      .from("usuarios")
+    const { error: insertUsuarioError } = await adminClient
+      .from('usuarios')
       .insert({
-        id: userId,
+        id: clienteId,
         nombre,
         email,
-        rol: "cliente",
-      })
-
-    if (errorUsuario) {
-      await supabaseAdmin.auth.admin.deleteUser(userId)
-
-      return new Response(
-        JSON.stringify({ error: `Error en usuarios: ${errorUsuario.message}` }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      )
-    }
-
-    const { data: clienteInsertado, error: errorCliente } = await supabaseAdmin
-      .from("clientes")
-      .insert({
-        nombre,
         telefono: telefono || null,
         direccion: direccion || null,
         dni: dni || null,
-        usuario_id: userId,
+        rol: 'cliente',
       })
-      .select()
-      .single()
 
-    if (errorCliente) {
-      await supabaseAdmin.from("usuarios").delete().eq("id", userId)
-      await supabaseAdmin.auth.admin.deleteUser(userId)
+    console.log('RESULTADO INSERT USUARIOS:', {
+      insertUsuarioError,
+    })
+
+    if (insertUsuarioError) {
+      await adminClient.auth.admin.deleteUser(clienteId)
 
       return new Response(
-        JSON.stringify({ error: `Error en clientes: ${errorCliente.message}` }),
+        JSON.stringify({
+          ok: false,
+          error:
+            insertUsuarioError.message ||
+            'No se pudo guardar el cliente en usuarios',
+          detalle: insertUsuarioError,
+        }),
         {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
@@ -241,24 +279,33 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        message: "Cliente creado correctamente",
-        user_id: userId,
-        cliente: clienteInsertado,
+        message: 'Cliente creado correctamente',
+        cliente: {
+          id: clienteId,
+          nombre,
+          email,
+          telefono,
+          direccion,
+          dni,
+          rol: 'cliente',
+        },
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
-  } catch (error) {
+  } catch (error: any) {
+    console.log('ERROR INTERNO CREAR CLIENTE:', error)
+
     return new Response(
       JSON.stringify({
-        error:
-          error instanceof Error ? error.message : "Error interno del servidor",
+        ok: false,
+        error: error?.message || 'Error interno del servidor',
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
   }
