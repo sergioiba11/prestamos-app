@@ -9,6 +9,34 @@ import {
   Text,
   View,
 } from 'react-native'
+import { supabase } from '../lib/supabase'
+
+async function goByRole(userId: string) {
+  const { data: userData, error } = await supabase
+    .from('usuarios')
+    .select('rol')
+    .eq('id', userId)
+    .single()
+
+  if (error) {
+    router.replace('/login' as any)
+    return
+  }
+
+  const rol = userData?.rol
+
+  if (rol === 'admin') {
+   router.replace('/')
+    return
+  }
+
+  if (rol === 'empleado') {
+    router.replace('/empleado-home' as any)
+    return
+  }
+
+  router.replace('/cliente-home' as any)
+}
 
 export default function Index() {
   const fadeAnim = useRef(new Animated.Value(0)).current
@@ -18,6 +46,8 @@ export default function Index() {
   const [dots, setDots] = useState('')
 
   useEffect(() => {
+    let mounted = true
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -65,33 +95,27 @@ export default function Index() {
       })
     }, 400)
 
+    const boot = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!mounted) return
+
+      if (session?.user) {
+        await goByRole(session.user.id)
+        return
+      }
+
+      router.replace('/login' as any)
+    }
+
     const timer = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 350,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(textFadeAnim, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1.04,
-          duration: 350,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        glowLoop.stop()
-        router.replace('/welcome' as any)
-      })
+      boot()
     }, 2200)
 
     return () => {
+      mounted = false
       clearTimeout(timer)
       clearInterval(dotsInterval)
       glowLoop.stop()

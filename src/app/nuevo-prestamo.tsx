@@ -355,7 +355,7 @@ export default function NuevoPrestamo() {
   }
 
   const volverPantalla = () => {
-    router.replace('/admin-home' as any)
+    router.replace('/')
   }
 
   const mostrarMensaje = (titulo: string, mensaje: string) => {
