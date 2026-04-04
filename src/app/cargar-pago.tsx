@@ -34,55 +34,13 @@ type Prestamo = {
 }
 
 function limpiarNumero(texto: string) {
-  if (!texto) return ''
-
-  let limpio = texto.replace(/[^\d,]/g, '')
-
-  const primeraComa = limpio.indexOf(',')
-  if (primeraComa !== -1) {
-    const parteEntera = limpio.slice(0, primeraComa + 1)
-    const parteDecimal = limpio.slice(primeraComa + 1).replace(/,/g, '')
-    limpio = parteEntera + parteDecimal
-  }
-
-  return limpio
-}
-
-function textoAMonto(texto: string) {
-  const limpio = limpiarNumero(texto)
-
-  if (!limpio) return 0
-
-  const partes = limpio.split(',')
-
-  const enteros = partes[0] ? partes[0].replace(/^0+(?=\d)/, '') || '0' : '0'
-  const decimales = (partes[1] || '').slice(0, 2)
-
-  const normalizado = decimales ? `${enteros}.${decimales}` : enteros
-  const numero = Number(normalizado)
-
-  return Number.isNaN(numero) ? 0 : numero
+  return texto.replace(/[^0-9]/g, '')
 }
 
 function formatearMonedaInput(valor: string) {
   const limpio = limpiarNumero(valor)
   if (!limpio) return ''
-
-  const tieneComa = limpio.includes(',')
-  const [parteEnteraRaw, parteDecimalRaw = ''] = limpio.split(',')
-
-  const parteEnteraNormalizada =
-    parteEnteraRaw?.replace(/^0+(?=\d)/, '') || '0'
-
-  const parteEnteraFormateada = new Intl.NumberFormat('es-AR', {
-    maximumFractionDigits: 0,
-  }).format(Number(parteEnteraNormalizada))
-
-  if (tieneComa) {
-    return `$${parteEnteraFormateada},${parteDecimalRaw.slice(0, 2)}`
-  }
-
-  return `$${parteEnteraFormateada}`
+  return '$' + new Intl.NumberFormat('es-AR').format(Number(limpio))
 }
 
 function formatearMoneda(valor: number) {
@@ -218,11 +176,8 @@ export default function CargarPago() {
     })
   }, [clientes, busqueda])
 
-  const montoNumero = textoAMonto(monto)
+  const montoNumero = Number(limpiarNumero(monto)) || 0
   const deudaActual = Number(prestamoSeleccionado?.total_a_pagar || 0)
-  const montoAplicado = Math.min(montoNumero, deudaActual)
-  const vuelto = Math.max(0, montoNumero - deudaActual)
-  const saldoLuegoDelPago = Math.max(0, deudaActual - montoAplicado)
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -251,8 +206,11 @@ export default function CargarPago() {
       return
     }
 
-    if (deudaActual <= 0) {
-      Alert.alert('Error', 'Este préstamo no tiene deuda pendiente')
+    if (montoNumero > deudaActual) {
+      Alert.alert(
+        'Error',
+        `El pago no puede ser mayor a la deuda actual (${formatearMoneda(deudaActual)})`
+      )
       return
     }
 
@@ -272,9 +230,10 @@ export default function CargarPago() {
       const payload = {
         prestamo_id: prestamoSeleccionado.id,
         cliente_id: prestamoSeleccionado.cliente_id,
-        monto: montoAplicado,
+        monto: montoNumero,
         metodo,
       }
+
 
       const res = await fetch(
         'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
@@ -304,17 +263,15 @@ export default function CargarPago() {
       }
 
       router.replace({
-        pathname: '/pago-aprobado' as any,
-        params: {
-          cliente_id: clienteSeleccionado.id,
-          prestamo_id: prestamoSeleccionado.id,
-          monto: String(montoAplicado),
-          monto_ingresado: String(montoNumero),
-          vuelto: String(vuelto),
-          metodo: metodo,
-          saldo_restante: String(json.saldo_restante ?? saldoLuegoDelPago),
-        },
-      })
+  pathname: '/pago-aprobado' as any,
+  params: {
+    cliente_id: clienteSeleccionado.id,
+    prestamo_id: prestamoSeleccionado.id,
+    monto: String(montoNumero),
+    metodo: metodo,
+    saldo_restante: String(json.saldo_restante),
+  },
+})
     } catch (error: any) {
       console.log('ERROR REGISTRAR PAGO CATCH:', error)
       Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
@@ -397,7 +354,6 @@ export default function CargarPago() {
               setPrestamos([])
               setPrestamoSeleccionado(null)
               setBusqueda('')
-              setMonto('')
             }}
           >
             <Text style={styles.changeButtonText}>Cambiar cliente</Text>
@@ -419,10 +375,7 @@ export default function CargarPago() {
                       styles.selectCard,
                       seleccionado && styles.selectCardActive,
                     ]}
-                    onPress={() => {
-                      setPrestamoSeleccionado(prestamo)
-                      setMonto('')
-                    }}
+                    onPress={() => setPrestamoSeleccionado(prestamo)}
                   >
                     <Text style={styles.selectName}>
                       {prestamo.modalidad === 'diario' ? 'Préstamo diario' : 'Préstamo mensual'}
@@ -444,13 +397,13 @@ export default function CargarPago() {
 
           {prestamoSeleccionado && (
             <>
-              <Text style={styles.label}>Monto recibido</Text>
+              <Text style={styles.label}>Monto a cobrar</Text>
               <TextInput
                 value={monto}
                 onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
                 placeholder="$0"
                 placeholderTextColor="#64748B"
-                keyboardType="decimal-pad"
+                keyboardType="numeric"
                 style={styles.input}
               />
 
@@ -514,24 +467,14 @@ export default function CargarPago() {
 
               <View style={styles.resumeCard}>
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Recibido</Text>
+                  <Text style={styles.resumeLabel}>Pago</Text>
                   <Text style={styles.resumeValue}>{formatearMoneda(montoNumero)}</Text>
-                </View>
-
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Se aplica</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
-                </View>
-
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Vuelto</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
                 </View>
 
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Queda</Text>
                   <Text style={styles.resumeValue}>
-                    {formatearMoneda(saldoLuegoDelPago)}
+                    {formatearMoneda(Math.max(0, deudaActual - montoNumero))}
                   </Text>
                 </View>
               </View>
