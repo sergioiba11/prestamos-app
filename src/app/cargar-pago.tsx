@@ -222,10 +222,6 @@ export default function CargarPago() {
         error: sessionError,
       } = await supabase.auth.getSession()
 
-      console.log('SESSION ERROR REGISTRAR PAGO:', sessionError)
-      console.log('SESSION USER REGISTRAR PAGO:', session?.user)
-      console.log('ACCESS TOKEN REGISTRAR PAGO:', session?.access_token)
-
       if (sessionError || !session?.access_token || !session?.user?.id) {
         Alert.alert('Error', 'La sesión del usuario expiró. Volvé a iniciar sesión.')
         return
@@ -238,7 +234,6 @@ export default function CargarPago() {
         metodo,
       }
 
-      console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
       const res = await fetch(
         'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
