@@ -301,6 +301,8 @@ export default function AdminHome() {
     })
   }, [clientes, prestamos])
 
+  const empleadosVisibles = useMemo(() => empleados.slice(0, 5), [empleados])
+
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
@@ -310,6 +312,7 @@ export default function AdminHome() {
   const irNuevoCliente = () => router.push('/nuevo-cliente' as any)
   const irNuevoEmpleado = () => router.push('/nuevo-empleado' as any)
   const irConfiguraciones = () => router.push('/configuraciones' as any)
+  const irVerTodosLosEmpleados = () => router.push('/empleados' as any)
 
   const verCliente = (clienteId: string) =>
     router.push({ pathname: '/cliente-detalle', params: { id: clienteId } } as any)
@@ -455,10 +458,10 @@ export default function AdminHome() {
           <Text style={styles.summaryValue}>{resumenGeneral.clientesActivos}</Text>
         </View>
 
-        <View style={styles.summaryRow}>
+        <TouchableOpacity style={styles.summaryRow} onPress={irVerTodosLosEmpleados}>
           <Text style={styles.summaryLabel}>Empleados</Text>
           <Text style={styles.summaryValue}>{resumenGeneral.empleadosActivos}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
     </View>
   )
@@ -480,7 +483,7 @@ export default function AdminHome() {
         <Text style={styles.emptyText}>No hay empleados cargados todavía.</Text>
       ) : (
         <View style={styles.clientsList}>
-          {empleados.map((empleado) => (
+          {empleadosVisibles.map((empleado) => (
             <View key={empleado.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
               <View style={styles.clientTop}>
                 <View style={{ flex: 1 }}>
@@ -499,6 +502,17 @@ export default function AdminHome() {
               </View>
             </View>
           ))}
+
+          {empleados.length > 5 && (
+            <TouchableOpacity
+              style={[styles.clientButton, styles.verMasButton]}
+              onPress={irVerTodosLosEmpleados}
+            >
+              <Text style={styles.clientButtonText}>
+                Ver todos los empleados ({empleados.length})
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -611,8 +625,8 @@ export default function AdminHome() {
 
                 <View style={styles.bottomGridDesktop}>
                   <View style={styles.bottomLeftDesktop}>
-                    <ListaClientes />
                     <ListaEmpleados />
+                    <ListaClientes />
                   </View>
 
                   <View style={styles.bottomRightDesktop}>
@@ -1111,6 +1125,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 14,
+  },
+
+  verMasButton: {
+    marginTop: 4,
   },
 
   badge: {
