@@ -66,13 +66,13 @@ export default function NuevoCliente() {
       const adminIdAntes = session.user.id
       const tokenAntes = session.access_token
 
-     const res = await fetch(
+    const res = await fetch(
   'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${tokenAntes}`,
+      'Authorization': `Bearer ${tokenAntes}`,
     },
     body: JSON.stringify({
       nombre: nombreLimpio,
@@ -84,7 +84,6 @@ export default function NuevoCliente() {
     }),
   }
 )
-
       const data = await res.json().catch(() => null)
 
       console.log('STATUS crear-cliente:', res.status)
