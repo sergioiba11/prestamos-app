@@ -189,92 +189,100 @@ export default function CargarPago() {
   }
 
   const registrarPago = async () => {
-  if (guardando) return
+    if (guardando) return
 
-  if (!clienteSeleccionado) {
-    Alert.alert('Error', 'Seleccioná un cliente')
-    return
-  }
-
-  if (!prestamoSeleccionado) {
-    Alert.alert('Error', 'Seleccioná un préstamo')
-    return
-  }
-
-  if (!montoNumero || montoNumero <= 0) {
-    Alert.alert('Error', 'Ingresá un monto válido')
-    return
-  }
-
-  if (montoNumero > deudaActual) {
-    Alert.alert(
-      'Error',
-      `El pago no puede ser mayor a la deuda actual (${formatearMoneda(deudaActual)})`
-    )
-    return
-  }
-
-  try {
-    setGuardando(true)
-
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    console.log('SESSION ERROR:', sessionError)
-    console.log('SESSION USER:', session?.user)
-    console.log('ACCESS TOKEN:', session?.access_token)
-
-    if (sessionError || !session?.access_token) {
-      Alert.alert('Error', 'Sesión inválida o vencida')
+    if (!clienteSeleccionado) {
+      Alert.alert('Error', 'Seleccioná un cliente')
       return
     }
 
-    const payload = {
-      prestamo_id: prestamoSeleccionado.id,
-      cliente_id: prestamoSeleccionado.cliente_id,
-      monto: montoNumero,
-      metodo,
-    }
-
-    console.log('PAYLOAD REGISTRAR PAGO:', payload)
-
-    const { data, error } = await supabase.functions.invoke('registrar-pago', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    })
-
-    console.log('RESPUESTA REGISTRAR-PAGO DATA:', data)
-    console.log('RESPUESTA REGISTRAR-PAGO ERROR:', error)
-
-    if (error) {
-      Alert.alert('Error', error.message || 'No se pudo registrar el pago')
+    if (!prestamoSeleccionado) {
+      Alert.alert('Error', 'Seleccioná un préstamo')
       return
     }
 
-    if (!data?.ok) {
-      Alert.alert('Error', data?.error || 'No se pudo registrar el pago')
+    if (!montoNumero || montoNumero <= 0) {
+      Alert.alert('Error', 'Ingresá un monto válido')
       return
     }
 
-    Alert.alert('Éxito', 'Pago cargado correctamente', [
-      {
-        text: 'OK',
-        onPress: () => {
-          router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+    if (montoNumero > deudaActual) {
+      Alert.alert(
+        'Error',
+        `El pago no puede ser mayor a la deuda actual (${formatearMoneda(deudaActual)})`
+      )
+      return
+    }
+
+    try {
+      setGuardando(true)
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      console.log('SESSION ERROR REGISTRAR PAGO:', sessionError)
+      console.log('SESSION USER REGISTRAR PAGO:', session?.user)
+      console.log('ACCESS TOKEN REGISTRAR PAGO:', session?.access_token)
+
+      if (sessionError || !session?.access_token || !session?.user?.id) {
+        Alert.alert('Error', 'La sesión del usuario expiró. Volvé a iniciar sesión.')
+        return
+      }
+
+      const payload = {
+        prestamo_id: prestamoSeleccionado.id,
+        cliente_id: prestamoSeleccionado.cliente_id,
+        monto: montoNumero,
+        metodo,
+      }
+
+      console.log('PAYLOAD REGISTRAR PAGO:', payload)
+
+      const res = await fetch(
+        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      )
+
+      const json = await res.json().catch(() => null)
+
+      console.log('STATUS REGISTRAR PAGO:', res.status)
+      console.log('RESPUESTA REGISTRAR PAGO JSON:', JSON.stringify(json, null, 2))
+
+      if (!res.ok) {
+        Alert.alert('Error', json?.error || `Error ${res.status}`)
+        return
+      }
+
+      if (!json?.ok) {
+        Alert.alert('Error', json?.error || 'No se pudo registrar el pago')
+        return
+      }
+
+      Alert.alert('Éxito', 'Pago cargado correctamente', [
+        {
+          text: 'OK',
+          onPress: () => {
+            router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+          },
         },
-      },
-    ])
-  } catch (error: any) {
-    console.log('ERROR REGISTRAR PAGO CATCH:', error)
-    Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
-  } finally {
-    setGuardando(false)
+      ])
+    } catch (error: any) {
+      console.log('ERROR REGISTRAR PAGO CATCH:', error)
+      Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
+    } finally {
+      setGuardando(false)
+    }
   }
-}
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -523,199 +531,198 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#CBD5E1',
     marginTop: 12,
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   backButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#111827',
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    borderRadius: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
     marginBottom: 14,
   },
 
   backButtonText: {
     color: '#E2E8F0',
-    fontWeight: '800',
-    fontSize: 14,
+    fontWeight: '700',
   },
 
   title: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 28,
-    fontWeight: '900',
+    fontWeight: '800',
   },
 
   subtitle: {
     color: '#94A3B8',
     fontSize: 14,
     marginTop: 6,
-    marginBottom: 18,
+    marginBottom: 20,
   },
 
   label: {
     color: '#E2E8F0',
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
     marginBottom: 8,
     marginTop: 10,
   },
 
   input: {
     backgroundColor: '#0F172A',
-    borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 16,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    color: '#FFFFFF',
+    paddingVertical: 14,
+    color: '#F8FAFC',
     fontSize: 16,
   },
 
-  helperText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-
   listBox: {
-    marginTop: 4,
+    marginTop: 10,
+    gap: 10,
   },
 
   selectCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
-    marginBottom: 12,
   },
 
   selectCardActive: {
-    borderColor: '#3B82F6',
+    borderColor: '#2563EB',
     backgroundColor: '#0B1220',
   },
 
   selectName: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 16,
     fontWeight: '800',
+    marginBottom: 6,
   },
 
   selectMeta: {
     color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 13,
+    marginTop: 2,
   },
 
   infoCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
   },
 
   infoName: {
-    color: '#FFFFFF',
-    fontSize: 17,
+    color: '#F8FAFC',
+    fontSize: 18,
     fontWeight: '800',
+    marginBottom: 6,
   },
 
   infoMeta: {
     color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
 
   changeButton: {
     alignSelf: 'flex-start',
     marginTop: 10,
-    marginBottom: 8,
-    backgroundColor: '#111827',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#172554',
   },
 
   changeButtonText: {
-    color: '#E2E8F0',
+    color: '#BFDBFE',
     fontWeight: '700',
+  },
+
+  emptyText: {
+    color: '#94A3B8',
+    marginTop: 8,
+  },
+
+  helperText: {
+    color: '#94A3B8',
+    marginTop: 8,
     fontSize: 13,
   },
 
   methodsRow: {
     flexDirection: 'row',
     gap: 10,
+    marginTop: 8,
     flexWrap: 'wrap',
-    marginTop: 2,
   },
 
   methodButton: {
-    backgroundColor: '#111827',
+    backgroundColor: '#0F172A',
     borderWidth: 1,
-    borderColor: '#374151',
-    borderRadius: 14,
-    paddingVertical: 12,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
   },
 
   methodButtonActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
+    borderColor: '#2563EB',
+    backgroundColor: '#172554',
   },
 
   methodButtonText: {
-    color: '#E2E8F0',
-    fontWeight: '800',
-    fontSize: 14,
+    color: '#CBD5E1',
+    fontWeight: '700',
   },
 
   methodButtonTextActive: {
-    color: '#FFFFFF',
+    color: '#DBEAFE',
   },
 
   resumeCard: {
-    marginTop: 18,
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
+    marginTop: 16,
     gap: 10,
   },
 
   resumeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
+    alignItems: 'center',
   },
 
   resumeLabel: {
     color: '#94A3B8',
-    fontSize: 13,
+    fontSize: 14,
   },
 
   resumeValue: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: '#F8FAFC',
+    fontSize: 15,
     fontWeight: '800',
   },
 
   saveButton: {
-    marginTop: 18,
     backgroundColor: '#2563EB',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 15,
     alignItems: 'center',
+    marginTop: 18,
   },
 
   saveButtonDisabled: {
@@ -725,12 +732,6 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '900',
-  },
-
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    marginTop: 8,
+    fontWeight: '800',
   },
 })
