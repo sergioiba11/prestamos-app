@@ -39,7 +39,7 @@ async function goByRole(userId: string) {
   const rol = userData?.rol
 
  if (rol === 'admin') {
-  router.replace('/')
+router.back()
 }
 
   if (rol === 'empleado') {

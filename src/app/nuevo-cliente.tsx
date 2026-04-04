@@ -124,7 +124,7 @@ console.log('TOKEN FINAL:', tokenAntes)
       setEmail('')
       setPassword('')
 
-      router.replace('/')
+     router.back()
     } catch (error: any) {
       console.log('ERROR crear-cliente:', error)
 

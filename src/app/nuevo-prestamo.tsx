@@ -355,7 +355,7 @@ export default function NuevoPrestamo() {
   }
 
   const volverPantalla = () => {
-    router.replace('/')
+   router.back()
   }
 
   const mostrarMensaje = (titulo: string, mensaje: string) => {
