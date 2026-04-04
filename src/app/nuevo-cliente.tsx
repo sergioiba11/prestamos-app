@@ -51,64 +51,69 @@ export default function NuevoCliente() {
       setLoading(true)
 
       const {
-        data: { session: adminSession },
-        error: adminSessionError,
+        data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession()
 
-      if (adminSessionError || !adminSession?.access_token || !adminSession?.refresh_token) {
-        throw new Error('Tu sesión de admin expiró. Volvé a iniciar sesión.')
+      console.log('SESSION ERROR:', sessionError)
+      console.log('SESSION USER:', session?.user)
+      console.log('ACCESS TOKEN:', session?.access_token)
+
+      if (sessionError || !session?.access_token || !session?.user?.id) {
+        throw new Error('La sesión del admin expiró. Volvé a iniciar sesión.')
       }
 
-      const adminId = adminSession.user.id
+      const adminIdAntes = session.user.id
+      const tokenAntes = session.access_token
 
-     const res = await fetch(
-  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminSession.access_token}`,
-    },
-    body: JSON.stringify({
-      nombre: nombreLimpio,
-      telefono: telefonoLimpio,
-      direccion: direccionLimpia,
-      dni: dniLimpio,
-      email: emailLimpio,
-      password: passwordLimpia,
-    }),
-  }
-)
+      const res = await fetch(
+        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokenAntes}`,
+            apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
+          },
+          body: JSON.stringify({
+            nombre: nombreLimpio,
+            telefono: telefonoLimpio,
+            direccion: direccionLimpia,
+            dni: dniLimpio,
+            email: emailLimpio,
+            password: passwordLimpia,
+          }),
+        }
+      )
 
-const data = await res.json()
+      const data = await res.json().catch(() => null)
 
-// 👇 AGREGÁ ESTO
-console.log('STATUS:', res.status)
-console.log('DATA:', data)
+      console.log('STATUS crear-cliente:', res.status)
+      console.log(
+        'RESPUESTA crear-cliente:',
+        JSON.stringify(data, null, 2)
+      )
 
-if (!res.ok) {
-  throw new Error(`${res.status} - ${data.error}`)
-}
-
-      // FORZAR SIEMPRE la sesión del admin otra vez
-      const { error: restoreError } = await supabase.auth.setSession({
-        access_token: adminSession.access_token,
-        refresh_token: adminSession.refresh_token,
-      })
-
-      if (restoreError) {
-        throw new Error(
-          'Se creó el cliente, pero no se pudo restaurar la sesión del admin'
-        )
+      if (!res.ok) {
+        throw new Error(data?.error || `Error ${res.status}`)
       }
 
       const {
         data: { session: sessionFinal },
       } = await supabase.auth.getSession()
 
-      if (!sessionFinal?.user || sessionFinal.user.id !== adminId) {
+      console.log('SESSION FINAL USER:', sessionFinal?.user)
+      console.log('SESSION FINAL TOKEN:', sessionFinal?.access_token)
+
+      if (!sessionFinal?.user || !sessionFinal?.access_token) {
         throw new Error(
-          'Se creó el cliente, pero la sesión activa ya no es la del admin'
+          'Se creó el cliente, pero no quedó una sesión activa del admin'
+        )
+      }
+
+      if (sessionFinal.user.id !== adminIdAntes) {
+        throw new Error(
+          'La sesión cambió después de crear el cliente. No debería pasar.'
         )
       }
 
@@ -121,9 +126,10 @@ if (!res.ok) {
       setEmail('')
       setPassword('')
 
-      // IMPORTANTE: volver al panel admin
       router.replace('/admin-home' as any)
     } catch (error: any) {
+      console.log('ERROR crear-cliente:', error)
+
       const mensaje =
         error?.message?.includes('already') ||
         error?.message?.includes('registrado')
