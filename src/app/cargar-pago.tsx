@@ -221,13 +221,10 @@ export default function CargarPago() {
       const nuevoEstado = nuevoSaldo <= 0 ? 'pagado' : 'activo'
 
       const { error: pagoError } = await supabase.from('pagos').insert({
-        cliente_id: clienteSeleccionado.id,
-        prestamo_id: prestamoSeleccionado.id,
-        monto: montoNumero,
-        fecha: new Date().toISOString(),
-        metodo,
-      })
-
+  prestamo_id: prestamoSeleccionado.id,
+  monto: montoNumero,
+  fecha_pago: new Date().toISOString().slice(0, 10),
+})
       if (pagoError) {
         Alert.alert('Error al guardar pago', pagoError.message)
         return
