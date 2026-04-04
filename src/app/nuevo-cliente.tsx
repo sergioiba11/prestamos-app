@@ -65,7 +65,7 @@ export default function NuevoCliente() {
 
       const adminIdAntes = session.user.id
       const tokenAntes = session.access_token
-
+console.log('TOKEN FINAL:', tokenAntes)
     const res = await fetch(
   'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/crear-cliente',
   {
@@ -124,7 +124,7 @@ export default function NuevoCliente() {
       setEmail('')
       setPassword('')
 
-      router.replace('/admin-home' as any)
+      router.replace('/')
     } catch (error: any) {
       console.log('ERROR crear-cliente:', error)
 

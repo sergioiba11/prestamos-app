@@ -243,38 +243,68 @@ Deno.serve(async (req) => {
     })
 
     const { error: insertUsuarioError } = await adminClient
-      .from('usuarios')
-      .insert({
-        id: clienteId,
-        nombre,
-        email,
-        telefono: telefono || null,
-        direccion: direccion || null,
-        dni: dni || null,
-        rol: 'cliente',
-      })
+  .from('usuarios')
+  .insert({
+    id: clienteId,
+    nombre,
+    email,
+    rol: 'cliente',
+  })
 
-    console.log('RESULTADO INSERT USUARIOS:', {
-      insertUsuarioError,
-    })
+console.log('RESULTADO INSERT USUARIOS:', {
+  insertUsuarioError,
+})
 
-    if (insertUsuarioError) {
-      await adminClient.auth.admin.deleteUser(clienteId)
+if (insertUsuarioError) {
+  await adminClient.auth.admin.deleteUser(clienteId)
 
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error:
-            insertUsuarioError.message ||
-            'No se pudo guardar el cliente en usuarios',
-          detalle: insertUsuarioError,
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error:
+        insertUsuarioError.message ||
+        'No se pudo guardar el cliente en usuarios',
+      detalle: insertUsuarioError,
+    }),
+    {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     }
+  )
+}
+
+const { error: insertClienteError } = await adminClient
+  .from('clientes')
+  .insert({
+    usuario_id: clienteId,
+    nombre,
+    telefono: telefono || null,
+    direccion: direccion || null,
+    dni: dni || null,
+  })
+
+console.log('RESULTADO INSERT CLIENTES:', {
+  insertClienteError,
+})
+
+if (insertClienteError) {
+  await adminClient.from('usuarios').delete().eq('id', clienteId)
+  await adminClient.auth.admin.deleteUser(clienteId)
+
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error:
+        insertClienteError.message ||
+        'No se pudo guardar el cliente en clientes',
+      detalle: insertClienteError,
+    }),
+    {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    }
+  )
+}
 
     return new Response(
       JSON.stringify({
