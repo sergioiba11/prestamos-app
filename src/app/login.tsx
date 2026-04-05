@@ -3,7 +3,7 @@ import * as QueryParams from 'expo-auth-session/build/QueryParams'
 import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Platform,
@@ -38,10 +38,10 @@ async function goByRole(userId: string) {
 
   const rol = userData?.rol
 
-if (rol === 'admin') {
-  router.replace('/admin-home' as any)
-  return
-}
+  if (rol === 'admin') {
+    router.replace('/admin-home' as any)
+    return
+  }
 
   if (rol === 'empleado') {
     router.replace('/empleado-home' as any)
@@ -80,6 +80,8 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+  const passwordRef = useRef<TextInput>(null)
 
   useEffect(() => {
     let mounted = true
@@ -112,17 +114,21 @@ export default function Login() {
       })()
     })
 
-   const {
-  data: { subscription: authSubscription },
-} = supabase.auth.onAuthStateChange((event, session) => {
-  void (async () => {
-    if (!mounted) return
+    const {
+      data: { subscription: authSubscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      void (async () => {
+        if (!mounted) return
 
-    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-      await goByRole(session.user.id)
-    }
-  })()
-})
+        if (
+          (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') &&
+          session?.user
+        ) {
+          await goByRole(session.user.id)
+        }
+      })()
+    })
+
     return () => {
       mounted = false
       linkingSub.remove()
@@ -133,16 +139,18 @@ export default function Login() {
   const handleLogin = async () => {
     if (loading) return
 
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Completá todos los campos')
+    setErrorMsg('')
+
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanPassword = password.trim()
+
+    if (!cleanEmail || !cleanPassword) {
+      setErrorMsg('Completá todos los campos')
       return
     }
 
     try {
       setLoading(true)
-
-      const cleanEmail = email.trim().toLowerCase()
-      const cleanPassword = password.trim()
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -157,31 +165,31 @@ export default function Login() {
           msg.includes('not confirmed') ||
           msg.includes('confirmation')
         ) {
-          Alert.alert(
-            'Email no confirmado',
-            'Primero revisá tu correo y activá la cuenta.'
-          )
+          setErrorMsg('Primero tenés que confirmar tu email')
           return
         }
 
         if (
           msg.includes('invalid login credentials') ||
-          msg.includes('invalid credentials')
+          msg.includes('invalid credentials') ||
+          msg.includes('invalid email or password')
         ) {
-          Alert.alert('Error', 'Email o contraseña incorrectos')
+          setErrorMsg('Correo o contraseña incorrectos')
           return
         }
 
-        throw error
+        setErrorMsg(error.message || 'No se pudo iniciar sesión')
+        return
       }
 
       if (!data.user) {
-        throw new Error('No se encontró el usuario')
+        setErrorMsg('No se encontró el usuario')
+        return
       }
 
       await goByRole(data.user.id)
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo iniciar sesión')
+      setErrorMsg(error?.message || 'No se pudo iniciar sesión')
     } finally {
       setLoading(false)
     }
@@ -189,6 +197,8 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     if (loading) return
+
+    setErrorMsg('')
 
     try {
       setLoading(true)
@@ -228,13 +238,10 @@ export default function Login() {
       }
 
       if (result.type !== 'cancel') {
-        Alert.alert('Error', 'No se pudo completar el login con Google')
+        setErrorMsg('No se pudo completar el login con Google')
       }
     } catch (error: any) {
-      Alert.alert(
-        'Error',
-        error?.message || 'No se pudo iniciar sesión con Google'
-      )
+      setErrorMsg(error?.message || 'No se pudo iniciar sesión con Google')
     } finally {
       setLoading(false)
     }
@@ -243,8 +250,10 @@ export default function Login() {
   const reenviarActivacion = async () => {
     if (loading) return
 
+    setErrorMsg('')
+
     if (!email.trim()) {
-      Alert.alert('Error', 'Ingresá el email')
+      setErrorMsg('Ingresá tu email para reenviar la activación')
       return
     }
 
@@ -262,7 +271,7 @@ export default function Login() {
 
       Alert.alert('Correo enviado', 'Te reenviamos el correo de activación.')
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo reenviar el correo')
+      setErrorMsg(error?.message || 'No se pudo reenviar el correo')
     } finally {
       setLoading(false)
     }
@@ -272,28 +281,39 @@ export default function Login() {
     <View style={styles.container}>
       <Text style={styles.title}>Iniciar sesión</Text>
 
-    <TextInput
-  style={styles.input}
-  placeholder="Email"
-  placeholderTextColor="#94A3B8"
-  value={email}
-  onChangeText={setEmail}
-  autoCapitalize="none"
-  keyboardType="email-address"
-  onSubmitEditing={() => {}} // o focus al password si querés pro
-  returnKeyType="next"
-/>
+      <TextInput
+        style={[styles.input, errorMsg ? styles.inputError : null]}
+        placeholder="Email"
+        placeholderTextColor="#94A3B8"
+        value={email}
+        onChangeText={(text) => {
+          setEmail(text)
+          if (errorMsg) setErrorMsg('')
+        }}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        autoCorrect={false}
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+      />
 
-     <TextInput
-  style={styles.input}
-  placeholder="Contraseña"
-  placeholderTextColor="#94A3B8"
-  secureTextEntry
-  value={password}
-  onChangeText={setPassword}
-  onSubmitEditing={handleLogin} // 👈 esto
-  returnKeyType="done" // opcional (mejor UX)
-/>
+      <TextInput
+        ref={passwordRef}
+        style={[styles.input, errorMsg ? styles.inputError : null]}
+        placeholder="Contraseña"
+        placeholderTextColor="#94A3B8"
+        secureTextEntry
+        value={password}
+        onChangeText={(text) => {
+          setPassword(text)
+          if (errorMsg) setErrorMsg('')
+        }}
+        returnKeyType="done"
+        onSubmitEditing={handleLogin}
+      />
+
+      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleLogin}
@@ -353,6 +373,17 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 10,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
+  errorText: {
+    color: '#EF4444',
+    marginBottom: 10,
+    textAlign: 'center',
+    fontSize: 14,
   },
   button: {
     backgroundColor: '#2563EB',
