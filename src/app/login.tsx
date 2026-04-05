@@ -272,25 +272,28 @@ export default function Login() {
     <View style={styles.container}>
       <Text style={styles.title}>Iniciar sesión</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#94A3B8"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+    <TextInput
+  style={styles.input}
+  placeholder="Email"
+  placeholderTextColor="#94A3B8"
+  value={email}
+  onChangeText={setEmail}
+  autoCapitalize="none"
+  keyboardType="email-address"
+  onSubmitEditing={() => {}} // o focus al password si querés pro
+  returnKeyType="next"
+/>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
-        placeholderTextColor="#94A3B8"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-
+     <TextInput
+  style={styles.input}
+  placeholder="Contraseña"
+  placeholderTextColor="#94A3B8"
+  secureTextEntry
+  value={password}
+  onChangeText={setPassword}
+  onSubmitEditing={handleLogin} // 👈 esto
+  returnKeyType="done" // opcional (mejor UX)
+/>
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleLogin}
