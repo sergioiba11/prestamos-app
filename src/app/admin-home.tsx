@@ -261,46 +261,97 @@ export default function AdminHome() {
   }, [prestamos, clientes, empleados])
 
   const clientesConPrestamo = useMemo<ClienteConPrestamo[]>(() => {
-    const mapaPrestamos = new Map<string, Prestamo>()
+  const mapaPrestamos = new Map<string, Prestamo>()
 
-    for (const prestamo of prestamos) {
-      if (!prestamo.cliente_id) continue
+  for (const prestamo of prestamos) {
+    if (!prestamo.cliente_id) continue
 
-      const actual = mapaPrestamos.get(prestamo.cliente_id)
+    const actual = mapaPrestamos.get(prestamo.cliente_id)
 
-      if (!actual) {
-        mapaPrestamos.set(prestamo.cliente_id, prestamo)
-        continue
+    if (!actual) {
+      mapaPrestamos.set(prestamo.cliente_id, prestamo)
+      continue
+    }
+
+    const actualFecha = actual.fecha_inicio || ''
+    const nuevaFecha = prestamo.fecha_inicio || ''
+
+    if (nuevaFecha > actualFecha) {
+      mapaPrestamos.set(prestamo.cliente_id, prestamo)
+    }
+  }
+
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+
+  const lista = clientes.map((cliente) => {
+    const prestamo = mapaPrestamos.get(cliente.id) || null
+    const estadoVisual = calcularEstadoVisual(prestamo)
+
+    let prioridad = 4 // default (los últimos)
+
+    if (prestamo) {
+      const estado = normalizarEstado(prestamo.estado)
+
+      if (estado === 'pagado' || estado === 'cancelado') {
+        prioridad = 4
+      } else if (prestamo.fecha_inicio_mora) {
+        const mora = new Date(prestamo.fecha_inicio_mora + 'T00:00:00')
+        mora.setHours(0, 0, 0, 0)
+
+        if (hoy.getTime() >= mora.getTime()) {
+          prioridad = 1 // 🔴 mora (máxima prioridad)
+        }
       }
 
-      const actualFecha = actual.fecha_inicio || ''
-      const nuevaFecha = prestamo.fecha_inicio || ''
+      if (prestamo.fecha_limite) {
+        const limite = new Date(prestamo.fecha_limite + 'T00:00:00')
+        limite.setHours(0, 0, 0, 0)
 
-      if (nuevaFecha > actualFecha) {
-        mapaPrestamos.set(prestamo.cliente_id, prestamo)
+        if (
+          limite.getFullYear() === hoy.getFullYear() &&
+          limite.getMonth() === hoy.getMonth() &&
+          limite.getDate() === hoy.getDate()
+        ) {
+          prioridad = 2 // 🟡 vence hoy
+        }
+      }
+
+      if (prioridad === 4) {
+        prioridad = 3 // 🟢 al día
       }
     }
 
-    return clientes.map((cliente) => {
-      const prestamo = mapaPrestamos.get(cliente.id) || null
-      const estadoVisual = calcularEstadoVisual(prestamo)
+    return {
+      id: cliente.id,
+      nombre: cliente.nombre,
+      telefono: cliente.telefono,
+      dni: cliente.dni,
+      prestamo,
+      estadoVisual,
+      prioridad,
+      deudaActual:
+        prestamo && normalizarEstado(prestamo.estado) !== 'pagado'
+          ? Number(prestamo.total_a_pagar || 0)
+          : 0,
+      proximoPago: prestamo?.fecha_limite || null,
+    }
+  })
 
-      return {
-        id: cliente.id,
-        nombre: cliente.nombre,
-        telefono: cliente.telefono,
-        dni: cliente.dni,
-        prestamo,
-        estadoVisual,
-        deudaActual:
-          prestamo && normalizarEstado(prestamo.estado) !== 'pagado'
-            ? Number(prestamo.total_a_pagar || 0)
-            : 0,
-        proximoPago: prestamo?.fecha_limite || null,
-      }
-    })
-  }, [clientes, prestamos])
+  // 🔥 ORDEN PRO FINAL
+  return lista.sort((a, b) => {
+    // 1. prioridad
+    if (a.prioridad !== b.prioridad) {
+      return a.prioridad - b.prioridad
+    }
 
+    // 2. por fecha (más urgente primero)
+    const fechaA = a.proximoPago ? new Date(a.proximoPago).getTime() : Infinity
+    const fechaB = b.proximoPago ? new Date(b.proximoPago).getTime() : Infinity
+
+    return fechaA - fechaB
+  })
+}, [clientes, prestamos])
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
