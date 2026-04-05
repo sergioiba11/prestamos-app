@@ -5,6 +5,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+type CuotaDb = {
+  id: string
+  numero_cuota: number
+  monto_cuota: number | null
+  monto_pagado: number | null
+  saldo_pendiente: number | null
+  fecha_vencimiento: string
+  estado: string | null
+}
+
+const redondear = (valor: number) =>
+  Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -20,7 +33,6 @@ Deno.serve(async (req) => {
       })
     }
 
-    // 🔑 CLIENTE CON JWT DEL USUARIO (ESTO SOLUCIONA TU ERROR)
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -33,7 +45,6 @@ Deno.serve(async (req) => {
       }
     )
 
-    // 🔒 VALIDAR USUARIO
     const {
       data: { user },
       error: userError,
@@ -46,13 +57,19 @@ Deno.serve(async (req) => {
       })
     }
 
-    // 🧠 CLIENTE ADMIN (para escribir en DB)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    const { prestamo_id, cliente_id, monto, metodo } = await req.json()
+    const {
+      prestamo_id,
+      cliente_id,
+      monto,
+      metodo,
+      monto_ingresado,
+      vuelto,
+    } = await req.json()
 
     if (!prestamo_id || !cliente_id || !monto || !metodo) {
       return new Response(JSON.stringify({ error: 'Faltan datos' }), {
@@ -61,9 +78,17 @@ Deno.serve(async (req) => {
       })
     }
 
-    const montoNumero = Number(monto)
+    const montoAplicado = redondear(Number(monto))
+    const montoIngresado = redondear(Number(monto_ingresado || monto))
+    const vueltoNumero = redondear(Number(vuelto || 0))
 
-    // obtener préstamo
+    if (!Number.isFinite(montoAplicado) || montoAplicado <= 0) {
+      return new Response(JSON.stringify({ error: 'Monto inválido' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: prestamo, error: prestamoError } = await supabaseAdmin
       .from('prestamos')
       .select('*')
@@ -77,39 +102,168 @@ Deno.serve(async (req) => {
       })
     }
 
-    const deudaActual = Number(prestamo.total_a_pagar || 0)
+    const deudaActual = redondear(Number(prestamo.total_a_pagar || 0))
 
-    if (montoNumero > deudaActual) {
+    if (montoAplicado > deudaActual) {
       return new Response(JSON.stringify({ error: 'Monto mayor a deuda' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const nuevoSaldo = deudaActual - montoNumero
+    const { data: cuotasRaw, error: cuotasError } = await supabaseAdmin
+      .from('prestamo_cuotas')
+      .select('id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, fecha_vencimiento, estado')
+      .eq('prestamo_id', prestamo_id)
+      .order('numero_cuota', { ascending: true })
 
-    // guardar pago
-    await supabaseAdmin.from('pagos').insert({
+    if (cuotasError) {
+      return new Response(JSON.stringify({ error: cuotasError.message }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const cuotas = (cuotasRaw || []) as CuotaDb[]
+
+    if (cuotas.length === 0) {
+      return new Response(JSON.stringify({ error: 'El préstamo no tiene cuotas generadas' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    let restante = montoAplicado
+    const detalleAplicacion: Array<Record<string, unknown>> = []
+    const pagoId = crypto.randomUUID()
+
+    for (const cuota of cuotas) {
+      if (restante <= 0) break
+
+      const saldoCuota = redondear(Number(cuota.saldo_pendiente || 0))
+      if (saldoCuota <= 0) continue
+
+      const aplicado = redondear(Math.min(restante, saldoCuota))
+      if (aplicado <= 0) continue
+
+      const nuevoMontoPagado = redondear(Number(cuota.monto_pagado || 0) + aplicado)
+      const nuevoSaldo = redondear(saldoCuota - aplicado)
+      const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
+
+      const { error: updateCuotaError } = await supabaseAdmin
+        .from('prestamo_cuotas')
+        .update({
+          monto_pagado: nuevoMontoPagado,
+          saldo_pendiente: nuevoSaldo,
+          estado: nuevoEstado,
+          pagada_at: nuevoSaldo <= 0 ? new Date().toISOString() : null,
+          pago_id: pagoId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cuota.id)
+
+      if (updateCuotaError) {
+        return new Response(JSON.stringify({ error: updateCuotaError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      detalleAplicacion.push({
+        cuota_id: cuota.id,
+        numero_cuota: cuota.numero_cuota,
+        fecha_vencimiento: cuota.fecha_vencimiento,
+        aplicado,
+        saldo_anterior: saldoCuota,
+        saldo_nuevo: nuevoSaldo,
+        estado_nuevo: nuevoEstado,
+      })
+
+      restante = redondear(restante - aplicado)
+    }
+
+    if (restante > 0) {
+      return new Response(JSON.stringify({ error: 'No se pudo aplicar el pago completo a las cuotas' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { error: pagoError } = await supabaseAdmin.from('pagos').insert({
+      id: pagoId,
       prestamo_id,
       cliente_id,
-      monto: montoNumero,
+      monto: montoAplicado,
+      monto_ingresado: montoIngresado,
+      vuelto: vueltoNumero,
       metodo,
-      creado_por: user.id,
+      registrado_por: user.id,
+      detalle_aplicacion: detalleAplicacion,
     })
 
-    // actualizar préstamo
-    await supabaseAdmin
+    if (pagoError) {
+      return new Response(JSON.stringify({ error: pagoError.message }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { data: cuotasActualizadasRaw, error: cuotasActualizadasError } = await supabaseAdmin
+      .from('prestamo_cuotas')
+      .select('id, numero_cuota, saldo_pendiente, fecha_vencimiento, estado')
+      .eq('prestamo_id', prestamo_id)
+      .order('numero_cuota', { ascending: true })
+
+    if (cuotasActualizadasError) {
+      return new Response(JSON.stringify({ error: cuotasActualizadasError.message }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const cuotasActualizadas = (cuotasActualizadasRaw || []) as Array<{
+      id: string
+      numero_cuota: number
+      saldo_pendiente: number | null
+      fecha_vencimiento: string
+      estado: string | null
+    }>
+
+    const siguientePendiente = cuotasActualizadas.find((cuota) => redondear(Number(cuota.saldo_pendiente || 0)) > 0) || null
+    const cuotasPagadas = cuotasActualizadas.filter((cuota) => redondear(Number(cuota.saldo_pendiente || 0)) <= 0).length
+    const nuevoSaldo = redondear(cuotasActualizadas.reduce((acc, cuota) => acc + Number(cuota.saldo_pendiente || 0), 0))
+
+    const { error: updatePrestamoError } = await supabaseAdmin
       .from('prestamos')
       .update({
         total_a_pagar: nuevoSaldo,
         estado: nuevoSaldo <= 0 ? 'pagado' : 'activo',
+        fecha_limite: siguientePendiente?.fecha_vencimiento ?? null,
+        fecha_inicio_mora: siguientePendiente?.fecha_vencimiento ?? null,
       })
       .eq('id', prestamo_id)
+
+    if (updatePrestamoError) {
+      return new Response(JSON.stringify({ error: updatePrestamoError.message }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     return new Response(
       JSON.stringify({
         ok: true,
+        pago_id: pagoId,
         saldo_restante: nuevoSaldo,
+        cuotas_pagadas: cuotasPagadas,
+        cuotas_totales: cuotasActualizadas.length,
+        proxima_cuota: siguientePendiente
+          ? {
+              numero: siguientePendiente.numero_cuota,
+              fecha_vencimiento: siguientePendiente.fecha_vencimiento,
+            }
+          : null,
+        detalle_aplicacion: detalleAplicacion,
       }),
       {
         status: 200,
@@ -117,9 +271,14 @@ Deno.serve(async (req) => {
       }
     )
   } catch (error) {
-    return new Response(JSON.stringify({ error: 'Error interno' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Error interno',
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
   }
 })
