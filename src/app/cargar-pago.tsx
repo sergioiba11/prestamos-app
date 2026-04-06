@@ -367,30 +367,23 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-     const res = await fetch(
-  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
+    const { data: json, error: fnError } = await supabase.functions.invoke(
+  'registrar-pago',
   {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(payload),
+    body: payload,
   }
 )
-      const json = await res.json().catch(() => null)
 
-      console.log('STATUS REGISTRAR PAGO:', res.status)
-      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+console.log('ERROR FUNCTION REGISTRAR PAGO:', fnError)
 
-      if (!res.ok) {
-        Alert.alert(
-          'Error',
-          json?.error || json?.message || `No se pudo registrar el pago (${res.status})`
-        )
-        return
-      }
-
+if (fnError) {
+  Alert.alert(
+    'Error',
+    fnError.message || json?.error || 'No se pudo registrar el pago'
+  )
+  return
+}
       const saldoRestantePrestamo = Number(json?.saldo_restante || 0)
       const saldoRestanteCuota = Number(
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
