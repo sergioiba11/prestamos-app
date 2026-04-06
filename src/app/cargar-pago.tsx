@@ -33,6 +33,17 @@ type Prestamo = {
   dias_plazo: number | null
 }
 
+type Cuota = {
+  id: string
+  prestamo_id: string
+  cliente_id: string
+  numero_cuota: number
+  fecha_vencimiento: string | null
+  monto_cuota: number | null
+  saldo_pendiente: number | null
+  estado: string | null
+}
+
 function limpiarNumero(texto: string) {
   if (!texto) return ''
 
@@ -114,10 +125,12 @@ export default function CargarPago() {
 
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
+  const [cuotas, setCuotas] = useState<Cuota[]>([])
 
   const [busqueda, setBusqueda] = useState('')
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<Prestamo | null>(null)
+  const [cuotaSeleccionada, setCuotaSeleccionada] = useState<Cuota | null>(null)
 
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<'efectivo' | 'transferencia' | 'mp'>('efectivo')
@@ -132,8 +145,19 @@ export default function CargarPago() {
     } else {
       setPrestamos([])
       setPrestamoSeleccionado(null)
+      setCuotas([])
+      setCuotaSeleccionada(null)
     }
   }, [clienteSeleccionado])
+
+  useEffect(() => {
+    if (prestamoSeleccionado?.id) {
+      cargarCuotasPrestamo(prestamoSeleccionado.id)
+    } else {
+      setCuotas([])
+      setCuotaSeleccionada(null)
+    }
+  }, [prestamoSeleccionado])
 
   const cargarClientes = async () => {
     try {
@@ -205,6 +229,46 @@ export default function CargarPago() {
     }
   }
 
+  const cargarCuotasPrestamo = async (prestamoId: string) => {
+    try {
+      setLoading(true)
+
+      const { data, error } = await supabase
+        .from('cuotas')
+        .select(`
+          id,
+          prestamo_id,
+          cliente_id,
+          numero_cuota,
+          fecha_vencimiento,
+          monto_cuota,
+          saldo_pendiente,
+          estado
+        `)
+        .eq('prestamo_id', prestamoId)
+        .neq('estado', 'pagado')
+        .order('numero_cuota', { ascending: true })
+
+      if (error) {
+        Alert.alert('Error', error.message)
+        setCuotas([])
+        setCuotaSeleccionada(null)
+        return
+      }
+
+      const lista = (data || []) as Cuota[]
+      setCuotas(lista)
+      setCuotaSeleccionada(lista[0] || null)
+      setMonto('')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudieron cargar las cuotas')
+      setCuotas([])
+      setCuotaSeleccionada(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const clientesFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase()
     if (!texto) return clientes
@@ -219,7 +283,7 @@ export default function CargarPago() {
   }, [clientes, busqueda])
 
   const montoNumero = textoAMonto(monto)
-  const deudaActual = Number(prestamoSeleccionado?.total_a_pagar || 0)
+  const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
   const montoAplicado = Math.min(montoNumero, deudaActual)
   const vuelto = Math.max(0, montoNumero - deudaActual)
   const saldoLuegoDelPago = Math.max(0, deudaActual - montoAplicado)
@@ -246,13 +310,18 @@ export default function CargarPago() {
       return
     }
 
+    if (!cuotaSeleccionada) {
+      Alert.alert('Error', 'Seleccioná una cuota')
+      return
+    }
+
     if (!montoNumero || montoNumero <= 0) {
       Alert.alert('Error', 'Ingresá un monto válido')
       return
     }
 
     if (deudaActual <= 0) {
-      Alert.alert('Error', 'Este préstamo no tiene deuda pendiente')
+      Alert.alert('Error', 'Esta cuota no tiene saldo pendiente')
       return
     }
 
@@ -272,6 +341,8 @@ export default function CargarPago() {
       const payload = {
         prestamo_id: prestamoSeleccionado.id,
         cliente_id: prestamoSeleccionado.cliente_id,
+        cuota_id: cuotaSeleccionada.id,
+        numero_cuota: cuotaSeleccionada.numero_cuota,
         monto: montoAplicado,
         monto_ingresado: montoNumero,
         vuelto,
@@ -302,11 +373,13 @@ export default function CargarPago() {
         params: {
           cliente_id: clienteSeleccionado.id,
           prestamo_id: prestamoSeleccionado.id,
+          cuota_id: cuotaSeleccionada.id,
+          numero_cuota: String(cuotaSeleccionada.numero_cuota),
           monto: String(montoAplicado),
           monto_ingresado: String(montoNumero),
           vuelto: String(vuelto),
-          metodo: metodo,
-          saldo_restante: String(json.saldo_restante ?? saldoLuegoDelPago),
+          metodo,
+          saldo_restante: String(json?.saldo_restante ?? saldoLuegoDelPago),
         },
       })
     } catch (error: any) {
@@ -339,7 +412,7 @@ export default function CargarPago() {
       </TouchableOpacity>
 
       <Text style={styles.title}>Cargar pago</Text>
-      <Text style={styles.subtitle}>Registrá un pago y descontalo del préstamo</Text>
+      <Text style={styles.subtitle}>Registrá un pago por cuota</Text>
 
       {!clienteSeleccionado ? (
         <>
@@ -390,6 +463,8 @@ export default function CargarPago() {
               setClienteSeleccionado(null)
               setPrestamos([])
               setPrestamoSeleccionado(null)
+              setCuotas([])
+              setCuotaSeleccionada(null)
               setBusqueda('')
               setMonto('')
             }}
@@ -415,6 +490,7 @@ export default function CargarPago() {
                     ]}
                     onPress={() => {
                       setPrestamoSeleccionado(prestamo)
+                      setCuotaSeleccionada(null)
                       setMonto('')
                     }}
                   >
@@ -422,7 +498,7 @@ export default function CargarPago() {
                       {prestamo.modalidad === 'diario' ? 'Préstamo diario' : 'Préstamo mensual'}
                     </Text>
                     <Text style={styles.selectMeta}>
-                      Deuda actual: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}
+                      Total préstamo: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}
                     </Text>
                     <Text style={styles.selectMeta}>
                       Fecha límite: {formatearFecha(prestamo.fecha_limite)}
@@ -438,6 +514,52 @@ export default function CargarPago() {
 
           {prestamoSeleccionado && (
             <>
+              <Text style={styles.label}>Elegí la cuota</Text>
+
+              {cuotas.length === 0 ? (
+                <Text style={styles.emptyText}>Este préstamo no tiene cuotas pendientes.</Text>
+              ) : (
+                <View style={styles.listBox}>
+                  {cuotas.map((cuota) => {
+                    const seleccionada = cuotaSeleccionada?.id === cuota.id
+
+                    return (
+                      <TouchableOpacity
+                        key={cuota.id}
+                        style={[
+                          styles.selectCard,
+                          seleccionada && styles.selectCardActive,
+                        ]}
+                        onPress={() => {
+                          setCuotaSeleccionada(cuota)
+                          setMonto('')
+                        }}
+                      >
+                        <Text style={styles.selectName}>
+                          Cuota #{cuota.numero_cuota}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Vence: {formatearFecha(cuota.fecha_vencimiento)}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Monto cuota: {formatearMoneda(Number(cuota.monto_cuota || 0))}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Saldo pendiente: {formatearMoneda(Number(cuota.saldo_pendiente || 0))}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Estado: {cuota.estado || 'pendiente'}
+                        </Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
+              )}
+            </>
+          )}
+
+          {cuotaSeleccionada && (
+            <>
               <Text style={styles.label}>Monto recibido</Text>
               <TextInput
                 value={monto}
@@ -449,7 +571,7 @@ export default function CargarPago() {
               />
 
               <Text style={styles.helperText}>
-                Deuda actual: {formatearMoneda(deudaActual)}
+                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente: {formatearMoneda(deudaActual)}
               </Text>
 
               <Text style={styles.label}>Método de pago</Text>
@@ -513,7 +635,7 @@ export default function CargarPago() {
                 </View>
 
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Se aplica</Text>
+                  <Text style={styles.resumeLabel}>Se aplica a cuota</Text>
                   <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
                 </View>
 
@@ -523,7 +645,7 @@ export default function CargarPago() {
                 </View>
 
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Queda</Text>
+                  <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
                   <Text style={styles.resumeValue}>
                     {formatearMoneda(saldoLuegoDelPago)}
                   </Text>
@@ -536,7 +658,7 @@ export default function CargarPago() {
                 disabled={guardando}
               >
                 <Text style={styles.saveButtonText}>
-                  {guardando ? 'Guardando...' : 'Registrar pago'}
+                  {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
                 </Text>
               </TouchableOpacity>
             </>
