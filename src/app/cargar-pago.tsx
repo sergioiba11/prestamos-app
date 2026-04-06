@@ -356,15 +356,14 @@ export default function CargarPago() {
       }
 
       const payload = {
-        prestamo_id: prestamoSeleccionado.id,
-        cliente_id: clienteSeleccionado.id,
-        cuota_id: cuotaSeleccionada.id,
-        numero_cuota: cuotaSeleccionada.numero_cuota,
-        monto: Number(montoAplicado.toFixed(2)),
-        monto_ingresado: Number(montoNumero.toFixed(2)),
-        vuelto: Number(vuelto.toFixed(2)),
-        metodo,
-      }
+  prestamo_id: prestamoSeleccionado.id,
+  cliente_id: clienteSeleccionado.id,
+  cuota_id: cuotaSeleccionada.id,
+  numero_cuota: cuotaSeleccionada.numero_cuota,
+  monto: Number(montoAplicado.toFixed(2)),
+  monto_ingresado: Number(montoNumero.toFixed(2)),
+  metodo,
+}
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 

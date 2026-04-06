@@ -49,28 +49,28 @@ Deno.serve(async (req) => {
       )
     }
 
-    const {
-      prestamo_id,
-      cliente_id,
-      cuota_id,
-      numero_cuota,
-      monto,
-      monto_ingresado,
-      metodo,
-    } = await req.json()
+    const body = await req.json()
 
-    if (!prestamo_id || !cliente_id || !monto || !metodo) {
+    const prestamo_id = body?.prestamo_id
+    const cliente_id = body?.cliente_id
+    const cuota_id = body?.cuota_id
+    const numero_cuota = body?.numero_cuota
+    const metodo = body?.metodo
+
+    const montoAplicado = Number(body?.monto)
+    const montoIngresado = Number(body?.monto_ingresado ?? body?.monto)
+
+    if (!prestamo_id || !cliente_id || !cuota_id || !metodo) {
       return new Response(
-        JSON.stringify({ error: 'Faltan datos obligatorios' }),
+        JSON.stringify({
+          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, cuota_id, metodo',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
-
-    const montoAplicado = Number(monto)
-    const montoIngresado = Number(monto_ingresado ?? monto)
 
     if (Number.isNaN(montoAplicado) || montoAplicado <= 0) {
       return new Response(
@@ -82,9 +82,19 @@ Deno.serve(async (req) => {
       )
     }
 
+    if (Number.isNaN(montoIngresado) || montoIngresado <= 0) {
+      return new Response(
+        JSON.stringify({ error: 'Monto ingresado inválido' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
     const { data: prestamo, error: prestamoError } = await supabase
       .from('prestamos')
-      .select('id, total_a_pagar, estado')
+      .select('id, cliente_id, estado')
       .eq('id', prestamo_id)
       .single()
 
@@ -98,33 +108,9 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { data: cuotasPendientes, error: cuotasError } = await supabase
-      .from('cuotas')
-      .select(`
-        id,
-        numero_cuota,
-        monto_cuota,
-        saldo_pendiente,
-        estado,
-        fecha_vencimiento
-      `)
-      .eq('prestamo_id', prestamo_id)
-      .in('estado', ['pendiente', 'parcial'])
-      .order('numero_cuota', { ascending: true })
-
-    if (cuotasError) {
+    if (prestamo.cliente_id !== cliente_id) {
       return new Response(
-        JSON.stringify({ error: cuotasError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    if (!cuotasPendientes || cuotasPendientes.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'El préstamo no tiene cuotas pendientes' }),
+        JSON.stringify({ error: 'El préstamo no pertenece al cliente enviado' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -132,80 +118,97 @@ Deno.serve(async (req) => {
       )
     }
 
-    let restante = montoAplicado
-    const cuotasImpactadas: number[] = []
-    let cuotaActualizada: any = null
+    const { data: cuota, error: cuotaError } = await supabase
+      .from('cuotas')
+      .select(`
+        id,
+        prestamo_id,
+        cliente_id,
+        numero_cuota,
+        monto_cuota,
+        saldo_pendiente,
+        estado,
+        fecha_vencimiento
+      `)
+      .eq('id', cuota_id)
+      .eq('prestamo_id', prestamo_id)
+      .single()
 
-    for (const cuota of cuotasPendientes) {
-      if (restante <= 0) break
-
-      const saldoPendiente = Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
-
-      if (saldoPendiente <= 0) continue
-
-      if (restante >= saldoPendiente) {
-        const { error: updateError } = await supabase
-          .from('cuotas')
-          .update({
-            saldo_pendiente: 0,
-            estado: 'pagada',
-          })
-          .eq('id', cuota.id)
-
-        if (updateError) {
-          return new Response(
-            JSON.stringify({ error: updateError.message }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          )
+    if (cuotaError || !cuota) {
+      return new Response(
+        JSON.stringify({ error: 'Cuota no encontrada para ese préstamo' }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
+      )
+    }
 
-        cuotasImpactadas.push(cuota.numero_cuota)
-
-        cuotaActualizada = {
-          id: cuota.id,
-          numero_cuota: cuota.numero_cuota,
-          estado: 'pagada',
-          saldo_antes: saldoPendiente,
-          saldo_despues: 0,
+    if (cuota.cliente_id && cuota.cliente_id !== cliente_id) {
+      return new Response(
+        JSON.stringify({ error: 'La cuota no pertenece al cliente enviado' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
+      )
+    }
 
-        restante -= saldoPendiente
-      } else {
-        const nuevoSaldo = Number((saldoPendiente - restante).toFixed(2))
-
-        const { error: updateError } = await supabase
-          .from('cuotas')
-          .update({
-            saldo_pendiente: nuevoSaldo,
-            estado: 'parcial',
-          })
-          .eq('id', cuota.id)
-
-        if (updateError) {
-          return new Response(
-            JSON.stringify({ error: updateError.message }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          )
+    if (!['pendiente', 'parcial'].includes(cuota.estado)) {
+      return new Response(
+        JSON.stringify({ error: 'La cuota seleccionada ya está pagada o no admite pagos' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
+      )
+    }
 
-        cuotasImpactadas.push(cuota.numero_cuota)
-
-        cuotaActualizada = {
-          id: cuota.id,
-          numero_cuota: cuota.numero_cuota,
-          estado: 'parcial',
-          saldo_antes: saldoPendiente,
-          saldo_despues: nuevoSaldo,
+    if (numero_cuota && Number(numero_cuota) !== Number(cuota.numero_cuota)) {
+      return new Response(
+        JSON.stringify({ error: 'El número de cuota no coincide con la cuota seleccionada' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
+      )
+    }
 
-        restante = 0
-      }
+    const saldoAnterior = Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
+
+    if (saldoAnterior <= 0) {
+      return new Response(
+        JSON.stringify({ error: 'La cuota no tiene saldo pendiente' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Solo se aplica a la cuota seleccionada.
+    // Si entra más plata que la deuda de la cuota, el excedente queda como vuelto.
+    const montoRealAplicado = Number(Math.min(montoAplicado, saldoAnterior).toFixed(2))
+    const nuevoSaldo = Number((saldoAnterior - montoRealAplicado).toFixed(2))
+    const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
+    const vuelto = Number(Math.max(0, montoIngresado - montoRealAplicado).toFixed(2))
+
+    const { error: updateCuotaError } = await supabase
+      .from('cuotas')
+      .update({
+        saldo_pendiente: nuevoSaldo,
+        estado: nuevoEstado,
+      })
+      .eq('id', cuota.id)
+
+    if (updateCuotaError) {
+      return new Response(
+        JSON.stringify({ error: updateCuotaError.message }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     const { data: pago, error: pagoError } = await supabase
@@ -213,7 +216,7 @@ Deno.serve(async (req) => {
       .insert({
         prestamo_id,
         cliente_id,
-        monto: montoAplicado,
+        monto: montoRealAplicado,
         metodo,
         registrado_por: user.id,
       })
@@ -246,31 +249,37 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle()
 
-    const { data: cuotasRestantes } = await supabase
+    const { data: cuotasRestantes, error: cuotasRestantesError } = await supabase
       .from('cuotas')
       .select('saldo_pendiente')
       .eq('prestamo_id', prestamo_id)
       .in('estado', ['pendiente', 'parcial'])
 
+    if (cuotasRestantesError) {
+      return new Response(
+        JSON.stringify({ error: cuotasRestantesError.message }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
     const saldoRestante = Number(
-      (cuotasRestantes || []).reduce((acc, item) => {
-        return acc + Number(item.saldo_pendiente || 0)
-      }, 0).toFixed(2)
+      (cuotasRestantes || [])
+        .reduce((acc, item) => acc + Number(item.saldo_pendiente || 0), 0)
+        .toFixed(2)
     )
 
-    const vuelto = Number(Math.max(0, montoIngresado - montoAplicado).toFixed(2))
-
-    const { data: siguePendiente } = await supabase
-      .from('cuotas')
-      .select('id')
-      .eq('prestamo_id', prestamo_id)
-      .in('estado', ['pendiente', 'parcial'])
-      .limit(1)
-
-    if (!siguePendiente || siguePendiente.length === 0) {
+    if (saldoRestante <= 0) {
       await supabase
         .from('prestamos')
         .update({ estado: 'pagado' })
+        .eq('id', prestamo_id)
+    } else {
+      await supabase
+        .from('prestamos')
+        .update({ estado: 'activo' })
         .eq('id', prestamo_id)
     }
 
@@ -278,10 +287,16 @@ Deno.serve(async (req) => {
       JSON.stringify({
         ok: true,
         pago,
-        cuota_id: cuota_id ?? null,
-        numero_cuota: numero_cuota ?? null,
-        cuotas_impactadas: cuotasImpactadas,
-        cuota_actualizada: cuotaActualizada,
+        cuota_id: cuota.id,
+        numero_cuota: cuota.numero_cuota,
+        cuotas_impactadas: [cuota.numero_cuota],
+        cuota_actualizada: {
+          id: cuota.id,
+          numero_cuota: cuota.numero_cuota,
+          estado: nuevoEstado,
+          saldo_antes: saldoAnterior,
+          saldo_despues: nuevoSaldo,
+        },
         proxima_cuota: proximaCuota ?? null,
         saldo_restante: saldoRestante,
         vuelto,
