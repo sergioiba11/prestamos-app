@@ -133,6 +133,25 @@ function fechaValida(texto: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(texto)
 }
 
+function sumarMesesSeguro(fechaBase: Date, meses: number, diaFijo?: number | null) {
+  const base = new Date(fechaBase)
+  const year = base.getFullYear()
+  const month = base.getMonth() + meses
+
+  const targetYear = year + Math.floor(month / 12)
+  const targetMonth = ((month % 12) + 12) % 12
+
+  const diaDeseado = diaFijo || base.getDate()
+  const ultimoDia = diasEnMes(targetYear, targetMonth)
+  const diaReal = Math.min(diaDeseado, ultimoDia)
+
+  return new Date(targetYear, targetMonth, diaReal)
+}
+
+function redondear2(valor: number) {
+  return Math.round((Number(valor) + Number.EPSILON) * 100) / 100
+}
+
 export default function NuevoPrestamo() {
   const params = useLocalSearchParams()
   const clienteIdParam =
@@ -253,19 +272,19 @@ export default function NuevoPrestamo() {
 
   const totalAPagar = useMemo(() => {
     if (!montoNumero || interesNumero < 0) return 0
-    return montoNumero + (montoNumero * interesNumero) / 100
+    return redondear2(montoNumero + (montoNumero * interesNumero) / 100)
   }, [montoNumero, interesNumero])
 
   const importeCuota = useMemo(() => {
     if (modalidad !== 'mensual') return 0
     if (!totalAPagar || !cuotasNumero || cuotasNumero <= 0) return 0
-    return totalAPagar / cuotasNumero
+    return redondear2(totalAPagar / cuotasNumero)
   }, [totalAPagar, cuotasNumero, modalidad])
 
   const importeDiario = useMemo(() => {
     if (modalidad !== 'diario') return 0
     if (!totalAPagar || !diasNumero || diasNumero <= 0) return 0
-    return totalAPagar / diasNumero
+    return redondear2(totalAPagar / diasNumero)
   }, [totalAPagar, diasNumero, modalidad])
 
   const diaPagoAutomaticoPreview = useMemo(() => {
@@ -280,7 +299,9 @@ export default function NuevoPrestamo() {
 
     if (modalidad === 'mensual') {
       if (!habilitarDiaPagoManual) {
-        return diaPagoAutomaticoPreview
+        const fechaBase = new Date(fechaInicio + 'T00:00:00')
+        const primeraCuota = sumarMesesSeguro(fechaBase, 1, null)
+        return formatearFecha(primeraCuota)
       }
 
       if (
@@ -306,7 +327,6 @@ export default function NuevoPrestamo() {
     modalidad,
     diaPagoMensualNumero,
     habilitarDiaPagoManual,
-    diaPagoAutomaticoPreview,
   ])
 
   const fechaLimitePreview = useMemo(() => {
@@ -314,9 +334,12 @@ export default function NuevoPrestamo() {
 
     const fechaBase = new Date(fechaInicio + 'T00:00:00')
 
-    if (modalidad === 'mensual') {
-      fechaBase.setMonth(fechaBase.getMonth() + 1)
-      return formatearFecha(fechaBase)
+    if (modalidad === 'mensual' && cuotasNumero > 0) {
+      const ultima = habilitarDiaPagoManual
+        ? sumarMesesSeguro(fechaBase, cuotasNumero - 1, diaPagoMensualNumero)
+        : sumarMesesSeguro(fechaBase, cuotasNumero, null)
+
+      return formatearFecha(ultima)
     }
 
     if (modalidad === 'diario' && diasNumero > 0) {
@@ -325,7 +348,7 @@ export default function NuevoPrestamo() {
     }
 
     return ''
-  }, [fechaInicio, modalidad, diasNumero])
+  }, [fechaInicio, modalidad, diasNumero, cuotasNumero, habilitarDiaPagoManual, diaPagoMensualNumero])
 
   const seleccionarCuota = (valor: number) => {
     const interesCalculado = INTERESES_MENSUALES[valor] || 0
@@ -355,150 +378,219 @@ export default function NuevoPrestamo() {
   }
 
   const volverPantalla = () => {
-   router.back()
+    router.back()
   }
 
   const mostrarMensaje = (titulo: string, mensaje: string) => {
-  if (typeof window !== 'undefined') {
-    window.alert(`${titulo}\n\n${mensaje}`)
-  } else {
-    Alert.alert(titulo, mensaje)
-  }
-}
-
-const guardarPrestamo = async () => {
-  if (loading) return
-
-  console.log('CLICK EN GUARDAR')
-
-  if (!clienteSeleccionado?.id) {
-    mostrarMensaje('Error', 'Seleccioná un cliente')
-    return
-  }
-
-  if (!montoNumero || montoNumero <= 0) {
-    mostrarMensaje('Error', 'Ingresá un monto válido')
-    return
-  }
-
-  if (!fechaInicio || !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio)) {
-    mostrarMensaje('Error', 'Ingresá una fecha válida en formato YYYY-MM-DD')
-    return
-  }
-
-  if (modalidad === 'mensual' && cuotasNumero <= 0) {
-    mostrarMensaje('Error', 'Seleccioná cuotas')
-    return
-  }
-
-  if (modalidad === 'diario' && diasNumero <= 0) {
-    mostrarMensaje('Error', 'Seleccioná días')
-    return
-  }
-
-  if (modalidad === 'mensual' && habilitarDiaPagoManual) {
-    if (diaPagoMensualNumero < 1 || diaPagoMensualNumero > 31) {
-      mostrarMensaje('Error', 'Ingresá un día de pago válido del 1 al 31')
-      return
+    if (typeof window !== 'undefined') {
+      window.alert(`${titulo}\n\n${mensaje}`)
+    } else {
+      Alert.alert(titulo, mensaje)
     }
   }
 
-  setLoading(true)
+  const guardarPrestamo = async () => {
+    if (loading) return
 
-  try {
-    console.log('CLIENTE SELECCIONADO:', clienteSeleccionado)
+    console.log('CLICK EN GUARDAR')
 
-    const { data: clienteDb, error: errorCliente } = await supabase
-      .from('clientes')
-      .select('id, nombre')
-      .eq('id', clienteSeleccionado.id)
-      .maybeSingle()
-
-    console.log('CLIENTE DB:', clienteDb)
-    console.log('ERROR CLIENTE:', errorCliente)
-
-    if (errorCliente) {
-      mostrarMensaje('Error', `No se pudo verificar el cliente: ${errorCliente.message}`)
+    if (!clienteSeleccionado?.id) {
+      mostrarMensaje('Error', 'Seleccioná un cliente')
       return
     }
 
-    if (!clienteDb) {
-      mostrarMensaje('Error', 'El cliente seleccionado no existe en la base')
+    if (!montoNumero || montoNumero <= 0) {
+      mostrarMensaje('Error', 'Ingresá un monto válido')
       return
     }
 
-    const fechaBase = new Date(fechaInicio + 'T00:00:00')
-    let fechaLimite = new Date(fechaBase)
-    let fechaInicioMora = new Date(fechaBase)
-    let diaPagoGuardar: number | null = null
+    if (!fechaInicio || !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio)) {
+      mostrarMensaje('Error', 'Ingresá una fecha válida en formato YYYY-MM-DD')
+      return
+    }
 
-    if (modalidad === 'mensual') {
-      fechaLimite.setMonth(fechaLimite.getMonth() + 1)
+    if (modalidad === 'mensual' && cuotasNumero <= 0) {
+      mostrarMensaje('Error', 'Seleccioná cuotas')
+      return
+    }
 
-      if (habilitarDiaPagoManual) {
-        fechaInicioMora = calcularPrimeraFechaMoraMensual(
-          fechaInicio,
-          diaPagoMensualNumero
-        )
-        diaPagoGuardar = diaPagoMensualNumero
+    if (modalidad === 'diario' && diasNumero <= 0) {
+      mostrarMensaje('Error', 'Seleccioná días')
+      return
+    }
+
+    if (modalidad === 'mensual' && habilitarDiaPagoManual) {
+      if (diaPagoMensualNumero < 1 || diaPagoMensualNumero > 31) {
+        mostrarMensaje('Error', 'Ingresá un día de pago válido del 1 al 31')
+        return
+      }
+    }
+
+    setLoading(true)
+
+    try {
+      console.log('CLIENTE SELECCIONADO:', clienteSeleccionado)
+
+      const { data: clienteDb, error: errorCliente } = await supabase
+        .from('clientes')
+        .select('id, nombre')
+        .eq('id', clienteSeleccionado.id)
+        .maybeSingle()
+
+      console.log('CLIENTE DB:', clienteDb)
+      console.log('ERROR CLIENTE:', errorCliente)
+
+      if (errorCliente) {
+        mostrarMensaje('Error', `No se pudo verificar el cliente: ${errorCliente.message}`)
+        return
+      }
+
+      if (!clienteDb) {
+        mostrarMensaje('Error', 'El cliente seleccionado no existe en la base')
+        return
+      }
+
+      const fechaBase = new Date(fechaInicio + 'T00:00:00')
+      let fechaLimite = new Date(fechaBase)
+      let fechaInicioMora = new Date(fechaBase)
+      let diaPagoGuardar: number | null = null
+
+      if (modalidad === 'mensual') {
+        if (habilitarDiaPagoManual) {
+          fechaInicioMora = calcularPrimeraFechaMoraMensual(
+            fechaInicio,
+            diaPagoMensualNumero
+          )
+          diaPagoGuardar = diaPagoMensualNumero
+          fechaLimite = sumarMesesSeguro(
+            fechaBase,
+            cuotasNumero - 1,
+            diaPagoMensualNumero
+          )
+        } else {
+          fechaInicioMora = sumarMesesSeguro(fechaBase, 1, null)
+          fechaLimite = sumarMesesSeguro(fechaBase, cuotasNumero, null)
+        }
       } else {
         fechaInicioMora = new Date(fechaBase)
-        fechaInicioMora.setMonth(fechaInicioMora.getMonth() + 1)
+        fechaInicioMora.setDate(fechaInicioMora.getDate() + 1)
+
+        fechaLimite = new Date(fechaBase)
+        fechaLimite.setDate(fechaLimite.getDate() + diasNumero)
       }
-    } else {
-      fechaLimite.setDate(fechaLimite.getDate() + diasNumero)
-      fechaInicioMora.setDate(fechaInicioMora.getDate() + 1)
+
+      const payload = {
+        cliente_id: clienteSeleccionado.id,
+        monto: montoNumero,
+        interes: interesNumero,
+        total_a_pagar: totalAPagar,
+        fecha_inicio: fechaInicio,
+        fecha_limite: formatearFecha(fechaLimite),
+        fecha_inicio_mora: formatearFecha(fechaInicioMora),
+        modalidad,
+        estado: 'activo',
+        cuotas: modalidad === 'mensual' ? cuotasNumero : diasNumero,
+        dias_plazo: modalidad === 'diario' ? diasNumero : null,
+        dia_pago_mensual: modalidad === 'mensual' ? diaPagoGuardar : null,
+      }
+
+      console.log('PAYLOAD A INSERTAR:', payload)
+
+      const { data: prestamoInsertado, error: errorPrestamo } = await supabase
+        .from('prestamos')
+        .insert(payload)
+        .select()
+        .single()
+
+      console.log('RESPUESTA INSERT PRESTAMO:', prestamoInsertado)
+      console.log('ERROR INSERT PRESTAMO:', errorPrestamo)
+
+      if (errorPrestamo || !prestamoInsertado) {
+        mostrarMensaje(
+          'Error al guardar',
+          `Mensaje: ${errorPrestamo?.message || 'No se pudo crear el préstamo'}\nCódigo: ${errorPrestamo?.code ?? 'sin código'}\nDetalle: ${errorPrestamo?.details ?? 'sin detalle'}`
+        )
+        return
+      }
+
+      const cantidadCuotas = modalidad === 'mensual' ? cuotasNumero : diasNumero
+      const valorBase = redondear2(totalAPagar / cantidadCuotas)
+
+      const cuotasPayload: any[] = []
+
+      for (let i = 1; i <= cantidadCuotas; i++) {
+        let fechaVencimiento: Date
+
+        if (modalidad === 'mensual') {
+          if (habilitarDiaPagoManual && diaPagoMensualNumero >= 1 && diaPagoMensualNumero <= 31) {
+            fechaVencimiento =
+              i === 1
+                ? calcularPrimeraFechaMoraMensual(fechaInicio, diaPagoMensualNumero)
+                : sumarMesesSeguro(
+                    calcularPrimeraFechaMoraMensual(fechaInicio, diaPagoMensualNumero),
+                    i - 1,
+                    diaPagoMensualNumero
+                  )
+          } else {
+            fechaVencimiento = sumarMesesSeguro(fechaBase, i, null)
+          }
+        } else {
+          fechaVencimiento = new Date(fechaBase)
+          fechaVencimiento.setDate(fechaVencimiento.getDate() + i)
+        }
+
+        const montoCuota =
+          i === cantidadCuotas
+            ? redondear2(totalAPagar - valorBase * (cantidadCuotas - 1))
+            : valorBase
+
+        cuotasPayload.push({
+          prestamo_id: prestamoInsertado.id,
+          cliente_id: clienteSeleccionado.id,
+          numero_cuota: i,
+          fecha_vencimiento: formatearFecha(fechaVencimiento),
+          monto_cuota: montoCuota,
+          saldo_pendiente: montoCuota,
+          interes: 0,
+          estado: 'pendiente',
+        })
+      }
+
+      console.log('CUOTAS A INSERTAR:', cuotasPayload)
+
+      const { error: errorCuotas } = await supabase
+        .from('cuotas')
+        .insert(cuotasPayload)
+
+      console.log('ERROR INSERT CUOTAS:', errorCuotas)
+
+      if (errorCuotas) {
+        await supabase.from('prestamos').delete().eq('id', prestamoInsertado.id)
+
+        mostrarMensaje(
+          'Error al crear cuotas',
+          `Mensaje: ${errorCuotas.message}\nCódigo: ${errorCuotas.code ?? 'sin código'}\nDetalle: ${errorCuotas.details ?? 'sin detalle'}`
+        )
+        return
+      }
+
+      mostrarMensaje('Éxito', 'Préstamo y cuotas guardados correctamente')
+
+      router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+    } catch (error: any) {
+      console.log('ERROR CATCH:', error)
+      mostrarMensaje('Error', error?.message || 'No se pudo guardar el préstamo')
+    } finally {
+      setLoading(false)
     }
-
-    const payload = {
-  cliente_id: clienteSeleccionado.id,
-  monto: montoNumero,
-  interes: interesNumero,
-  total_a_pagar: totalAPagar,
-  fecha_inicio: fechaInicio,
-  fecha_limite: formatearFecha(fechaLimite),
-  fecha_inicio_mora: formatearFecha(fechaInicioMora),
-  modalidad,
-  estado: 'activo',
-  cuotas: modalidad === 'mensual' ? cuotasNumero : 1,
-  dias_plazo: modalidad === 'diario' ? diasNumero : null,
-  dia_pago_mensual: modalidad === 'mensual' ? diaPagoGuardar : null,
-}
-
-    console.log('PAYLOAD A INSERTAR:', payload)
-
-    const { data, error } = await supabase
-      .from('prestamos')
-      .insert(payload)
-      .select()
-
-    console.log('RESPUESTA INSERT DATA:', data)
-    console.log('RESPUESTA INSERT ERROR:', error)
-
-    if (error) {
-      mostrarMensaje(
-        'Error al guardar',
-        `Mensaje: ${error.message}\nCódigo: ${error.code ?? 'sin código'}\nDetalle: ${error.details ?? 'sin detalle'}`
-      )
-      return
-    }
-
-    mostrarMensaje('Éxito', 'Préstamo guardado correctamente')
-
-    router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
-  } catch (error: any) {
-    console.log('ERROR CATCH:', error)
-    mostrarMensaje('Error', error?.message || 'No se pudo guardar el préstamo')
-  } finally {
-    setLoading(false)
   }
-}
+
   function formatearARS(valor: number) {
-  return '$' + new Intl.NumberFormat('es-AR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(valor || 0)
-}
+    return '$' + new Intl.NumberFormat('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(valor || 0)
+  }
 
   return (
     <ScrollView
@@ -749,41 +841,41 @@ const guardarPrestamo = async () => {
             />
 
             <View style={styles.resumeCard}>
-  <Text style={styles.resumeText}>
-    Monto: {formatearARS(montoNumero)}
-  </Text>
+              <Text style={styles.resumeText}>
+                Monto: {formatearARS(montoNumero)}
+              </Text>
 
-  <Text style={styles.resumeText}>
-    Interés aplicado: {interesNumero.toFixed(0)}%
-  </Text>
+              <Text style={styles.resumeText}>
+                Interés aplicado: {interesNumero.toFixed(0)}%
+              </Text>
 
-  <Text style={styles.resumeText}>
-    Interés generado: {formatearARS((montoNumero * interesNumero) / 100 || 0)}
-  </Text>
+              <Text style={styles.resumeText}>
+                Interés generado: {formatearARS((montoNumero * interesNumero) / 100 || 0)}
+              </Text>
 
-  <Text style={styles.resumeText}>
-    Total a pagar: {formatearARS(totalAPagar)}
-  </Text>
+              <Text style={styles.resumeText}>
+                Total a pagar: {formatearARS(totalAPagar)}
+              </Text>
 
-  {modalidad === 'mensual' ? (
-    <Text style={styles.resumeText}>
-      Importe por cuota: {formatearARS(importeCuota)}
-    </Text>
-  ) : (
-    <Text style={styles.resumeText}>
-      Pago por día: {formatearARS(importeDiario)}
-    </Text>
-  )}
+              {modalidad === 'mensual' ? (
+                <Text style={styles.resumeText}>
+                  Importe por cuota: {formatearARS(importeCuota)}
+                </Text>
+              ) : (
+                <Text style={styles.resumeText}>
+                  Pago por día: {formatearARS(importeDiario)}
+                </Text>
+              )}
 
-  <Text style={styles.resumeText}>
-    Fecha límite del préstamo: {fechaLimitePreview || 'Sin calcular'}
-  </Text>
+              <Text style={styles.resumeText}>
+                Fecha límite del préstamo: {fechaLimitePreview || 'Sin calcular'}
+              </Text>
 
-  <Text style={styles.resumeText}>
-    Fecha en que empieza la mora:{' '}
-    {fechaInicioMoraPreview || 'Sin calcular'}
-  </Text>
-</View>
+              <Text style={styles.resumeText}>
+                Fecha en que empieza la mora:{' '}
+                {fechaInicioMoraPreview || 'Sin calcular'}
+              </Text>
+            </View>
 
             <TouchableOpacity
               style={[styles.saveButton, loading && styles.saveButtonDisabled]}
