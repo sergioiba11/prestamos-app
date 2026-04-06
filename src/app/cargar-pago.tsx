@@ -375,12 +375,11 @@ export default function CargarPago() {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
-      apikey: 'TU_SUPABASE_ANON_KEY',
+      apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
     },
     body: JSON.stringify(payload),
   }
 )
-
       const json = await res.json().catch(() => null)
 
       console.log('STATUS REGISTRAR PAGO:', res.status)
