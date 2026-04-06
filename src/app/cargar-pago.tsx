@@ -369,17 +369,17 @@ export default function CargarPago() {
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
       const res = await fetch(
-        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
-          },
-          body: JSON.stringify(payload),
-        }
-      )
+  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: 'TU_SUPABASE_ANON_KEY',
+    },
+    body: JSON.stringify(payload),
+  }
+)
 
       const json = await res.json().catch(() => null)
 
