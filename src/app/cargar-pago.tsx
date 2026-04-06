@@ -147,6 +147,7 @@ export default function CargarPago() {
       setPrestamoSeleccionado(null)
       setCuotas([])
       setCuotaSeleccionada(null)
+      setMonto('')
     }
   }, [clienteSeleccionado])
 
@@ -156,6 +157,7 @@ export default function CargarPago() {
     } else {
       setCuotas([])
       setCuotaSeleccionada(null)
+      setMonto('')
     }
   }, [prestamoSeleccionado])
 
@@ -246,7 +248,7 @@ export default function CargarPago() {
           estado
         `)
         .eq('prestamo_id', prestamoId)
-        .neq('estado', 'pagado')
+        .in('estado', ['pendiente', 'parcial'])
         .order('numero_cuota', { ascending: true })
 
       if (error) {
@@ -293,24 +295,34 @@ export default function CargarPago() {
       router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
       return
     }
-
     router.back()
+  }
+
+  const limpiarTodo = () => {
+    setClienteSeleccionado(null)
+    setPrestamos([])
+    setPrestamoSeleccionado(null)
+    setCuotas([])
+    setCuotaSeleccionada(null)
+    setBusqueda('')
+    setMonto('')
+    setMetodo('efectivo')
   }
 
   const registrarPago = async () => {
     if (guardando) return
 
-    if (!clienteSeleccionado) {
+    if (!clienteSeleccionado?.id) {
       Alert.alert('Error', 'Seleccioná un cliente')
       return
     }
 
-    if (!prestamoSeleccionado) {
+    if (!prestamoSeleccionado?.id) {
       Alert.alert('Error', 'Seleccioná un préstamo')
       return
     }
 
-    if (!cuotaSeleccionada) {
+    if (!cuotaSeleccionada?.id) {
       Alert.alert('Error', 'Seleccioná una cuota')
       return
     }
@@ -321,7 +333,7 @@ export default function CargarPago() {
     }
 
     if (deudaActual <= 0) {
-      Alert.alert('Error', 'Esta cuota no tiene saldo pendiente')
+      Alert.alert('Error', 'La cuota seleccionada no tiene saldo pendiente')
       return
     }
 
@@ -334,20 +346,22 @@ export default function CargarPago() {
       } = await supabase.auth.getSession()
 
       if (sessionError || !session?.access_token || !session?.user?.id) {
-        Alert.alert('Error', 'La sesión del usuario expiró. Volvé a iniciar sesión.')
+        Alert.alert('Error', 'La sesión expiró. Volvé a iniciar sesión.')
         return
       }
 
       const payload = {
         prestamo_id: prestamoSeleccionado.id,
-        cliente_id: prestamoSeleccionado.cliente_id,
+        cliente_id: clienteSeleccionado.id,
         cuota_id: cuotaSeleccionada.id,
         numero_cuota: cuotaSeleccionada.numero_cuota,
-        monto: montoAplicado,
-        monto_ingresado: montoNumero,
-        vuelto,
+        monto: Number(montoAplicado.toFixed(2)),
+        monto_ingresado: Number(montoNumero.toFixed(2)),
+        vuelto: Number(vuelto.toFixed(2)),
         metodo,
       }
+
+      console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
       const res = await fetch(
         'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
@@ -363,10 +377,20 @@ export default function CargarPago() {
 
       const json = await res.json().catch(() => null)
 
+      console.log('STATUS REGISTRAR PAGO:', res.status)
+      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+
       if (!res.ok) {
-        Alert.alert('Error', json?.error || `Error ${res.status}`)
+        Alert.alert(
+          'Error',
+          json?.error || json?.message || `No se pudo registrar el pago (${res.status})`
+        )
         return
       }
+
+      const saldoRestanteCuota = Number(
+        json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPago
+      )
 
       router.replace({
         pathname: '/pago-aprobado' as any,
@@ -375,11 +399,11 @@ export default function CargarPago() {
           prestamo_id: prestamoSeleccionado.id,
           cuota_id: cuotaSeleccionada.id,
           numero_cuota: String(cuotaSeleccionada.numero_cuota),
-          monto: String(montoAplicado),
-          monto_ingresado: String(montoNumero),
-          vuelto: String(vuelto),
+          monto: String(payload.monto),
+          monto_ingresado: String(payload.monto_ingresado),
+          vuelto: String(payload.vuelto),
           metodo,
-          saldo_restante: String(json?.saldo_restante ?? saldoLuegoDelPago),
+          saldo_restante: String(saldoRestanteCuota),
         },
       })
     } catch (error: any) {
@@ -457,18 +481,7 @@ export default function CargarPago() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.changeButton}
-            onPress={() => {
-              setClienteSeleccionado(null)
-              setPrestamos([])
-              setPrestamoSeleccionado(null)
-              setCuotas([])
-              setCuotaSeleccionada(null)
-              setBusqueda('')
-              setMonto('')
-            }}
-          >
+          <TouchableOpacity style={styles.changeButton} onPress={limpiarTodo}>
             <Text style={styles.changeButtonText}>Cambiar cliente</Text>
           </TouchableOpacity>
 
@@ -495,7 +508,9 @@ export default function CargarPago() {
                     }}
                   >
                     <Text style={styles.selectName}>
-                      {prestamo.modalidad === 'diario' ? 'Préstamo diario' : 'Préstamo mensual'}
+                      {prestamo.modalidad === 'diario'
+                        ? 'Préstamo diario'
+                        : 'Préstamo mensual'}
                     </Text>
                     <Text style={styles.selectMeta}>
                       Total préstamo: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}
@@ -561,6 +576,7 @@ export default function CargarPago() {
           {cuotaSeleccionada && (
             <>
               <Text style={styles.label}>Monto recibido</Text>
+
               <TextInput
                 value={monto}
                 onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
@@ -571,10 +587,12 @@ export default function CargarPago() {
               />
 
               <Text style={styles.helperText}>
-                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente: {formatearMoneda(deudaActual)}
+                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
+                {formatearMoneda(deudaActual)}
               </Text>
 
               <Text style={styles.label}>Método de pago</Text>
+
               <View style={styles.methodsRow}>
                 <TouchableOpacity
                   style={[
