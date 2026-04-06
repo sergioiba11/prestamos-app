@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    const authHeader =
+      req.headers.get('authorization') || req.headers.get('Authorization')
 
     if (!authHeader) {
       return new Response(
@@ -24,17 +25,23 @@ Deno.serve(async (req) => {
       )
     }
 
-    const supabase = createClient(
+    // 1) Cliente para autenticar al usuario con el JWT enviado desde Vercel/frontend
+    const supabaseAuth = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      {
+        global: {
+          headers: {
+            Authorization: authHeader,
+          },
+        },
+      }
     )
-
-    const token = authHeader.replace('Bearer ', '').trim()
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(token)
+    } = await supabaseAuth.auth.getUser()
 
     if (userError || !user) {
       return new Response(
@@ -48,6 +55,12 @@ Deno.serve(async (req) => {
         }
       )
     }
+
+    // 2) Cliente service role para operar la base
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    )
 
     const body = await req.json()
 
@@ -186,8 +199,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Solo se aplica a la cuota seleccionada.
-    // Si entra más plata que la deuda de la cuota, el excedente queda como vuelto.
+    // Solo aplica a la cuota seleccionada
     const montoRealAplicado = Number(Math.min(montoAplicado, saldoAnterior).toFixed(2))
     const nuevoSaldo = Number((saldoAnterior - montoRealAplicado).toFixed(2))
     const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
@@ -271,16 +283,21 @@ Deno.serve(async (req) => {
         .toFixed(2)
     )
 
-    if (saldoRestante <= 0) {
-      await supabase
-        .from('prestamos')
-        .update({ estado: 'pagado' })
-        .eq('id', prestamo_id)
-    } else {
-      await supabase
-        .from('prestamos')
-        .update({ estado: 'activo' })
-        .eq('id', prestamo_id)
+    const nuevoEstadoPrestamo = saldoRestante <= 0 ? 'pagado' : 'activo'
+
+    const { error: updatePrestamoError } = await supabase
+      .from('prestamos')
+      .update({ estado: nuevoEstadoPrestamo })
+      .eq('id', prestamo_id)
+
+    if (updatePrestamoError) {
+      return new Response(
+        JSON.stringify({ error: updatePrestamoError.message }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     return new Response(
