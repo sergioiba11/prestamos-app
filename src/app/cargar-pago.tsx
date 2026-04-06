@@ -374,7 +374,6 @@ export default function CargarPago() {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
-      apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
     },
     body: JSON.stringify(payload),
   }
