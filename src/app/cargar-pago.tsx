@@ -367,21 +367,26 @@ export default function CargarPago() {
 }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
-
-    const { data: json, error: fnError } = await supabase.functions.invoke(
-  'registrar-pago',
+const res = await fetch(
+  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
   {
-    body: payload,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`, // 🔥 CLAVE
+    },
+    body: JSON.stringify(payload),
   }
 )
 
-console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
-console.log('ERROR FUNCTION REGISTRAR PAGO:', fnError)
+const json = await res.json()
 
-if (fnError) {
+console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+
+if (!res.ok) {
   Alert.alert(
     'Error',
-    fnError.message || json?.error || 'No se pudo registrar el pago'
+    json?.error || 'No se pudo registrar el pago'
   )
   return
 }
