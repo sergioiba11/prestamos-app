@@ -23,11 +23,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization')
+    const authHeader =
+      req.headers.get('Authorization') || req.headers.get('authorization')
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return new Response(
-        JSON.stringify({ error: 'Falta Authorization header' }),
+        JSON.stringify({ code: 401, message: 'Falta Authorization header' }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -37,8 +38,21 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '').trim()
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({
+          code: 500,
+          message: 'Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
@@ -50,7 +64,8 @@ Deno.serve(async (req) => {
     if (userError || !user) {
       return new Response(
         JSON.stringify({
-          error: 'Invalid JWT',
+          code: 401,
+          message: 'Invalid JWT',
           detalle: userError?.message || 'Token inválido o expirado',
         }),
         {
@@ -73,7 +88,7 @@ Deno.serve(async (req) => {
 
     if (!prestamo_id || !cliente_id || !cuota_id || !monto || monto <= 0) {
       return new Response(
-        JSON.stringify({ error: 'Datos incompletos o monto inválido' }),
+        JSON.stringify({ code: 400, message: 'Datos incompletos o monto inválido' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -90,7 +105,7 @@ Deno.serve(async (req) => {
 
     if (prestamoError || !prestamo) {
       return new Response(
-        JSON.stringify({ error: 'Préstamo no encontrado' }),
+        JSON.stringify({ code: 404, message: 'Préstamo no encontrado' }),
         {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -117,7 +132,7 @@ Deno.serve(async (req) => {
 
     if (cuotaError || !cuota) {
       return new Response(
-        JSON.stringify({ error: 'Cuota no encontrada' }),
+        JSON.stringify({ code: 404, message: 'Cuota no encontrada' }),
         {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -129,7 +144,10 @@ Deno.serve(async (req) => {
 
     if (numero_cuota > 0 && cuotaActual.numero_cuota !== numero_cuota) {
       return new Response(
-        JSON.stringify({ error: 'La cuota enviada no coincide con la cuota seleccionada' }),
+        JSON.stringify({
+          code: 400,
+          message: 'La cuota enviada no coincide con la cuota seleccionada',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -143,7 +161,7 @@ Deno.serve(async (req) => {
       Number(cuotaActual.saldo_pendiente || 0) <= 0
     ) {
       return new Response(
-        JSON.stringify({ error: 'La cuota seleccionada ya está pagada' }),
+        JSON.stringify({ code: 400, message: 'La cuota seleccionada ya está pagada' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -173,7 +191,7 @@ Deno.serve(async (req) => {
 
     if (updateCuotaError) {
       return new Response(
-        JSON.stringify({ error: updateCuotaError.message }),
+        JSON.stringify({ code: 400, message: updateCuotaError.message }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -197,7 +215,10 @@ Deno.serve(async (req) => {
 
     if (pagoError || !pagoInsertado) {
       return new Response(
-        JSON.stringify({ error: pagoError?.message || 'No se pudo guardar el pago' }),
+        JSON.stringify({
+          code: 400,
+          message: pagoError?.message || 'No se pudo guardar el pago',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -220,7 +241,7 @@ Deno.serve(async (req) => {
 
     if (detalleError) {
       return new Response(
-        JSON.stringify({ error: detalleError.message }),
+        JSON.stringify({ code: 400, message: detalleError.message }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -236,7 +257,7 @@ Deno.serve(async (req) => {
 
     if (cuotasRestantesError) {
       return new Response(
-        JSON.stringify({ error: cuotasRestantesError.message }),
+        JSON.stringify({ code: 400, message: cuotasRestantesError.message }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -267,7 +288,7 @@ Deno.serve(async (req) => {
 
     if (updatePrestamoError) {
       return new Response(
-        JSON.stringify({ error: updatePrestamoError.message }),
+        JSON.stringify({ code: 400, message: updatePrestamoError.message }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -305,7 +326,8 @@ Deno.serve(async (req) => {
   } catch (error) {
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : 'Error interno',
+        code: 500,
+        message: error instanceof Error ? error.message : 'Error interno',
       }),
       {
         status: 500,
