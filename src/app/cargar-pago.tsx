@@ -95,10 +95,13 @@ function formatearMonedaInput(valor: string) {
 }
 
 function formatearMoneda(valor: number) {
-  return '$' + new Intl.NumberFormat('es-AR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(valor || 0))
+  return (
+    '$' +
+    new Intl.NumberFormat('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(valor || 0))
+  )
 }
 
 function formatearFecha(fecha?: string | null) {
@@ -372,6 +375,7 @@ export default function CargarPago() {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
+            apikey: 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7',
           },
           body: JSON.stringify(payload),
         }
@@ -395,15 +399,26 @@ export default function CargarPago() {
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
 
-      const data = await res.json()
-
-router.replace({
-  pathname: '/pago-aprobado',
-  params: {
-    cuotas_impactadas: JSON.stringify(data.cuotas_impactadas),
-    proxima_cuota: data.proxima_cuota?.numero_cuota,
-  },
-})
+      router.replace({
+        pathname: '/pago-aprobado',
+        params: {
+          monto: String(Number(montoAplicado.toFixed(2))),
+          monto_ingresado: String(Number(montoNumero.toFixed(2))),
+          vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
+          metodo,
+          fecha: new Date().toLocaleString('es-AR'),
+          saldo_restante: String(saldoRestantePrestamo),
+          saldo_restante_cuota: String(saldoRestanteCuota),
+          cuota_id: cuotaSeleccionada.id,
+          numero_cuota: String(cuotaSeleccionada.numero_cuota),
+          cuotas_impactadas: JSON.stringify(json?.cuotas_impactadas || []),
+          proxima_cuota: json?.proxima_cuota?.numero_cuota
+            ? String(json.proxima_cuota.numero_cuota)
+            : '',
+          prestamo_id: prestamoSeleccionado.id,
+          cliente_id: clienteSeleccionado.id,
+        },
+      })
     } catch (error: any) {
       console.log('ERROR REGISTRAR PAGO CATCH:', error)
       Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
