@@ -363,6 +363,7 @@ export default function CargarPago() {
   monto: Number(montoAplicado.toFixed(2)),
   monto_ingresado: Number(montoNumero.toFixed(2)),
   metodo,
+  aplicar_a_multiples: true,
 }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
