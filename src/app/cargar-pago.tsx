@@ -395,21 +395,15 @@ export default function CargarPago() {
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
 
-      router.replace({
-        pathname: '/pago-aprobado' as any,
-        params: {
-          cliente_id: clienteSeleccionado.id,
-          prestamo_id: prestamoSeleccionado.id,
-          cuota_id: cuotaSeleccionada.id,
-          numero_cuota: String(json?.numero_cuota || cuotaSeleccionada.numero_cuota),
-          monto: String(payload.monto),
-          monto_ingresado: String(payload.monto_ingresado),
-          vuelto: String(payload.vuelto),
-          metodo,
-          saldo_restante: String(saldoRestantePrestamo),
-          saldo_restante_cuota: String(saldoRestanteCuota),
-        },
-      })
+      const data = await res.json()
+
+router.replace({
+  pathname: '/pago-aprobado',
+  params: {
+    cuotas_impactadas: JSON.stringify(data.cuotas_impactadas),
+    proxima_cuota: data.proxima_cuota?.numero_cuota,
+  },
+})
     } catch (error: any) {
       console.log('ERROR REGISTRAR PAGO CATCH:', error)
       Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
