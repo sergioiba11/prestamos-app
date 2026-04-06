@@ -42,7 +42,11 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
     const supabaseAuth = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
     })
 
     const {
@@ -52,7 +56,10 @@ Deno.serve(async (req) => {
 
     if (userError || !user) {
       return new Response(
-        JSON.stringify({ error: 'Invalid JWT' }),
+        JSON.stringify({
+          error: 'Invalid JWT',
+          detalle: userError?.message || null,
+        }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -273,7 +280,6 @@ Deno.serve(async (req) => {
     const { error: updatePrestamoError } = await supabase
       .from('prestamos')
       .update({
-        total_a_pagar: saldo_restante,
         estado: todasPagadas ? 'pagado' : 'activo',
       })
       .eq('id', prestamo_id)
