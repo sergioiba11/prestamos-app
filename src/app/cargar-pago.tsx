@@ -367,8 +367,8 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-      const res = await fetch(
-  `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/registrar-pago`,
+     const res = await fetch(
+  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
   {
     method: 'POST',
     headers: {
