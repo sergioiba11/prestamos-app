@@ -23,9 +23,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization')
 
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return new Response(
         JSON.stringify({ error: 'Falta Authorization header' }),
         {
@@ -38,27 +38,20 @@ Deno.serve(async (req) => {
     const token = authHeader.replace('Bearer ', '').trim()
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    const supabaseAuth = createClient(supabaseUrl, anonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    })
+    const supabase = createClient(supabaseUrl, serviceRoleKey)
 
     const {
       data: { user },
       error: userError,
-    } = await supabaseAuth.auth.getUser(token)
+    } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
       return new Response(
         JSON.stringify({
           error: 'Invalid JWT',
-          detalle: userError?.message || null,
+          detalle: userError?.message || 'Token inválido o expirado',
         }),
         {
           status: 401,
@@ -66,8 +59,6 @@ Deno.serve(async (req) => {
         }
       )
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey)
 
     const body = await req.json().catch(() => null)
 
@@ -163,16 +154,6 @@ Deno.serve(async (req) => {
     const saldoAntes = Number(cuotaActual.saldo_pendiente || 0)
     const montoAplicado = Number(Math.min(monto, saldoAntes).toFixed(2))
     const saldoDespues = Number((saldoAntes - montoAplicado).toFixed(2))
-
-    if (montoAplicado <= 0) {
-      return new Response(
-        JSON.stringify({ error: 'No se pudo aplicar el pago a la cuota seleccionada' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
 
     const nuevoEstado =
       saldoDespues <= 0

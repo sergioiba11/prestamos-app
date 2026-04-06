@@ -61,11 +61,9 @@ function limpiarNumero(texto: string) {
 
 function textoAMonto(texto: string) {
   const limpio = limpiarNumero(texto)
-
   if (!limpio) return 0
 
   const partes = limpio.split(',')
-
   const enteros = partes[0] ? partes[0].replace(/^0+(?=\d)/, '') || '0' : '0'
   const decimales = (partes[1] || '').slice(0, 2)
 
@@ -288,7 +286,7 @@ export default function CargarPago() {
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
   const montoAplicado = Math.min(montoNumero, deudaActual)
   const vuelto = Math.max(0, montoNumero - deudaActual)
-  const saldoLuegoDelPago = Math.max(0, deudaActual - montoAplicado)
+  const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicado)
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -345,7 +343,11 @@ export default function CargarPago() {
         error: sessionError,
       } = await supabase.auth.getSession()
 
-      if (sessionError || !session?.access_token || !session?.user?.id) {
+      console.log('SESSION ERROR REGISTRAR PAGO:', sessionError)
+      console.log('SESSION USER REGISTRAR PAGO:', session?.user)
+      console.log('ACCESS TOKEN REGISTRAR PAGO:', session?.access_token)
+
+      if (sessionError || !session || !session.access_token || !session.user?.id) {
         Alert.alert('Error', 'La sesión expiró. Volvé a iniciar sesión.')
         return
       }
@@ -388,8 +390,9 @@ export default function CargarPago() {
         return
       }
 
+      const saldoRestantePrestamo = Number(json?.saldo_restante || 0)
       const saldoRestanteCuota = Number(
-        json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPago
+        json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
 
       router.replace({
@@ -398,12 +401,13 @@ export default function CargarPago() {
           cliente_id: clienteSeleccionado.id,
           prestamo_id: prestamoSeleccionado.id,
           cuota_id: cuotaSeleccionada.id,
-          numero_cuota: String(cuotaSeleccionada.numero_cuota),
+          numero_cuota: String(json?.numero_cuota || cuotaSeleccionada.numero_cuota),
           monto: String(payload.monto),
           monto_ingresado: String(payload.monto_ingresado),
           vuelto: String(payload.vuelto),
           metodo,
-          saldo_restante: String(saldoRestanteCuota),
+          saldo_restante: String(saldoRestantePrestamo),
+          saldo_restante_cuota: String(saldoRestanteCuota),
         },
       })
     } catch (error: any) {
@@ -665,7 +669,7 @@ export default function CargarPago() {
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
                   <Text style={styles.resumeValue}>
-                    {formatearMoneda(saldoLuegoDelPago)}
+                    {formatearMoneda(saldoLuegoDelPagoCuota)}
                   </Text>
                 </View>
               </View>
