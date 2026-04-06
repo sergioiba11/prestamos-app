@@ -260,42 +260,43 @@ export default function CargarPago() {
       setGuardando(true)
 
       const {
-  data: { session },
-  error: sessionError,
-} = await supabase.auth.getSession()
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
 
-if (sessionError || !session?.access_token || !session?.user?.id) {
-  Alert.alert('Error', 'La sesión del usuario expiró. Volvé a iniciar sesión.')
-  return
-}
+      if (sessionError || !session?.access_token || !session?.user?.id) {
+        Alert.alert('Error', 'La sesión del usuario expiró. Volvé a iniciar sesión.')
+        return
+      }
 
-const payload = {
-  prestamo_id: prestamoSeleccionado.id,
-  cliente_id: prestamoSeleccionado.cliente_id,
-  monto: montoAplicado,
-  monto_ingresado: montoNumero,
-  vuelto,
-  metodo,
-}
+      const payload = {
+        prestamo_id: prestamoSeleccionado.id,
+        cliente_id: prestamoSeleccionado.cliente_id,
+        monto: montoAplicado,
+        monto_ingresado: montoNumero,
+        vuelto,
+        metodo,
+      }
 
-const res = await fetch(
-  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(payload),
-  }
-)
+      const res = await fetch(
+        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      )
 
-const json = await res.json().catch(() => null)
+      const json = await res.json().catch(() => null)
 
-if (!res.ok) {
-  Alert.alert('Error', json?.error || `Error ${res.status}`)
-  return
-}
+      if (!res.ok) {
+        Alert.alert('Error', json?.error || `Error ${res.status}`)
+        return
+      }
+
       router.replace({
         pathname: '/pago-aprobado' as any,
         params: {

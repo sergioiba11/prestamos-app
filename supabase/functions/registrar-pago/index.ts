@@ -9,7 +9,6 @@ type CuotaDb = {
   id: string
   numero_cuota: number
   monto_cuota: number | null
-  monto_pagado: number | null
   saldo_pendiente: number | null
   fecha_vencimiento: string
   estado: string | null
@@ -62,14 +61,14 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    const {
-      prestamo_id,
-      cliente_id,
-      monto,
-      metodo,
-      monto_ingresado,
-      vuelto,
-    } = await req.json()
+    const body = await req.json().catch(() => null)
+
+    const prestamo_id = body?.prestamo_id
+    const cliente_id = body?.cliente_id
+    const monto = body?.monto
+    const metodo = body?.metodo
+    const monto_ingresado = body?.monto_ingresado
+    const vuelto = body?.vuelto
 
     if (!prestamo_id || !cliente_id || !monto || !metodo) {
       return new Response(JSON.stringify({ error: 'Faltan datos' }), {
@@ -91,7 +90,7 @@ Deno.serve(async (req) => {
 
     const { data: prestamo, error: prestamoError } = await supabaseAdmin
       .from('prestamos')
-      .select('*')
+      .select('id, cliente_id, total_a_pagar, estado')
       .eq('id', prestamo_id)
       .single()
 
@@ -102,7 +101,21 @@ Deno.serve(async (req) => {
       })
     }
 
+    if (prestamo.cliente_id !== cliente_id) {
+      return new Response(JSON.stringify({ error: 'El préstamo no pertenece al cliente enviado' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const deudaActual = redondear(Number(prestamo.total_a_pagar || 0))
+
+    if (deudaActual <= 0) {
+      return new Response(JSON.stringify({ error: 'El préstamo no tiene deuda pendiente' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (montoAplicado > deudaActual) {
       return new Response(JSON.stringify({ error: 'Monto mayor a deuda' }), {
@@ -112,8 +125,8 @@ Deno.serve(async (req) => {
     }
 
     const { data: cuotasRaw, error: cuotasError } = await supabaseAdmin
-      .from('prestamo_cuotas')
-      .select('id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, fecha_vencimiento, estado')
+      .from('cuotas')
+      .select('id, numero_cuota, monto_cuota, saldo_pendiente, fecha_vencimiento, estado')
       .eq('prestamo_id', prestamo_id)
       .order('numero_cuota', { ascending: true })
 
@@ -146,18 +159,14 @@ Deno.serve(async (req) => {
       const aplicado = redondear(Math.min(restante, saldoCuota))
       if (aplicado <= 0) continue
 
-      const nuevoMontoPagado = redondear(Number(cuota.monto_pagado || 0) + aplicado)
       const nuevoSaldo = redondear(saldoCuota - aplicado)
       const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
 
       const { error: updateCuotaError } = await supabaseAdmin
-        .from('prestamo_cuotas')
+        .from('cuotas')
         .update({
-          monto_pagado: nuevoMontoPagado,
           saldo_pendiente: nuevoSaldo,
           estado: nuevoEstado,
-          pagada_at: nuevoSaldo <= 0 ? new Date().toISOString() : null,
-          pago_id: pagoId,
           updated_at: new Date().toISOString(),
         })
         .eq('id', cuota.id)
@@ -173,6 +182,7 @@ Deno.serve(async (req) => {
         cuota_id: cuota.id,
         numero_cuota: cuota.numero_cuota,
         fecha_vencimiento: cuota.fecha_vencimiento,
+        monto_cuota: redondear(Number(cuota.monto_cuota || 0)),
         aplicado,
         saldo_anterior: saldoCuota,
         saldo_nuevo: nuevoSaldo,
@@ -209,7 +219,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: cuotasActualizadasRaw, error: cuotasActualizadasError } = await supabaseAdmin
-      .from('prestamo_cuotas')
+      .from('cuotas')
       .select('id, numero_cuota, saldo_pendiente, fecha_vencimiento, estado')
       .eq('prestamo_id', prestamo_id)
       .order('numero_cuota', { ascending: true })
@@ -229,9 +239,21 @@ Deno.serve(async (req) => {
       estado: string | null
     }>
 
-    const siguientePendiente = cuotasActualizadas.find((cuota) => redondear(Number(cuota.saldo_pendiente || 0)) > 0) || null
-    const cuotasPagadas = cuotasActualizadas.filter((cuota) => redondear(Number(cuota.saldo_pendiente || 0)) <= 0).length
-    const nuevoSaldo = redondear(cuotasActualizadas.reduce((acc, cuota) => acc + Number(cuota.saldo_pendiente || 0), 0))
+    const siguientePendiente =
+      cuotasActualizadas.find(
+        (cuota) => redondear(Number(cuota.saldo_pendiente || 0)) > 0
+      ) || null
+
+    const cuotasPagadas = cuotasActualizadas.filter(
+      (cuota) => redondear(Number(cuota.saldo_pendiente || 0)) <= 0
+    ).length
+
+    const nuevoSaldo = redondear(
+      cuotasActualizadas.reduce(
+        (acc, cuota) => acc + Number(cuota.saldo_pendiente || 0),
+        0
+      )
+    )
 
     const { error: updatePrestamoError } = await supabaseAdmin
       .from('prestamos')
