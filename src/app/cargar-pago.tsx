@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { supabase } from '../lib/supabase'
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase'
 
 type Cliente = {
   id: string
@@ -376,27 +376,55 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-      const res = await fetch(
-        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
+      const { data: invokeData, error: invokeError } = await supabase.functions.invoke(
+        'registrar-pago',
         {
-          method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify(payload),
+          body: payload,
         }
       )
 
-      const json = await res.json()
+      let json: any = invokeData
+      console.log('ERROR INVOKE REGISTRAR PAGO:', invokeError)
+
+      if (invokeError) {
+        console.log('REINTENTO REGISTRAR PAGO: fetch directo con apikey')
+
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/registrar-pago`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(payload),
+        })
+
+        json = await res.json().catch(() => null)
+
+        console.log('STATUS REINTENTO REGISTRAR PAGO:', res.status)
+        console.log('RESPUESTA REINTENTO REGISTRAR PAGO:', json)
+
+        if (!res.ok) {
+          Alert.alert(
+            'Error',
+            json?.error ||
+              json?.detalle ||
+              invokeError.message ||
+              `No se pudo registrar el pago (HTTP ${res.status})`
+          )
+          return
+        }
+      }
 
       console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
-      console.log('STATUS REGISTRAR PAGO:', res.status)
 
-      if (!res.ok) {
+      if (!json) {
         Alert.alert(
           'Error',
-          json?.error || json?.detalle || 'No se pudo registrar el pago'
+          'La función respondió vacío. Intentá nuevamente.'
         )
         return
       }

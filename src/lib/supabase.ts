@@ -3,8 +3,8 @@ import { createClient, processLock } from '@supabase/supabase-js'
 import { AppState, Platform } from 'react-native'
 import 'react-native-url-polyfill/auto'
 
-const supabaseUrl = 'https://itnwdpwnbcqerpmyygcv.supabase.co'
-const supabaseAnonKey = 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7'
+export const SUPABASE_URL = 'https://itnwdpwnbcqerpmyygcv.supabase.co'
+export const SUPABASE_ANON_KEY = 'sb_publishable_UM8pd3LanUN-Z5wqbTNG6g_XN7K8mx7'
 
 const isWeb = Platform.OS === 'web'
 const isSSR = typeof window === 'undefined'
@@ -24,7 +24,7 @@ const webStorage = {
   },
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: isWeb ? webStorage : AsyncStorage,
     autoRefreshToken: true,
