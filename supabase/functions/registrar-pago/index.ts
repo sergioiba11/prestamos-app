@@ -10,6 +10,17 @@ function redondear(valor: number) {
   return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
 }
 
+function normalizarMetodoPago(metodo: unknown) {
+  const valor = String(metodo || '').trim().toLowerCase()
+  if (valor === 'mp' || valor === 'mercado_pago' || valor === 'mercado-pago') {
+    return 'mercadopago'
+  }
+  if (valor === 'efectivo' || valor === 'transferencia' || valor === 'mercadopago') {
+    return valor
+  }
+  return valor
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -70,7 +81,7 @@ Deno.serve(async (req) => {
     const cliente_id = body?.cliente_id
     const cuota_id_inicial = body?.cuota_id || null
     const numero_cuota_inicial = body?.numero_cuota || null
-    const metodo = body?.metodo
+    const metodo = normalizarMetodoPago(body?.metodo)
 
     const montoIngresado = redondear(Number(body?.monto_ingresado ?? body?.monto))
     const aplicarAMultiples = body?.aplicar_a_multiples !== false

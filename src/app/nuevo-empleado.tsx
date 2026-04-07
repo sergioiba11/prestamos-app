@@ -18,12 +18,18 @@ export default function NuevoEmpleado() {
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   const crearEmpleado = async () => {
     if (loading) return
 
-    if (!nombre.trim() || !email.trim() || !password.trim()) {
+    if (
+      !nombre.trim() ||
+      !email.trim() ||
+      !password.trim() ||
+      !adminPassword.trim()
+    ) {
       Alert.alert('Error', 'Completá todos los campos')
       return
     }
@@ -66,6 +72,7 @@ export default function NuevoEmpleado() {
             nombre: nombre.trim(),
             email: email.trim().toLowerCase(),
             password: password.trim(),
+            adminPassword: adminPassword.trim(),
           }),
         }
       )
@@ -92,6 +99,7 @@ export default function NuevoEmpleado() {
       setNombre('')
       setEmail('')
       setPassword('')
+      setAdminPassword('')
       router.back()
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Ocurrió un error inesperado')
@@ -128,6 +136,15 @@ export default function NuevoEmpleado() {
         placeholderTextColor="#94A3B8"
         value={password}
         onChangeText={setPassword}
+        secureTextEntry
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Tu contraseña de admin"
+        placeholderTextColor="#94A3B8"
+        value={adminPassword}
+        onChangeText={setAdminPassword}
         secureTextEntry
       />
 

@@ -550,8 +550,8 @@ export default function NuevoPrestamo() {
           numero_cuota: i,
           fecha_vencimiento: formatearFecha(fechaVencimiento),
           monto_cuota: montoCuota,
+          monto_pagado: 0,
           saldo_pendiente: montoCuota,
-          interes: 0,
           estado: 'pendiente',
         })
       }

@@ -9,3 +9,13 @@ entrypoint = "./functions/crear-empleado/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/crear-empleado/*.html" ]
+
+[functions.crear-cliente]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/crear-cliente/index.ts"
+
+[functions.registrar-pago]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/registrar-pago/index.ts"

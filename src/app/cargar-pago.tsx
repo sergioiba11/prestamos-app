@@ -44,6 +44,14 @@ type Cuota = {
   estado: string | null
 }
 
+type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
+type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercadopago'
+
+function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
+  if (metodo === 'mp') return 'mercadopago'
+  return metodo
+}
+
 function limpiarNumero(texto: string) {
   if (!texto) return ''
 
@@ -134,7 +142,7 @@ export default function CargarPago() {
   const [cuotaSeleccionada, setCuotaSeleccionada] = useState<Cuota | null>(null)
 
   const [monto, setMonto] = useState('')
-  const [metodo, setMetodo] = useState<'efectivo' | 'transferencia' | 'mp'>('efectivo')
+  const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
 
   useEffect(() => {
     cargarClientes()
@@ -356,40 +364,35 @@ export default function CargarPago() {
       }
 
       const payload = {
-  prestamo_id: prestamoSeleccionado.id,
-  cliente_id: clienteSeleccionado.id,
-  cuota_id: cuotaSeleccionada.id,
-  numero_cuota: cuotaSeleccionada.numero_cuota,
-  monto: Number(montoAplicado.toFixed(2)),
-  monto_ingresado: Number(montoNumero.toFixed(2)),
-  metodo,
-  aplicar_a_multiples: true,
-}
+        prestamo_id: prestamoSeleccionado.id,
+        cliente_id: clienteSeleccionado.id,
+        cuota_id: cuotaSeleccionada.id,
+        numero_cuota: cuotaSeleccionada.numero_cuota,
+        monto: Number(montoAplicado.toFixed(2)),
+        monto_ingresado: Number(montoNumero.toFixed(2)),
+        metodo: normalizarMetodoPago(metodo),
+        aplicar_a_multiples: true,
+      }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
-const res = await fetch(
-  'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`, // 🔥 CLAVE
-    },
-    body: JSON.stringify(payload),
-  }
-)
 
-const json = await res.json()
+      const { data: json, error: fnError } = await supabase.functions.invoke(
+        'registrar-pago',
+        {
+          body: payload,
+        }
+      )
 
-console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+      console.log('ERROR FUNCTION REGISTRAR PAGO:', fnError)
 
-if (!res.ok) {
-  Alert.alert(
-    'Error',
-    json?.error || 'No se pudo registrar el pago'
-  )
-  return
-}
+      if (fnError) {
+        Alert.alert(
+          'Error',
+          fnError.message || json?.error || 'No se pudo registrar el pago'
+        )
+        return
+      }
       const saldoRestantePrestamo = Number(json?.saldo_restante || 0)
       const saldoRestanteCuota = Number(
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
