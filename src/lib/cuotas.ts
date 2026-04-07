@@ -29,13 +29,31 @@ export function calcularFechaCuotaMensual(
   diaPagoMensual?: number | null
 ) {
   const fechaInicio = new Date(`${fechaInicioTexto}T00:00:00`)
-  const fecha = new Date(fechaInicio)
-  fecha.setMonth(fecha.getMonth() + numeroCuota)
+  const diaManual = Number(diaPagoMensual || 0)
+  const usaDiaManual = diaManual > 0
 
-  const diaBase = Number(diaPagoMensual || 0) > 0
-    ? Number(diaPagoMensual)
-    : fechaInicio.getDate()
+  const fechaBase = new Date(fechaInicio)
 
+  if (usaDiaManual) {
+    const diaInicio = fechaInicio.getDate()
+    if (diaInicio > diaManual) {
+      fechaBase.setMonth(fechaBase.getMonth() + 1)
+    }
+
+    const ultimoDiaBase = diasEnMes(fechaBase.getFullYear(), fechaBase.getMonth())
+    fechaBase.setDate(Math.min(diaManual, ultimoDiaBase))
+  } else {
+    fechaBase.setMonth(fechaBase.getMonth() + 1)
+    const ultimoDiaBase = diasEnMes(fechaBase.getFullYear(), fechaBase.getMonth())
+    fechaBase.setDate(Math.min(fechaInicio.getDate(), ultimoDiaBase))
+  }
+
+  const fecha = new Date(fechaBase)
+  if (numeroCuota > 1) {
+    fecha.setMonth(fecha.getMonth() + (numeroCuota - 1))
+  }
+
+  const diaBase = usaDiaManual ? diaManual : fechaBase.getDate()
   const ultimoDia = diasEnMes(fecha.getFullYear(), fecha.getMonth())
   fecha.setDate(Math.min(diaBase, ultimoDia))
 
