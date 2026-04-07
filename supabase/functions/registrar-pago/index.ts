@@ -21,6 +21,16 @@ function normalizarMetodoPago(metodo: unknown) {
   return valor
 }
 
+function extraerTokenBearer(authHeader: string | null) {
+  if (!authHeader) return null
+  const limpio = authHeader.trim()
+  if (!limpio) return null
+  if (limpio.toLowerCase().startsWith('bearer ')) {
+    return limpio.slice(7).trim()
+  }
+  return limpio
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -40,22 +50,27 @@ Deno.serve(async (req) => {
       )
     }
 
-    const supabaseAuth = createClient(
+    const token = extraerTokenBearer(authHeader)
+
+    if (!token) {
+      return new Response(
+        JSON.stringify({ error: 'Authorization inválido' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      {
-        global: {
-          headers: {
-            Authorization: authHeader,
-          },
-        },
-      }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
     const {
       data: { user },
       error: userError,
-    } = await supabaseAuth.auth.getUser()
+    } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
       return new Response(
@@ -69,11 +84,6 @@ Deno.serve(async (req) => {
         }
       )
     }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
 
     const body = await req.json()
 
