@@ -1,14 +1,14 @@
 {
-    "compilerOptions": {
-      "lib": ["deno.window", "deno.ns", "dom"]
-    },
-    "lint": {
-      "rules": {
-        "tags": ["recommended"]
-      }
-    },
-    "fmt": {
-      "semiColons": false,
-      "singleQuote": true
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns", "dom"]
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
     }
+  },
+  "fmt": {
+    "semiColons": false,
+    "singleQuote": true
   }
+}

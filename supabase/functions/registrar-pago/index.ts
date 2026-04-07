@@ -1,8 +1,10 @@
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -23,18 +25,32 @@ type DetallePago = {
   aplicado: number
 }
 
-function jsonResponse(body: unknown, status = 200) {
+type DenoLike = {
+  env?: {
+    get: (key: string) => string | undefined
+  }
+}
+
+function getEnv(key: string): string | undefined {
+  const denoGlobal = globalThis as typeof globalThis & { Deno?: DenoLike }
+  return denoGlobal.Deno?.env?.get(key)
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
   })
 }
 
-function redondear(valor: number) {
+function redondear(valor: number): number {
   return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
 }
 
-function normalizarMetodoPago(metodo: unknown) {
+function normalizarMetodoPago(metodo: unknown): string {
   const valor = String(metodo || '').trim().toLowerCase()
 
   if (['mp', 'mercado_pago', 'mercado-pago'].includes(valor)) {
@@ -48,25 +64,28 @@ function normalizarMetodoPago(metodo: unknown) {
   return ''
 }
 
-function extraerTokenBearer(authHeader: string | null) {
+function extraerTokenBearer(authHeader: string | null): string | null {
   if (!authHeader) return null
+
   const limpio = authHeader.trim()
   if (!limpio) return null
+
   if (limpio.toLowerCase().startsWith('bearer ')) {
     return limpio.slice(7).trim()
   }
+
   return limpio
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const supabaseUrl = getEnv('SUPABASE_URL')
+    const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY')
+    const supabaseServiceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
       return jsonResponse({ error: 'Faltan variables de entorno' }, 500)
@@ -83,7 +102,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
       auth: {
         persistSession: false,
@@ -117,14 +138,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const montoIngresado = redondear(Number(body?.monto))
 
     if (!prestamo_id || !cliente_id || !metodo) {
-      return jsonResponse({ error: 'Faltan datos' }, 400)
+      return jsonResponse(
+        { error: 'Faltan datos: prestamo_id, cliente_id y metodo' },
+        400
+      )
     }
 
-    if (montoIngresado <= 0 || Number.isNaN(montoIngresado)) {
+    if (Number.isNaN(montoIngresado) || montoIngresado <= 0) {
       return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
-    const { data: cuotas, error } = await supabase
+    const { data: cuotas, error: cuotasError } = await supabase
       .from('cuotas')
       .select(
         'id, prestamo_id, cliente_id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, estado'
@@ -132,15 +156,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq('prestamo_id', prestamo_id)
       .eq('cliente_id', cliente_id)
       .in('estado', ['pendiente', 'parcial'])
-      .order('numero_cuota')
+      .order('numero_cuota', { ascending: true })
 
-    if (error) {
-      return jsonResponse({ error: error.message }, 500)
+    if (cuotasError) {
+      return jsonResponse({ error: cuotasError.message }, 500)
     }
 
     const cuotasTipadas = (cuotas ?? []) as CuotaRow[]
 
-    if (!cuotasTipadas.length) {
+    if (cuotasTipadas.length === 0) {
       return jsonResponse({ error: 'Sin cuotas pendientes' }, 400)
     }
 
@@ -157,17 +181,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const nuevoSaldo = redondear(saldo - aplicar)
       const nuevoPagado = redondear(Number(cuota.monto_pagado || 0) + aplicar)
 
-      const { error: errUpdate } = await supabase
+      const { error: updateError } = await supabase
         .from('cuotas')
         .update({
           monto_pagado: nuevoPagado,
           saldo_pendiente: nuevoSaldo,
           estado: nuevoSaldo <= 0 ? 'pagada' : 'parcial',
+          fecha_pago: new Date().toISOString(),
         })
         .eq('id', cuota.id)
 
-      if (errUpdate) {
-        return jsonResponse({ error: errUpdate.message }, 500)
+      if (updateError) {
+        return jsonResponse({ error: updateError.message }, 500)
       }
 
       detalle.push({
@@ -180,7 +205,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const totalAplicado = redondear(
-      detalle.reduce((acc: number, item: DetallePago) => acc + item.aplicado, 0)
+      detalle.reduce(
+        (acc: number, item: DetallePago) => acc + item.aplicado,
+        0
+      )
     )
 
     if (totalAplicado <= 0) {
@@ -207,6 +235,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ok: true,
       pago,
       detalle,
+      total_aplicado: totalAplicado,
+      monto_ingresado: montoIngresado,
       vuelto: redondear(montoIngresado - totalAplicado),
     })
   } catch (err: unknown) {
