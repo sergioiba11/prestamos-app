@@ -6,19 +6,33 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 function redondear(valor: number) {
   return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
 }
 
 function normalizarMetodoPago(metodo: unknown) {
   const valor = String(metodo || '').trim().toLowerCase()
+
   if (valor === 'mp' || valor === 'mercado_pago' || valor === 'mercado-pago') {
     return 'mercadopago'
   }
-  if (valor === 'efectivo' || valor === 'transferencia' || valor === 'mercadopago') {
+
+  if (
+    valor === 'efectivo' ||
+    valor === 'transferencia' ||
+    valor === 'mercadopago'
+  ) {
     return valor
   }
-  return valor
+
+  return ''
 }
 
 Deno.serve(async (req) => {
@@ -27,53 +41,83 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader =
-      req.headers.get('authorization') || req.headers.get('Authorization')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Falta Authorization header' }),
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+      return jsonResponse(
         {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+          error: 'Faltan variables de entorno en la función',
+          detalle: {
+            hasUrl: Boolean(supabaseUrl),
+            hasAnonKey: Boolean(supabaseAnonKey),
+            hasServiceRoleKey: Boolean(supabaseServiceRoleKey),
+          },
+        },
+        500
       )
     }
 
-    const supabaseAuth = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      {
-        global: {
-          headers: {
-            Authorization: authHeader,
-          },
+    const authHeader =
+      req.headers.get('authorization') || req.headers.get('Authorization')
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return jsonResponse(
+        {
+          error: 'Authorization header inválido',
+          detalle: 'Debe venir como: Bearer TOKEN',
         },
-      }
-    )
+        401
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '').trim()
+
+    if (!token) {
+      return jsonResponse(
+        {
+          error: 'Token vacío',
+        },
+        401
+      )
+    }
+
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    })
 
     const {
       data: { user },
       error: userError,
-    } = await supabaseAuth.auth.getUser()
+    } = await supabaseAuth.auth.getUser(token)
 
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({
+      return jsonResponse(
+        {
           error: 'Token inválido o usuario no autenticado',
           detalle: userError?.message || null,
-        }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        },
+        401
       )
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    })
 
     const body = await req.json()
 
@@ -82,30 +126,22 @@ Deno.serve(async (req) => {
     const cuota_id_inicial = body?.cuota_id || null
     const numero_cuota_inicial = body?.numero_cuota || null
     const metodo = normalizarMetodoPago(body?.metodo)
-
-    const montoIngresado = redondear(Number(body?.monto_ingresado ?? body?.monto))
+    const montoIngresado = redondear(
+      Number(body?.monto_ingresado ?? body?.monto)
+    )
     const aplicarAMultiples = body?.aplicar_a_multiples !== false
 
     if (!prestamo_id || !cliente_id || !metodo) {
-      return new Response(
-        JSON.stringify({
-          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, metodo',
-        }),
+      return jsonResponse(
         {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, metodo',
+        },
+        400
       )
     }
 
     if (Number.isNaN(montoIngresado) || montoIngresado <= 0) {
-      return new Response(
-        JSON.stringify({ error: 'Monto inválido' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
     const { data: prestamo, error: prestamoError } = await supabase
@@ -115,26 +151,17 @@ Deno.serve(async (req) => {
       .single()
 
     if (prestamoError || !prestamo) {
-      return new Response(
-        JSON.stringify({ error: 'Préstamo no encontrado' }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: 'Préstamo no encontrado' }, 404)
     }
 
     if (prestamo.cliente_id !== cliente_id) {
-      return new Response(
-        JSON.stringify({ error: 'El préstamo no pertenece al cliente enviado' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+      return jsonResponse(
+        { error: 'El préstamo no pertenece al cliente enviado' },
+        400
       )
     }
 
-    let cuotasQuery = supabase
+    const { data: cuotasPendientes, error: cuotasError } = await supabase
       .from('cuotas')
       .select(`
         id,
@@ -152,25 +179,14 @@ Deno.serve(async (req) => {
       .in('estado', ['pendiente', 'parcial'])
       .order('numero_cuota', { ascending: true })
 
-    const { data: cuotasPendientes, error: cuotasError } = await cuotasQuery
-
     if (cuotasError) {
-      return new Response(
-        JSON.stringify({ error: cuotasError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: cuotasError.message }, 500)
     }
 
     if (!cuotasPendientes || cuotasPendientes.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'El préstamo no tiene cuotas pendientes' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+      return jsonResponse(
+        { error: 'El préstamo no tiene cuotas pendientes' },
+        400
       )
     }
 
@@ -180,25 +196,25 @@ Deno.serve(async (req) => {
       const index = cuotasPendientes.findIndex((c) => c.id === cuota_id_inicial)
 
       if (index === -1) {
-        return new Response(
-          JSON.stringify({ error: 'La cuota seleccionada no pertenece a ese préstamo o no está pendiente' }),
+        return jsonResponse(
           {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
+            error:
+              'La cuota seleccionada no pertenece a ese préstamo o no está pendiente',
+          },
+          404
         )
       }
 
       if (
         numero_cuota_inicial &&
-        Number(numero_cuota_inicial) !== Number(cuotasPendientes[index].numero_cuota)
+        Number(numero_cuota_inicial) !==
+          Number(cuotasPendientes[index].numero_cuota)
       ) {
-        return new Response(
-          JSON.stringify({ error: 'El número de cuota no coincide con la cuota seleccionada' }),
+        return jsonResponse(
           {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
+            error: 'El número de cuota no coincide con la cuota seleccionada',
+          },
+          400
         )
       }
 
@@ -207,18 +223,29 @@ Deno.serve(async (req) => {
 
     let restante = montoIngresado
     const cuotasImpactadas: number[] = []
-    const detalleAplicacion: any[] = []
+    const detalleAplicacion: Array<{
+      cuota_id: string
+      numero_cuota: number
+      monto_aplicado: number
+      saldo_cuota_antes: number
+      saldo_cuota_despues: number
+      estado_resultante: string
+    }> = []
 
     for (const cuota of cuotasAProcesar) {
       if (restante <= 0) break
 
-      const saldoAnterior = redondear(Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0))
+      const saldoAnterior = redondear(
+        Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
+      )
       const pagadoAnterior = redondear(Number(cuota.monto_pagado ?? 0))
 
       if (saldoAnterior <= 0) continue
 
       const montoAplicado = redondear(
-        aplicarAMultiples ? Math.min(restante, saldoAnterior) : Math.min(montoIngresado, saldoAnterior)
+        aplicarAMultiples
+          ? Math.min(restante, saldoAnterior)
+          : Math.min(montoIngresado, saldoAnterior)
       )
 
       if (montoAplicado <= 0) continue
@@ -238,13 +265,7 @@ Deno.serve(async (req) => {
         .eq('id', cuota.id)
 
       if (updateCuotaError) {
-        return new Response(
-          JSON.stringify({ error: updateCuotaError.message }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        )
+        return jsonResponse({ error: updateCuotaError.message }, 500)
       }
 
       cuotasImpactadas.push(Number(cuota.numero_cuota))
@@ -261,16 +282,16 @@ Deno.serve(async (req) => {
     }
 
     const totalAplicado = redondear(
-      detalleAplicacion.reduce((acc, item) => acc + Number(item.monto_aplicado || 0), 0)
+      detalleAplicacion.reduce(
+        (acc, item) => acc + Number(item.monto_aplicado || 0),
+        0
+      )
     )
 
     if (totalAplicado <= 0) {
-      return new Response(
-        JSON.stringify({ error: 'No se pudo aplicar el pago a ninguna cuota' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+      return jsonResponse(
+        { error: 'No se pudo aplicar el pago a ninguna cuota' },
+        400
       )
     }
 
@@ -289,12 +310,9 @@ Deno.serve(async (req) => {
       .single()
 
     if (pagoError || !pago) {
-      return new Response(
-        JSON.stringify({ error: pagoError?.message || 'No se pudo crear el pago' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+      return jsonResponse(
+        { error: pagoError?.message || 'No se pudo crear el pago' },
+        500
       )
     }
 
@@ -314,13 +332,7 @@ Deno.serve(async (req) => {
       .insert(detalleRows)
 
     if (detalleError) {
-      return new Response(
-        JSON.stringify({ error: detalleError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: detalleError.message }, 500)
     }
 
     const { data: cuotasRestantes, error: cuotasRestantesError } = await supabase
@@ -340,17 +352,14 @@ Deno.serve(async (req) => {
       .order('numero_cuota', { ascending: true })
 
     if (cuotasRestantesError) {
-      return new Response(
-        JSON.stringify({ error: cuotasRestantesError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: cuotasRestantesError.message }, 500)
     }
 
     const saldoRestante = redondear(
-      (cuotasRestantes || []).reduce((acc, item) => acc + Number(item.saldo_pendiente || 0), 0)
+      (cuotasRestantes || []).reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      )
     )
 
     const nuevoEstadoPrestamo = saldoRestante <= 0 ? 'pagado' : 'activo'
@@ -363,44 +372,39 @@ Deno.serve(async (req) => {
       .eq('id', prestamo_id)
 
     if (updatePrestamoError) {
-      return new Response(
-        JSON.stringify({ error: updatePrestamoError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse({ error: updatePrestamoError.message }, 500)
     }
 
     const proximaCuota = cuotasRestantes?.[0] || null
+    const cuotaActualizada =
+      detalleAplicacion.length > 0
+        ? {
+            cuota_id: detalleAplicacion[0].cuota_id,
+            numero_cuota: detalleAplicacion[0].numero_cuota,
+            saldo_despues: detalleAplicacion[0].saldo_cuota_despues,
+            estado: detalleAplicacion[0].estado_resultante,
+          }
+        : null
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        pago,
-        cuotas_impactadas: cuotasImpactadas,
-        detalle_aplicacion: detalleAplicacion,
-        total_aplicado: totalAplicado,
-        monto_ingresado: montoIngresado,
-        vuelto,
-        saldo_restante: saldoRestante,
-        proxima_cuota: proximaCuota,
-        prestamo_estado: nuevoEstadoPrestamo,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return jsonResponse({
+      ok: true,
+      pago,
+      cuotas_impactadas: cuotasImpactadas,
+      detalle_aplicacion: detalleAplicacion,
+      total_aplicado: totalAplicado,
+      monto_ingresado: montoIngresado,
+      vuelto,
+      saldo_restante: saldoRestante,
+      cuota_actualizada: cuotaActualizada,
+      proxima_cuota: proximaCuota,
+      prestamo_estado: nuevoEstadoPrestamo,
+    })
   } catch (error) {
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : 'Error interno',
-      }),
+    return jsonResponse(
       {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+        error: error instanceof Error ? error.message : 'Error interno',
+      },
+      500
     )
   }
 })
