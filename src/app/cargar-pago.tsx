@@ -463,58 +463,9 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-<<<<<<< HEAD
-      const { data: invokeData, error: invokeError } = await supabase.functions.invoke(
-        'registrar-pago',
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: payload,
-        }
-      )
-
-      let json: any = invokeData
-      console.log('ERROR INVOKE REGISTRAR PAGO:', invokeError)
-
-      if (invokeError) {
-        console.log('REINTENTO REGISTRAR PAGO: fetch directo con apikey')
-
-        const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify(payload),
-        })
-
-        json = await res.json().catch(() => null)
-
-        console.log('STATUS REINTENTO REGISTRAR PAGO:', res.status)
-        console.log('RESPUESTA REINTENTO REGISTRAR PAGO:', json)
-
-        if (!res.ok) {
-          Alert.alert(
-            'Error',
-            json?.error ||
-              json?.detalle ||
-              invokeError.message ||
-              `No se pudo registrar el pago (HTTP ${res.status})`
-          )
-          return
-        }
-      }
-
-      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
-
-      if (!json) {
-=======
       const json = await invocarFuncionConFallback(session.access_token, payload)
 
       if (!json || json.error) {
->>>>>>> origin/main
         Alert.alert(
           'Error',
           'La función respondió vacío. Intentá nuevamente.'
