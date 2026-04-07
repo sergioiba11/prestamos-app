@@ -176,10 +176,11 @@ function calcularMoraDiaria(
 export default function ClienteDetalle() {
   const params = useLocalSearchParams()
 
+  // ✅ FIX: unificado a cliente_id (todos los navegadores usan este param)
   const clienteId = useMemo(() => {
-    const raw = params.id ?? params.cliente_id
+    const raw = params.cliente_id
     if (Array.isArray(raw)) return raw[0]
-    return raw
+    return typeof raw === 'string' ? raw : undefined
   }, [params])
 
   const [cliente, setCliente] = useState<Cliente | null>(null)
@@ -453,6 +454,18 @@ export default function ClienteDetalle() {
                 <Text style={styles.label}>Estado guardado: </Text>
                 {p.estado || 'pendiente'}
               </Text>
+
+              <TouchableOpacity
+                style={styles.pagoButton}
+                onPress={() =>
+                  router.push({
+                    pathname: '/cargar-pago',
+                    params: { cliente_id: cliente.id },
+                  } as any)
+                }
+              >
+                <Text style={styles.pagoButtonText}>💵 Cargar pago</Text>
+              </TouchableOpacity>
             </View>
           )
         })
@@ -541,5 +554,18 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: 'bold',
     marginTop: 8,
+    marginBottom: 12,
+  },
+  pagoButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  pagoButtonText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 15,
   },
 })

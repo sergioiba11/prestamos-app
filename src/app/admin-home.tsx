@@ -352,6 +352,7 @@ export default function AdminHome() {
     return fechaA - fechaB
   })
 }, [clientes, prestamos])
+
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
@@ -362,8 +363,9 @@ export default function AdminHome() {
   const irNuevoEmpleado = () => router.push('/nuevo-empleado' as any)
   const irConfiguraciones = () => router.push('/configuraciones' as any)
 
+  // ✅ FIX: usando cliente_id consistentemente (igual que cargar-pago y nuevo-prestamo)
   const verCliente = (clienteId: string) =>
-    router.push({ pathname: '/cliente-detalle', params: { id: clienteId } } as any)
+    router.push({ pathname: '/cliente-detalle', params: { cliente_id: clienteId } } as any)
 
   const cargarPago = (clienteId: string) =>
     router.push({ pathname: '/cargar-pago', params: { cliente_id: clienteId } } as any)

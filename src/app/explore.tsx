@@ -1,22 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native'
+import { Redirect } from 'expo-router'
 
-export default function ExploreScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Pantalla explore</Text>
-    </View>
-  )
+// Pantalla no utilizada — redirige al inicio
+export default function Explore() {
+  return <Redirect href="/login" />
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  text: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-})
