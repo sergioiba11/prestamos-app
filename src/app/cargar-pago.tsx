@@ -47,42 +47,6 @@ type Cuota = {
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercadopago'
 
-type RegistrarPagoResponse = {
-  ok?: boolean
-  error?: string
-  detalle?: string
-  pago?: any
-  cuotas_impactadas?: number[]
-  detalle_aplicacion?: Array<{
-    cuota_id: string
-    numero_cuota: number
-    monto_aplicado: number
-    saldo_cuota_antes: number
-    saldo_cuota_despues: number
-    estado_resultante: string
-  }>
-  total_aplicado?: number
-  monto_ingresado?: number
-  vuelto?: number
-  saldo_restante?: number
-  cuota_actualizada?: {
-    cuota_id: string
-    numero_cuota: number
-    saldo_despues: number
-    estado: string
-  } | null
-  proxima_cuota?: {
-    id: string
-    numero_cuota: number
-    monto_cuota: number | null
-    monto_pagado: number | null
-    saldo_pendiente: number | null
-    estado: string | null
-    fecha_vencimiento: string | null
-  } | null
-  prestamo_estado?: string
-}
-
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
   if (metodo === 'mp') return 'mercadopago'
   return metodo
@@ -354,57 +318,6 @@ export default function CargarPago() {
     setMetodo('efectivo')
   }
 
-  const invocarFuncionConFallback = async (
-    accessToken: string,
-    payload: Record<string, any>
-  ): Promise<RegistrarPagoResponse> => {
-    const { data, error } = await supabase.functions.invoke('registrar-pago', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: payload,
-    })
-
-    console.log('RESPUESTA REGISTRAR PAGO JSON:', data)
-    console.log('ERROR INVOKE REGISTRAR PAGO:', error)
-
-    if (!error) {
-      return (data || {}) as RegistrarPagoResponse
-    }
-
-    console.log('FALLBACK REGISTRAR PAGO: intento por fetch directo')
-
-    const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(payload),
-    })
-
-    let json: RegistrarPagoResponse = {}
-    try {
-      json = (await res.json()) as RegistrarPagoResponse
-    } catch {
-      json = {}
-    }
-
-    console.log('STATUS FETCH FALLBACK REGISTRAR PAGO:', res.status)
-    console.log('RESPUESTA FETCH FALLBACK REGISTRAR PAGO:', json)
-
-    if (!res.ok) {
-      throw new Error(
-        json?.error ||
-          json?.detalle ||
-          `No se pudo registrar el pago (${res.status})`
-      )
-    }
-
-    return json
-  }
-
   const registrarPago = async () => {
     if (guardando) return
 
@@ -463,16 +376,58 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-      const json = await invocarFuncionConFallback(session.access_token, payload)
+      const { data: invokeData, error: invokeError } = await supabase.functions.invoke(
+        'registrar-pago',
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: payload,
+        }
+      )
 
-      if (!json || json.error) {
+      let json: any = invokeData
+      console.log('ERROR INVOKE REGISTRAR PAGO:', invokeError)
+
+      if (invokeError) {
+        console.log('REINTENTO REGISTRAR PAGO: fetch directo con apikey')
+
+        const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(payload),
+        })
+
+        json = await res.json().catch(() => null)
+
+        console.log('STATUS REINTENTO REGISTRAR PAGO:', res.status)
+        console.log('RESPUESTA REINTENTO REGISTRAR PAGO:', json)
+
+        if (!res.ok) {
+          Alert.alert(
+            'Error',
+            json?.error ||
+              json?.detalle ||
+              invokeError.message ||
+              `No se pudo registrar el pago (HTTP ${res.status})`
+          )
+          return
+        }
+      }
+
+      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
+
+      if (!json) {
         Alert.alert(
           'Error',
           'La función respondió vacío. Intentá nuevamente.'
         )
         return
       }
-
       const saldoRestantePrestamo = Number(json?.saldo_restante || 0)
       const saldoRestanteCuota = Number(
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
