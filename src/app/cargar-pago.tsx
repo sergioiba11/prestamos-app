@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 
 type Cliente = {
   id: string
@@ -392,11 +392,11 @@ export default function CargarPago() {
       if (invokeError) {
         console.log('REINTENTO REGISTRAR PAGO: fetch directo con apikey')
 
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/registrar-pago`, {
+        const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            apikey: SUPABASE_ANON_KEY,
+            apikey: supabaseAnonKey,
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify(payload),
