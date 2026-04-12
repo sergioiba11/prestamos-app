@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 
 type Cliente = {
   id: string
@@ -46,6 +46,20 @@ type Cuota = {
 
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercadopago'
+type RegistrarPagoResponse = {
+  ok?: boolean
+  error?: string
+  detalle?: string
+  saldo_restante?: number
+  vuelto?: number
+  cuotas_impactadas?: number[]
+  cuota_actualizada?: {
+    saldo_despues?: number
+  } | null
+  proxima_cuota?: {
+    numero_cuota?: number
+  } | null
+}
 
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
   if (metodo === 'mp') return 'mercadopago'
@@ -318,6 +332,55 @@ export default function CargarPago() {
     setMetodo('efectivo')
   }
 
+  const invocarFuncionConFallback = async (
+    accessToken: string,
+    payload: Record<string, any>
+  ): Promise<RegistrarPagoResponse> => {
+    const { data, error } = await supabase.functions.invoke('registrar-pago', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: payload,
+    })
+
+    console.log('RESPUESTA REGISTRAR PAGO JSON:', data)
+    console.log('ERROR INVOKE REGISTRAR PAGO:', error)
+
+    if (!error) return (data || {}) as RegistrarPagoResponse
+
+    console.log('FALLBACK REGISTRAR PAGO: intento por fetch directo')
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    let json: RegistrarPagoResponse = {}
+    try {
+      json = (await res.json()) as RegistrarPagoResponse
+    } catch {
+      json = {}
+    }
+
+    console.log('STATUS FETCH FALLBACK REGISTRAR PAGO:', res.status)
+    console.log('RESPUESTA FETCH FALLBACK REGISTRAR PAGO:', json)
+
+    if (!res.ok) {
+      throw new Error(
+        json?.error ||
+          json?.detalle ||
+          `No se pudo registrar el pago (${res.status})`
+      )
+    }
+
+    return json
+  }
+
   const registrarPago = async () => {
     if (guardando) return
 
@@ -376,24 +439,9 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-      const res = await fetch(
-        'https://itnwdpwnbcqerpmyygcv.supabase.co/functions/v1/registrar-pago',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify(payload),
-        }
-      )
+      const json = await invocarFuncionConFallback(session.access_token, payload)
 
-      const json = await res.json()
-
-      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
-      console.log('STATUS REGISTRAR PAGO:', res.status)
-
-      if (!res.ok) {
+      if (!json || json.error) {
         Alert.alert(
           'Error',
           json?.error || json?.detalle || 'No se pudo registrar el pago'

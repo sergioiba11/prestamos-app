@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { abrirFacturaImprimibleWeb } from '../lib/factura'
 
 function formatearMoneda(valor: number) {
   return (
@@ -61,6 +62,26 @@ export default function PagoAprobado() {
     }
   }
 
+  const generarFactura = () => {
+    if (Platform.OS !== 'web') {
+      return
+    }
+
+    abrirFacturaImprimibleWeb({
+      titulo: 'Factura de pago',
+      fechaEmision: fecha,
+      clienteId: typeof clienteId === 'string' ? clienteId : '',
+      prestamoId: typeof prestamoId === 'string' ? prestamoId : '',
+      metodoPago: metodo,
+      montoPagado: monto,
+      montoRecibido: montoIngresado,
+      vuelto,
+      saldoRestante: saldo,
+      cuotasImpactadas: cuotasAplicadas,
+      proximaCuota,
+    })
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>✅ Pago aprobado</Text>
@@ -95,6 +116,12 @@ export default function PagoAprobado() {
         <Text style={styles.label}>ID préstamo</Text>
         <Text style={styles.valueSmall}>{obtenerTextoSeguro(prestamoId)}</Text>
       </View>
+
+      {Platform.OS === 'web' ? (
+        <TouchableOpacity style={styles.button} onPress={generarFactura}>
+          <Text style={styles.buttonText}>🧾 Generar factura (PDF/Imprimir)</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {Platform.OS === 'web' ? (
         <TouchableOpacity style={styles.button} onPress={imprimir}>

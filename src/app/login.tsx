@@ -277,8 +277,8 @@ export default function Login() {
     }
   }
 
-  return (
-    <View style={styles.container}>
+  const contenidoLogin = (
+    <>
       <Text style={styles.title}>Iniciar sesión</Text>
 
       <TextInput
@@ -349,6 +349,21 @@ export default function Login() {
       >
         <Text style={styles.secondaryText}>¿No tenés cuenta? Registrate</Text>
       </TouchableOpacity>
+    </>
+  )
+
+  return (
+    <View style={styles.container}>
+      {Platform.OS === 'web' ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleLogin()
+          }}
+        >
+          {contenidoLogin}
+        </form>
+      ) : contenidoLogin}
     </View>
   )
 }

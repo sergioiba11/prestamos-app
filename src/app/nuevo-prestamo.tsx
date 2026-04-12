@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
+import { calcularFechaCuotaMensual, construirCronogramaCuotas } from '../lib/cuotas'
 
 type Cliente = {
   id: string
@@ -93,26 +94,8 @@ function calcularPrimeraFechaMoraMensual(
   fechaInicioTexto: string,
   diaPagoMensual: number
 ) {
-  const fechaInicio = new Date(fechaInicioTexto + 'T00:00:00')
-  const year = fechaInicio.getFullYear()
-  const month = fechaInicio.getMonth()
-  const day = fechaInicio.getDate()
-
-  let targetYear = year
-  let targetMonth = month
-
-  if (day > diaPagoMensual) {
-    targetMonth += 1
-    if (targetMonth > 11) {
-      targetMonth = 0
-      targetYear += 1
-    }
-  }
-
-  const ultimoDiaDelMes = diasEnMes(targetYear, targetMonth)
-  const diaReal = Math.min(diaPagoMensual, ultimoDiaDelMes)
-
-  return new Date(targetYear, targetMonth, diaReal)
+  const fecha = calcularFechaCuotaMensual(fechaInicioTexto, 1, diaPagoMensual)
+  return new Date(`${fecha}T00:00:00`)
 }
 
 function limpiarNumero(texto: string) {
@@ -455,21 +438,35 @@ export default function NuevoPrestamo() {
       let fechaInicioMora = new Date(fechaBase)
       let diaPagoGuardar: number | null = null
 
+      const cronograma = construirCronogramaCuotas({
+        modalidad,
+        fechaInicio,
+        totalAPagar,
+        cuotas: modalidad === 'mensual' ? cuotasNumero : undefined,
+        diasPlazo: modalidad === 'diario' ? diasNumero : undefined,
+        diaPagoMensual:
+          modalidad === 'mensual' && habilitarDiaPagoManual
+            ? diaPagoMensualNumero
+            : null,
+      })
+
+      if (cronograma.length === 0) {
+        mostrarMensaje('Error', 'No se pudo generar el cronograma de cuotas')
+        return
+      }
+
       if (modalidad === 'mensual') {
         if (habilitarDiaPagoManual) {
-          fechaInicioMora = calcularPrimeraFechaMoraMensual(
-            fechaInicio,
-            diaPagoMensualNumero
-          )
+          fechaInicioMora = new Date(`${cronograma[0].fecha_vencimiento}T00:00:00`)
           diaPagoGuardar = diaPagoMensualNumero
-          fechaLimite = sumarMesesSeguro(
-            fechaBase,
-            cuotasNumero - 1,
-            diaPagoMensualNumero
+          fechaLimite = new Date(
+            `${cronograma[cronograma.length - 1].fecha_vencimiento}T00:00:00`
           )
         } else {
-          fechaInicioMora = sumarMesesSeguro(fechaBase, 1, null)
-          fechaLimite = sumarMesesSeguro(fechaBase, cuotasNumero, null)
+          fechaInicioMora = new Date(`${cronograma[0].fecha_vencimiento}T00:00:00`)
+          fechaLimite = new Date(
+            `${cronograma[cronograma.length - 1].fecha_vencimiento}T00:00:00`
+          )
         }
       } else {
         fechaInicioMora = new Date(fechaBase)
@@ -513,45 +510,17 @@ export default function NuevoPrestamo() {
         return
       }
 
-      const cantidadCuotas = modalidad === 'mensual' ? cuotasNumero : diasNumero
-      const valorBase = redondear2(totalAPagar / cantidadCuotas)
-
       const cuotasPayload: any[] = []
 
-      for (let i = 1; i <= cantidadCuotas; i++) {
-        let fechaVencimiento: Date
-
-        if (modalidad === 'mensual') {
-          if (habilitarDiaPagoManual && diaPagoMensualNumero >= 1 && diaPagoMensualNumero <= 31) {
-            fechaVencimiento =
-              i === 1
-                ? calcularPrimeraFechaMoraMensual(fechaInicio, diaPagoMensualNumero)
-                : sumarMesesSeguro(
-                    calcularPrimeraFechaMoraMensual(fechaInicio, diaPagoMensualNumero),
-                    i - 1,
-                    diaPagoMensualNumero
-                  )
-          } else {
-            fechaVencimiento = sumarMesesSeguro(fechaBase, i, null)
-          }
-        } else {
-          fechaVencimiento = new Date(fechaBase)
-          fechaVencimiento.setDate(fechaVencimiento.getDate() + i)
-        }
-
-        const montoCuota =
-          i === cantidadCuotas
-            ? redondear2(totalAPagar - valorBase * (cantidadCuotas - 1))
-            : valorBase
-
+      for (const cuota of cronograma) {
         cuotasPayload.push({
           prestamo_id: prestamoInsertado.id,
           cliente_id: clienteSeleccionado.id,
-          numero_cuota: i,
-          fecha_vencimiento: formatearFecha(fechaVencimiento),
-          monto_cuota: montoCuota,
+          numero_cuota: cuota.numero_cuota,
+          fecha_vencimiento: cuota.fecha_vencimiento,
+          monto_cuota: cuota.monto_cuota,
           monto_pagado: 0,
-          saldo_pendiente: montoCuota,
+          saldo_pendiente: cuota.monto_cuota,
           estado: 'pendiente',
         })
       }
