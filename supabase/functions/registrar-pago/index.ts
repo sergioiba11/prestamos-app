@@ -69,43 +69,16 @@ Deno.serve(async (req) => {
       )
     }
 
-<<<<<<< HEAD
-    const token = extraerTokenBearer(authHeader)
-
-    if (!token) {
-      return new Response(
-        JSON.stringify({ error: 'Authorization inválido' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
-=======
     const authHeader =
       req.headers.get('authorization') || req.headers.get('Authorization')
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = extraerTokenBearer(authHeader)
+
+    if (!token) {
       return jsonResponse(
         {
           error: 'Authorization header inválido',
           detalle: 'Debe venir como: Bearer TOKEN',
-        },
-        401
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '').trim()
-
-    if (!token) {
-      return jsonResponse(
-        {
-          error: 'Token vacío',
         },
         401
       )
@@ -123,16 +96,11 @@ Deno.serve(async (req) => {
         detectSessionInUrl: false,
       },
     })
->>>>>>> origin/main
 
     const {
       data: { user },
       error: userError,
-<<<<<<< HEAD
-    } = await supabase.auth.getUser(token)
-=======
     } = await supabaseAuth.auth.getUser(token)
->>>>>>> origin/main
 
     if (userError || !user) {
       return jsonResponse(
@@ -144,8 +112,6 @@ Deno.serve(async (req) => {
       )
     }
 
-<<<<<<< HEAD
-=======
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
         persistSession: false,
@@ -153,8 +119,6 @@ Deno.serve(async (req) => {
         detectSessionInUrl: false,
       },
     })
-
->>>>>>> origin/main
     const body = await req.json()
 
     const prestamo_id = body?.prestamo_id
