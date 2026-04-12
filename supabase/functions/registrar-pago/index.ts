@@ -52,16 +52,14 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
       return jsonResponse(
         {
           error: 'Faltan variables de entorno en la función',
           detalle: {
             hasUrl: Boolean(supabaseUrl),
-            hasAnonKey: Boolean(supabaseAnonKey),
             hasServiceRoleKey: Boolean(supabaseServiceRoleKey),
           },
         },
@@ -84,12 +82,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -100,7 +93,7 @@ Deno.serve(async (req) => {
     const {
       data: { user },
       error: userError,
-    } = await supabaseAuth.auth.getUser(token)
+    } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
       return jsonResponse(
@@ -112,13 +105,6 @@ Deno.serve(async (req) => {
       )
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    })
     const body = await req.json()
 
     const prestamo_id = body?.prestamo_id
