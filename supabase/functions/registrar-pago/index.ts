@@ -45,6 +45,62 @@ function extraerTokenBearer(authHeader: string | null) {
   return limpio
 }
 
+function formatearMonto(valor: number) {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(valor || 0))
+}
+
+async function enviarCorreoFactura({
+  to,
+  subject,
+  html,
+}: {
+  to: string[]
+  subject: string
+  html: string
+}) {
+  const resendApiKey = Deno.env.get('RESEND_API_KEY')
+  const remitente =
+    Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
+
+  if (!resendApiKey || !remitente || to.length === 0) {
+    return {
+      ok: false,
+      motivo:
+        'No se envió correo: faltan RESEND_API_KEY, RESEND_FROM_EMAIL/FACTURAS_FROM_EMAIL o destinatarios',
+    }
+  }
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: remitente,
+      to,
+      subject,
+      html,
+    }),
+  })
+
+  if (!res.ok) {
+    const detalle = await res.text()
+    return {
+      ok: false,
+      motivo: `Fallo envío de correo (${res.status})`,
+      detalle,
+    }
+  }
+
+  return { ok: true }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -372,6 +428,73 @@ Deno.serve(async (req) => {
           }
         : null
 
+    const { data: clienteData } = await supabase
+      .from('clientes')
+      .select('id, nombre, usuario_id')
+      .eq('id', cliente_id)
+      .maybeSingle()
+
+    const clienteNombre = String(clienteData?.nombre || 'Cliente')
+    const clienteUsuarioId = clienteData?.usuario_id || cliente_id
+
+    const { data: usuarioClienteData } = await supabase
+      .from('usuarios')
+      .select('email')
+      .eq('id', clienteUsuarioId)
+      .maybeSingle()
+
+    const { data: adminsData } = await supabase
+      .from('usuarios')
+      .select('email')
+      .eq('rol', 'admin')
+
+    const clienteEmail = String(usuarioClienteData?.email || '')
+      .trim()
+      .toLowerCase()
+
+    const adminEmails = (adminsData || [])
+      .map((item) => String(item?.email || '').trim().toLowerCase())
+      .filter(Boolean)
+
+    const destinatarios = Array.from(
+      new Set([clienteEmail, ...adminEmails].filter(Boolean))
+    )
+
+    const fechaPago = new Date().toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+    const cuotasTexto = cuotasImpactadas.length
+      ? cuotasImpactadas.map((n) => `#${n}`).join(', ')
+      : '—'
+
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.45;">
+        <h2 style="margin-bottom: 8px;">Factura de pago aprobada</h2>
+        <p>Hola ${clienteNombre}, se registró correctamente un pago.</p>
+        <ul>
+          <li><strong>Cliente:</strong> ${clienteNombre}</li>
+          <li><strong>Préstamo:</strong> ${prestamo_id}</li>
+          <li><strong>Pago ID:</strong> ${pago.id}</li>
+          <li><strong>Fecha:</strong> ${fechaPago}</li>
+          <li><strong>Método:</strong> ${metodo}</li>
+          <li><strong>Monto aplicado:</strong> ${formatearMonto(totalAplicado)}</li>
+          <li><strong>Monto recibido:</strong> ${formatearMonto(montoIngresado)}</li>
+          <li><strong>Vuelto:</strong> ${formatearMonto(vuelto)}</li>
+          <li><strong>Cuotas impactadas:</strong> ${cuotasTexto}</li>
+          <li><strong>Saldo restante:</strong> ${formatearMonto(saldoRestante)}</li>
+          <li><strong>Estado del préstamo:</strong> ${nuevoEstadoPrestamo}</li>
+        </ul>
+      </div>
+    `
+
+    const resultadoCorreo = await enviarCorreoFactura({
+      to: destinatarios,
+      subject: `Factura de pago aprobada - ${clienteNombre}`,
+      html: htmlFactura,
+    })
+
     return jsonResponse({
       ok: true,
       pago,
@@ -384,6 +507,7 @@ Deno.serve(async (req) => {
       cuota_actualizada: cuotaActualizada,
       proxima_cuota: proximaCuota,
       prestamo_estado: nuevoEstadoPrestamo,
+      factura_email: resultadoCorreo,
     })
   } catch (error) {
     return jsonResponse(
