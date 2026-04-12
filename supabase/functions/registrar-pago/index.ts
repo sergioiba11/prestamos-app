@@ -6,6 +6,23 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+type CuotaRow = {
+  id: string
+  prestamo_id: string
+  cliente_id: string
+  numero_cuota: number
+  monto_cuota: number | null
+  monto_pagado: number | null
+  saldo_pendiente: number | null
+  estado: string
+}
+
+type DetallePago = {
+  cuota_id: string
+  numero: number
+  aplicado: number
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -41,7 +58,7 @@ function extraerTokenBearer(authHeader: string | null) {
   return limpio
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -64,12 +81,15 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Token requerido' }, 401)
     }
 
-    // ✅ cliente para validar usuario
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         headers: { Authorization: `Bearer ${token}` },
       },
-      auth: { persistSession: false },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
     })
 
     const {
@@ -81,15 +101,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Token inválido' }, 401)
     }
 
-    // ✅ cliente admin (DB)
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: { persistSession: false },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
     })
 
     const body = await req.json()
 
-    const prestamo_id = body?.prestamo_id
-    const cliente_id = body?.cliente_id
+    const prestamo_id = body?.prestamo_id as string | undefined
+    const cliente_id = body?.cliente_id as string | undefined
     const metodo = normalizarMetodoPago(body?.metodo)
     const montoIngresado = redondear(Number(body?.monto))
 
@@ -97,36 +120,42 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Faltan datos' }, 400)
     }
 
-    if (montoIngresado <= 0) {
+    if (montoIngresado <= 0 || Number.isNaN(montoIngresado)) {
       return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
     const { data: cuotas, error } = await supabase
       .from('cuotas')
-      .select('*')
+      .select(
+        'id, prestamo_id, cliente_id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, estado'
+      )
       .eq('prestamo_id', prestamo_id)
       .eq('cliente_id', cliente_id)
       .in('estado', ['pendiente', 'parcial'])
       .order('numero_cuota')
 
-    if (error) return jsonResponse({ error: error.message }, 500)
+    if (error) {
+      return jsonResponse({ error: error.message }, 500)
+    }
 
-    if (!cuotas?.length) {
+    const cuotasTipadas = (cuotas ?? []) as CuotaRow[]
+
+    if (!cuotasTipadas.length) {
       return jsonResponse({ error: 'Sin cuotas pendientes' }, 400)
     }
 
     let restante = montoIngresado
-    const detalle: any[] = []
+    const detalle: DetallePago[] = []
 
-    for (const cuota of cuotas) {
+    for (const cuota of cuotasTipadas) {
       if (restante <= 0) break
 
-      const saldo = redondear(cuota.saldo_pendiente)
+      const saldo = redondear(Number(cuota.saldo_pendiente || 0))
       if (saldo <= 0) continue
 
-      const aplicar = Math.min(restante, saldo)
+      const aplicar = redondear(Math.min(restante, saldo))
       const nuevoSaldo = redondear(saldo - aplicar)
-      const nuevoPagado = redondear((cuota.monto_pagado || 0) + aplicar)
+      const nuevoPagado = redondear(Number(cuota.monto_pagado || 0) + aplicar)
 
       const { error: errUpdate } = await supabase
         .from('cuotas')
@@ -137,7 +166,9 @@ Deno.serve(async (req) => {
         })
         .eq('id', cuota.id)
 
-      if (errUpdate) return jsonResponse({ error: errUpdate.message }, 500)
+      if (errUpdate) {
+        return jsonResponse({ error: errUpdate.message }, 500)
+      }
 
       detalle.push({
         cuota_id: cuota.id,
@@ -149,8 +180,12 @@ Deno.serve(async (req) => {
     }
 
     const totalAplicado = redondear(
-      detalle.reduce((acc, d) => acc + d.aplicado, 0)
+      detalle.reduce((acc: number, item: DetallePago) => acc + item.aplicado, 0)
     )
+
+    if (totalAplicado <= 0) {
+      return jsonResponse({ error: 'No se pudo aplicar el pago' }, 400)
+    }
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
@@ -164,7 +199,9 @@ Deno.serve(async (req) => {
       .select()
       .single()
 
-    if (pagoError) return jsonResponse({ error: pagoError.message }, 500)
+    if (pagoError) {
+      return jsonResponse({ error: pagoError.message }, 500)
+    }
 
     return jsonResponse({
       ok: true,
@@ -172,7 +209,8 @@ Deno.serve(async (req) => {
       detalle,
       vuelto: redondear(montoIngresado - totalAplicado),
     })
-  } catch (err) {
-    return jsonResponse({ error: 'Error interno' }, 500)
+  } catch (err: unknown) {
+    const mensaje = err instanceof Error ? err.message : 'Error interno'
+    return jsonResponse({ error: mensaje }, 500)
   }
 })
