@@ -93,7 +93,7 @@ function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
   return metodo
 }
 
-function limpiarNumero(texto: string) {
+function limpiarNumero(texto: string, maxEnteros = 9) {
   if (!texto) return ''
 
   let limpio = texto.replace(/[^\d,]/g, '')
@@ -105,7 +105,15 @@ function limpiarNumero(texto: string) {
     limpio = parteEntera + parteDecimal
   }
 
-  return limpio
+  const [parteEnteraRaw = '', parteDecimalRaw = ''] = limpio.split(',')
+  const parteEntera = parteEnteraRaw.replace(/^0+(?=\d)/, '').slice(0, maxEnteros)
+  const parteDecimal = parteDecimalRaw.slice(0, 2)
+
+  if (limpio.includes(',')) {
+    return `${parteEntera || '0'},${parteDecimal}`
+  }
+
+  return parteEntera || '0'
 }
 
 function textoAMonto(texto: string) {
@@ -167,6 +175,38 @@ function obtenerFunctionsUrl() {
     throw new Error('No se encontró la URL de Supabase para registrar el pago')
   }
   return `${baseUrl.replace(/\/$/, '')}/functions/v1/registrar-pago`
+}
+
+async function obtenerAccessTokenValido() {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    throw new Error('No se pudo leer la sesión actual')
+  }
+
+  if (!session?.user?.id || !session.access_token) {
+    throw new Error('La sesión expiró. Volvé a iniciar sesión.')
+  }
+
+  const nowUnix = Math.floor(Date.now() / 1000)
+  const expiraEnMenosDeUnMinuto =
+    typeof session.expires_at === 'number' && session.expires_at - nowUnix <= 60
+
+  if (!expiraEnMenosDeUnMinuto) {
+    return session.access_token
+  }
+
+  const { data: refreshedData, error: refreshError } =
+    await supabase.auth.refreshSession()
+
+  if (refreshError || !refreshedData.session?.access_token) {
+    throw new Error('La sesión expiró. Volvé a iniciar sesión.')
+  }
+
+  return refreshedData.session.access_token
 }
 
 export default function CargarPago() {
@@ -449,19 +489,8 @@ export default function CargarPago() {
     try {
       setGuardando(true)
 
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      console.log('SESSION ERROR REGISTRAR PAGO:', sessionError)
-      console.log('SESSION USER REGISTRAR PAGO:', session?.user)
-      console.log('ACCESS TOKEN REGISTRAR PAGO:', session?.access_token)
-
-      if (sessionError || !session || !session.access_token || !session.user?.id) {
-        Alert.alert('Error', 'La sesión expiró. Volvé a iniciar sesión.')
-        return
-      }
+      const accessToken = await obtenerAccessTokenValido()
+      console.log('ACCESS TOKEN REGISTRAR PAGO (últimos 10):', accessToken.slice(-10))
 
       const payload = {
         prestamo_id: prestamoSeleccionado.id,
@@ -476,7 +505,7 @@ export default function CargarPago() {
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-      const json = await invocarFuncionConFallback(session.access_token, payload)
+      const json = await invocarFuncionConFallback(accessToken, payload)
 
       if (!json || json.error) {
         Alert.alert(
