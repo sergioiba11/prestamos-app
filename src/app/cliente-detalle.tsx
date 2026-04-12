@@ -176,7 +176,6 @@ function calcularMoraDiaria(
 export default function ClienteDetalle() {
   const params = useLocalSearchParams()
 
-  // ✅ FIX: unificado a cliente_id (todos los navegadores usan este param)
   const clienteId = useMemo(() => {
     const raw = params.cliente_id
     if (Array.isArray(raw)) return raw[0]
@@ -296,40 +295,46 @@ export default function ClienteDetalle() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ paddingBottom: 30 }}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
     >
-      <TouchableOpacity onPress={() => router.back()}>
-        <Text style={styles.volver}>← Volver</Text>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <Text style={styles.backButtonText}>← Volver</Text>
       </TouchableOpacity>
 
-      <View style={styles.card}>
+      <View style={styles.headerCard}>
+        <Text style={styles.headerEyebrow}>Detalle del cliente</Text>
         <Text style={styles.title}>{cliente.nombre}</Text>
 
-        <Text style={styles.item}>
-          <Text style={styles.label}>Teléfono: </Text>
-          {cliente.telefono || 'Sin cargar'}
-        </Text>
+        <View style={styles.infoGrid}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Teléfono</Text>
+            <Text style={styles.infoValue}>{cliente.telefono || '—'}</Text>
+          </View>
 
-        <Text style={styles.item}>
-          <Text style={styles.label}>Dirección: </Text>
-          {cliente.direccion || 'Sin cargar'}
-        </Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Dirección</Text>
+            <Text style={styles.infoValue}>{cliente.direccion || '—'}</Text>
+          </View>
 
-        <Text style={styles.item}>
-          <Text style={styles.label}>DNI: </Text>
-          {cliente.dni || 'Sin cargar'}
-        </Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>DNI</Text>
+            <Text style={styles.infoValue}>{cliente.dni || '—'}</Text>
+          </View>
 
-        <Text style={styles.item}>
-          <Text style={styles.label}>Email: </Text>
-          {cliente.email || 'Sin cargar'}
-        </Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Email</Text>
+            <Text style={styles.infoValue}>{cliente.email || '—'}</Text>
+          </View>
+        </View>
       </View>
 
       <Text style={styles.section}>Préstamos</Text>
 
       {prestamos.length === 0 ? (
-        <Text style={styles.item}>Sin préstamos</Text>
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>Sin préstamos</Text>
+        </View>
       ) : (
         prestamos.map((p) => {
           const esDiario = p.modalidad === 'diario'
@@ -348,112 +353,139 @@ export default function ClienteDetalle() {
 
           return (
             <View key={p.id} style={styles.card}>
-              <Text style={styles.tipoPrestamo}>{modalidadTexto}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.tipoPrestamo}>{modalidadTexto}</Text>
 
-              <Text style={styles.item}>
-                <Text style={styles.label}>Monto: </Text>
-                {formatearMoneda(Number(p.monto || 0))}
-              </Text>
-
-              <Text style={styles.item}>
-                <Text style={styles.label}>Interés original: </Text>
-                {Number(p.interes || 0)}%
-              </Text>
-
-              <Text style={styles.item}>
-                <Text style={styles.label}>Total base: </Text>
-                {formatearMoneda(Number(p.total_a_pagar || 0))}
-              </Text>
-
-              {esDiario ? (
-                <Text style={styles.item}>
-                  <Text style={styles.label}>Plazo: </Text>
-                  {Number(p.dias_plazo || 0)} días
-                </Text>
-              ) : (
-                <Text style={styles.item}>
-                  <Text style={styles.label}>Cuotas: </Text>
-                  {Number(p.cuotas || 0)}
-                </Text>
-              )}
-
-              <Text style={styles.item}>
-                <Text style={styles.label}>Fecha inicio: </Text>
-                {p.fecha_inicio || 'Sin cargar'}
-              </Text>
-
-              <Text style={styles.item}>
-                <Text style={styles.label}>Fecha límite: </Text>
-                {p.fecha_limite || 'Sin cargar'}
-              </Text>
-
-              <Text style={styles.item}>
-                <Text style={styles.label}>Inicio de mora: </Text>
-                {p.fecha_inicio_mora || 'Sin cargar'}
-              </Text>
-
-              <View
-                style={[
-                  styles.estadoBox,
-                  resultado.estadoVisual === 'DEMORADO'
-                    ? styles.estadoDemorado
-                    : styles.estadoAlDia,
-                ]}
-              >
-                <Text style={styles.estadoText}>
-                  Estado: {resultado.estadoVisual}
-                </Text>
+                <View
+                  style={[
+                    styles.estadoBox,
+                    resultado.estadoVisual === 'DEMORADO'
+                      ? styles.estadoDemorado
+                      : styles.estadoAlDia,
+                  ]}
+                >
+                  <Text style={styles.estadoText}>{resultado.estadoVisual}</Text>
+                </View>
               </View>
 
-              <Text style={styles.item}>
-                <Text style={styles.label}>Días de atraso: </Text>
-                {resultado.diasAtraso}
-              </Text>
-
-              {resultado.tipo === 'diario' ? (
-                <>
-                  <Text style={styles.item}>
-                    <Text style={styles.label}>Valor de 1 cuota diaria: </Text>
-                    {formatearMoneda(resultado.cuotaDiaria)}
+              <View style={styles.loanGrid}>
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Monto</Text>
+                  <Text style={styles.loanValue}>
+                    {formatearMoneda(Number(p.monto || 0))}
                   </Text>
+                </View>
 
-                  <Text style={styles.item}>
-                    <Text style={styles.label}>Interés por día vencido: </Text>
-                    {resultado.porcentajeMoraPorDia}% de 1 cuota diaria
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Interés original</Text>
+                  <Text style={styles.loanValue}>{Number(p.interes || 0)}%</Text>
+                </View>
+
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Total base</Text>
+                  <Text style={styles.loanValue}>
+                    {formatearMoneda(Number(p.total_a_pagar || 0))}
                   </Text>
+                </View>
 
-                  <Text style={styles.item}>
-                    <Text style={styles.label}>Detalle mora: </Text>
-                    {resultado.detalle}
+                {esDiario ? (
+                  <View style={styles.loanRow}>
+                    <Text style={styles.loanLabel}>Plazo</Text>
+                    <Text style={styles.loanValue}>
+                      {Number(p.dias_plazo || 0)} días
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.loanRow}>
+                    <Text style={styles.loanLabel}>Cuotas</Text>
+                    <Text style={styles.loanValue}>
+                      {Number(p.cuotas || 0)}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Fecha inicio</Text>
+                  <Text style={styles.loanValue}>
+                    {p.fecha_inicio || 'Sin cargar'}
                   </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.item}>
-                    <Text style={styles.label}>Mora acumulada: </Text>
-                    {resultado.porcentajeMora}%
+                </View>
+
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Fecha límite</Text>
+                  <Text style={styles.loanValue}>
+                    {p.fecha_limite || 'Sin cargar'}
                   </Text>
+                </View>
 
-                  <Text style={styles.item}>
-                    <Text style={styles.label}>Detalle mora: </Text>
-                    {resultado.detalle}
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Inicio de mora</Text>
+                  <Text style={styles.loanValue}>
+                    {p.fecha_inicio_mora || 'Sin cargar'}
                   </Text>
-                </>
-              )}
+                </View>
 
-              <Text style={styles.item}>
-                <Text style={styles.label}>Mora en pesos: </Text>
-                {formatearMoneda(resultado.moraPesos)}
-              </Text>
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Días de atraso</Text>
+                  <Text style={styles.loanValue}>{resultado.diasAtraso}</Text>
+                </View>
 
-              <Text style={styles.totalFinal}>
-                Total actualizado: {formatearMoneda(resultado.totalActualizado)}
-              </Text>
+                {resultado.tipo === 'diario' ? (
+                  <>
+                    <View style={styles.loanRow}>
+                      <Text style={styles.loanLabel}>1 cuota diaria</Text>
+                      <Text style={styles.loanValue}>
+                        {formatearMoneda(resultado.cuotaDiaria)}
+                      </Text>
+                    </View>
 
-              <Text style={styles.item}>
-                <Text style={styles.label}>Estado guardado: </Text>
-                {p.estado || 'pendiente'}
-              </Text>
+                    <View style={styles.loanRow}>
+                      <Text style={styles.loanLabel}>Interés por día</Text>
+                      <Text style={styles.loanValue}>
+                        {resultado.porcentajeMoraPorDia}% de 1 cuota diaria
+                      </Text>
+                    </View>
+
+                    <View style={styles.loanRow}>
+                      <Text style={styles.loanLabel}>Detalle mora</Text>
+                      <Text style={styles.loanValue}>{resultado.detalle}</Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.loanRow}>
+                      <Text style={styles.loanLabel}>Mora acumulada</Text>
+                      <Text style={styles.loanValue}>
+                        {resultado.porcentajeMora}%
+                      </Text>
+                    </View>
+
+                    <View style={styles.loanRow}>
+                      <Text style={styles.loanLabel}>Detalle mora</Text>
+                      <Text style={styles.loanValue}>{resultado.detalle}</Text>
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Mora en pesos</Text>
+                  <Text style={styles.loanValue}>
+                    {formatearMoneda(resultado.moraPesos)}
+                  </Text>
+                </View>
+
+                <View style={styles.loanRow}>
+                  <Text style={styles.loanLabel}>Estado guardado</Text>
+                  <Text style={styles.loanValue}>{p.estado || 'pendiente'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.totalCard}>
+                <Text style={styles.totalLabel}>Total actualizado</Text>
+                <Text style={styles.totalFinal}>
+                  {formatearMoneda(resultado.totalActualizado)}
+                </Text>
+              </View>
 
               <TouchableOpacity
                 style={styles.pagoButton}
@@ -478,66 +510,124 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F172A',
+  },
+  contentContainer: {
     padding: 20,
+    paddingBottom: 32,
   },
   center: {
     flex: 1,
     backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
-    color: '#fff',
-    marginTop: 10,
+    color: '#E2E8F0',
+    marginTop: 12,
+    fontSize: 15,
   },
-  volver: {
-    color: '#3B82F6',
-    marginBottom: 10,
-    fontSize: 16,
+  backButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  backButtonText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  headerCard: {
+    backgroundColor: '#1E293B',
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  headerEyebrow: {
+    color: '#93C5FD',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  infoGrid: {
+    gap: 10,
+  },
+  infoRow: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  infoLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginBottom: 4,
     fontWeight: '600',
+  },
+  infoValue: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  section: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    marginTop: 4,
+    marginBottom: 14,
+    fontWeight: '800',
+  },
+  emptyCard: {
+    backgroundColor: '#1E293B',
+    padding: 18,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  emptyText: {
+    color: '#CBD5E1',
+    fontSize: 15,
   },
   card: {
     backgroundColor: '#1E293B',
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#334155',
   },
-  title: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  item: {
-    color: '#CBD5E1',
-    marginBottom: 6,
-    fontSize: 15,
-  },
-  label: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  section: {
-    color: '#fff',
-    fontSize: 18,
-    marginVertical: 10,
-    fontWeight: '700',
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 10,
   },
   tipoPrestamo: {
     color: '#93C5FD',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 10,
+    fontSize: 17,
+    fontWeight: '800',
+    flex: 1,
   },
   estadoBox: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    marginBottom: 10,
+    borderRadius: 999,
   },
   estadoAlDia: {
     backgroundColor: '#166534',
@@ -546,25 +636,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#991B1B',
   },
   estadoText: {
-    color: '#fff',
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  loanGrid: {
+    gap: 10,
+  },
+  loanRow: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  loanLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  loanValue: {
+    color: '#F8FAFC',
+    fontSize: 15,
     fontWeight: '700',
   },
-  totalFinal: {
-    color: '#60A5FA',
-    fontSize: 17,
-    fontWeight: 'bold',
-    marginTop: 8,
+  totalCard: {
+    backgroundColor: '#172554',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+  },
+  totalLabel: {
+    color: '#BFDBFE',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  totalFinal: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
   },
   pagoButton: {
     backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 2,
   },
   pagoButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
   },
