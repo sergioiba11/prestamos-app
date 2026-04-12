@@ -20,15 +20,11 @@ function redondear(valor: number) {
 function normalizarMetodoPago(metodo: unknown) {
   const valor = String(metodo || '').trim().toLowerCase()
 
-  if (valor === 'mp' || valor === 'mercado_pago' || valor === 'mercado-pago') {
+  if (['mp', 'mercado_pago', 'mercado-pago'].includes(valor)) {
     return 'mercadopago'
   }
 
-  if (
-    valor === 'efectivo' ||
-    valor === 'transferencia' ||
-    valor === 'mercadopago'
-  ) {
+  if (['efectivo', 'transferencia', 'mercadopago'].includes(valor)) {
     return valor
   }
 
@@ -56,282 +52,105 @@ Deno.serve(async (req) => {
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
-      return jsonResponse(
-        {
-          error: 'Faltan variables de entorno en la función',
-          detalle: {
-            hasUrl: Boolean(supabaseUrl),
-            hasAnonKey: Boolean(supabaseAnonKey),
-            hasServiceRoleKey: Boolean(supabaseServiceRoleKey),
-          },
-        },
-        500
-      )
+      return jsonResponse({ error: 'Faltan variables de entorno' }, 500)
     }
 
-<<<<<<< HEAD
-    const token = extraerTokenBearer(authHeader)
-
-    if (!token) {
-      return new Response(
-        JSON.stringify({ error: 'Authorization inválido' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
-=======
     const authHeader =
       req.headers.get('authorization') || req.headers.get('Authorization')
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return jsonResponse(
-        {
-          error: 'Authorization header inválido',
-          detalle: 'Debe venir como: Bearer TOKEN',
-        },
-        401
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '').trim()
+    const token = extraerTokenBearer(authHeader)
 
     if (!token) {
-      return jsonResponse(
-        {
-          error: 'Token vacío',
-        },
-        401
-      )
+      return jsonResponse({ error: 'Token requerido' }, 401)
     }
 
+    // ✅ cliente para validar usuario
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
+      auth: { persistSession: false },
     })
->>>>>>> origin/main
 
     const {
       data: { user },
       error: userError,
-<<<<<<< HEAD
-    } = await supabase.auth.getUser(token)
-=======
-    } = await supabaseAuth.auth.getUser(token)
->>>>>>> origin/main
+    } = await supabaseAuth.auth.getUser()
 
     if (userError || !user) {
-      return jsonResponse(
-        {
-          error: 'Token inválido o usuario no autenticado',
-          detalle: userError?.message || null,
-        },
-        401
-      )
+      return jsonResponse({ error: 'Token inválido' }, 401)
     }
 
-<<<<<<< HEAD
-=======
+    // ✅ cliente admin (DB)
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
+      auth: { persistSession: false },
     })
 
->>>>>>> origin/main
     const body = await req.json()
 
     const prestamo_id = body?.prestamo_id
     const cliente_id = body?.cliente_id
-    const cuota_id_inicial = body?.cuota_id || null
-    const numero_cuota_inicial = body?.numero_cuota || null
     const metodo = normalizarMetodoPago(body?.metodo)
-    const montoIngresado = redondear(
-      Number(body?.monto_ingresado ?? body?.monto)
-    )
-    const aplicarAMultiples = body?.aplicar_a_multiples !== false
+    const montoIngresado = redondear(Number(body?.monto))
 
     if (!prestamo_id || !cliente_id || !metodo) {
-      return jsonResponse(
-        {
-          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, metodo',
-        },
-        400
-      )
+      return jsonResponse({ error: 'Faltan datos' }, 400)
     }
 
-    if (Number.isNaN(montoIngresado) || montoIngresado <= 0) {
+    if (montoIngresado <= 0) {
       return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
-    const { data: prestamo, error: prestamoError } = await supabase
-      .from('prestamos')
-      .select('id, cliente_id, estado')
-      .eq('id', prestamo_id)
-      .single()
-
-    if (prestamoError || !prestamo) {
-      return jsonResponse({ error: 'Préstamo no encontrado' }, 404)
-    }
-
-    if (prestamo.cliente_id !== cliente_id) {
-      return jsonResponse(
-        { error: 'El préstamo no pertenece al cliente enviado' },
-        400
-      )
-    }
-
-    const { data: cuotasPendientes, error: cuotasError } = await supabase
+    const { data: cuotas, error } = await supabase
       .from('cuotas')
-      .select(`
-        id,
-        prestamo_id,
-        cliente_id,
-        numero_cuota,
-        monto_cuota,
-        monto_pagado,
-        saldo_pendiente,
-        estado,
-        fecha_vencimiento
-      `)
+      .select('*')
       .eq('prestamo_id', prestamo_id)
       .eq('cliente_id', cliente_id)
       .in('estado', ['pendiente', 'parcial'])
-      .order('numero_cuota', { ascending: true })
+      .order('numero_cuota')
 
-    if (cuotasError) {
-      return jsonResponse({ error: cuotasError.message }, 500)
-    }
+    if (error) return jsonResponse({ error: error.message }, 500)
 
-    if (!cuotasPendientes || cuotasPendientes.length === 0) {
-      return jsonResponse(
-        { error: 'El préstamo no tiene cuotas pendientes' },
-        400
-      )
-    }
-
-    let cuotasAProcesar = cuotasPendientes
-
-    if (cuota_id_inicial) {
-      const index = cuotasPendientes.findIndex((c) => c.id === cuota_id_inicial)
-
-      if (index === -1) {
-        return jsonResponse(
-          {
-            error:
-              'La cuota seleccionada no pertenece a ese préstamo o no está pendiente',
-          },
-          404
-        )
-      }
-
-      if (
-        numero_cuota_inicial &&
-        Number(numero_cuota_inicial) !==
-          Number(cuotasPendientes[index].numero_cuota)
-      ) {
-        return jsonResponse(
-          {
-            error: 'El número de cuota no coincide con la cuota seleccionada',
-          },
-          400
-        )
-      }
-
-      cuotasAProcesar = cuotasPendientes.slice(index)
+    if (!cuotas?.length) {
+      return jsonResponse({ error: 'Sin cuotas pendientes' }, 400)
     }
 
     let restante = montoIngresado
-    const cuotasImpactadas: number[] = []
-    const detalleAplicacion: Array<{
-      cuota_id: string
-      numero_cuota: number
-      monto_aplicado: number
-      saldo_cuota_antes: number
-      saldo_cuota_despues: number
-      estado_resultante: string
-    }> = []
+    const detalle: any[] = []
 
-    for (const cuota of cuotasAProcesar) {
+    for (const cuota of cuotas) {
       if (restante <= 0) break
 
-      const saldoAnterior = redondear(
-        Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
-      )
-      const pagadoAnterior = redondear(Number(cuota.monto_pagado ?? 0))
+      const saldo = redondear(cuota.saldo_pendiente)
+      if (saldo <= 0) continue
 
-      if (saldoAnterior <= 0) continue
+      const aplicar = Math.min(restante, saldo)
+      const nuevoSaldo = redondear(saldo - aplicar)
+      const nuevoPagado = redondear((cuota.monto_pagado || 0) + aplicar)
 
-      const montoAplicado = redondear(
-        aplicarAMultiples
-          ? Math.min(restante, saldoAnterior)
-          : Math.min(montoIngresado, saldoAnterior)
-      )
-
-      if (montoAplicado <= 0) continue
-
-      const nuevoSaldo = redondear(saldoAnterior - montoAplicado)
-      const nuevoMontoPagado = redondear(pagadoAnterior + montoAplicado)
-      const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
-
-      const { error: updateCuotaError } = await supabase
+      const { error: errUpdate } = await supabase
         .from('cuotas')
         .update({
-          monto_pagado: nuevoMontoPagado,
+          monto_pagado: nuevoPagado,
           saldo_pendiente: nuevoSaldo,
-          estado: nuevoEstado,
-          fecha_pago: new Date().toISOString(),
+          estado: nuevoSaldo <= 0 ? 'pagada' : 'parcial',
         })
         .eq('id', cuota.id)
 
-      if (updateCuotaError) {
-        return jsonResponse({ error: updateCuotaError.message }, 500)
-      }
+      if (errUpdate) return jsonResponse({ error: errUpdate.message }, 500)
 
-      cuotasImpactadas.push(Number(cuota.numero_cuota))
-      detalleAplicacion.push({
+      detalle.push({
         cuota_id: cuota.id,
-        numero_cuota: cuota.numero_cuota,
-        monto_aplicado: montoAplicado,
-        saldo_cuota_antes: saldoAnterior,
-        saldo_cuota_despues: nuevoSaldo,
-        estado_resultante: nuevoEstado,
+        numero: cuota.numero_cuota,
+        aplicado: aplicar,
       })
 
-      restante = aplicarAMultiples ? redondear(restante - montoAplicado) : 0
+      restante = redondear(restante - aplicar)
     }
 
     const totalAplicado = redondear(
-      detalleAplicacion.reduce(
-        (acc, item) => acc + Number(item.monto_aplicado || 0),
-        0
-      )
+      detalle.reduce((acc, d) => acc + d.aplicado, 0)
     )
-
-    if (totalAplicado <= 0) {
-      return jsonResponse(
-        { error: 'No se pudo aplicar el pago a ninguna cuota' },
-        400
-      )
-    }
-
-    const vuelto = redondear(montoIngresado - totalAplicado)
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
@@ -345,102 +164,15 @@ Deno.serve(async (req) => {
       .select()
       .single()
 
-    if (pagoError || !pago) {
-      return jsonResponse(
-        { error: pagoError?.message || 'No se pudo crear el pago' },
-        500
-      )
-    }
-
-    const detalleRows = detalleAplicacion.map((item) => ({
-      pago_id: pago.id,
-      cuota_id: item.cuota_id,
-      prestamo_id,
-      cliente_id,
-      numero_cuota: item.numero_cuota,
-      monto_aplicado: item.monto_aplicado,
-      saldo_cuota_antes: item.saldo_cuota_antes,
-      saldo_cuota_despues: item.saldo_cuota_despues,
-    }))
-
-    const { error: detalleError } = await supabase
-      .from('pagos_detalle')
-      .insert(detalleRows)
-
-    if (detalleError) {
-      return jsonResponse({ error: detalleError.message }, 500)
-    }
-
-    const { data: cuotasRestantes, error: cuotasRestantesError } = await supabase
-      .from('cuotas')
-      .select(`
-        id,
-        numero_cuota,
-        monto_cuota,
-        monto_pagado,
-        saldo_pendiente,
-        estado,
-        fecha_vencimiento
-      `)
-      .eq('prestamo_id', prestamo_id)
-      .eq('cliente_id', cliente_id)
-      .in('estado', ['pendiente', 'parcial'])
-      .order('numero_cuota', { ascending: true })
-
-    if (cuotasRestantesError) {
-      return jsonResponse({ error: cuotasRestantesError.message }, 500)
-    }
-
-    const saldoRestante = redondear(
-      (cuotasRestantes || []).reduce(
-        (acc, item) => acc + Number(item.saldo_pendiente || 0),
-        0
-      )
-    )
-
-    const nuevoEstadoPrestamo = saldoRestante <= 0 ? 'pagado' : 'activo'
-
-    const { error: updatePrestamoError } = await supabase
-      .from('prestamos')
-      .update({
-        estado: nuevoEstadoPrestamo,
-      })
-      .eq('id', prestamo_id)
-
-    if (updatePrestamoError) {
-      return jsonResponse({ error: updatePrestamoError.message }, 500)
-    }
-
-    const proximaCuota = cuotasRestantes?.[0] || null
-    const cuotaActualizada =
-      detalleAplicacion.length > 0
-        ? {
-            cuota_id: detalleAplicacion[0].cuota_id,
-            numero_cuota: detalleAplicacion[0].numero_cuota,
-            saldo_despues: detalleAplicacion[0].saldo_cuota_despues,
-            estado: detalleAplicacion[0].estado_resultante,
-          }
-        : null
+    if (pagoError) return jsonResponse({ error: pagoError.message }, 500)
 
     return jsonResponse({
       ok: true,
       pago,
-      cuotas_impactadas: cuotasImpactadas,
-      detalle_aplicacion: detalleAplicacion,
-      total_aplicado: totalAplicado,
-      monto_ingresado: montoIngresado,
-      vuelto,
-      saldo_restante: saldoRestante,
-      cuota_actualizada: cuotaActualizada,
-      proxima_cuota: proximaCuota,
-      prestamo_estado: nuevoEstadoPrestamo,
+      detalle,
+      vuelto: redondear(montoIngresado - totalAplicado),
     })
-  } catch (error) {
-    return jsonResponse(
-      {
-        error: error instanceof Error ? error.message : 'Error interno',
-      },
-      500
-    )
+  } catch (err) {
+    return jsonResponse({ error: 'Error interno' }, 500)
   }
 })
