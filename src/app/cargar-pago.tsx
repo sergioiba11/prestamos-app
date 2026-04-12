@@ -10,7 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
+import {
+  SUPABASE_URL,
+  supabase,
+  supabaseAnonKey,
+  supabaseUrl,
+} from '../lib/supabase'
 
 type Cliente = {
   id: string
@@ -154,6 +159,14 @@ function formatearFecha(fecha?: string | null) {
   const partes = limpia.split('-')
   if (partes.length !== 3) return limpia
   return `${partes[2]}/${partes[1]}/${partes[0]}`
+}
+
+function obtenerFunctionsUrl() {
+  const baseUrl = supabaseUrl || SUPABASE_URL
+  if (!baseUrl) {
+    throw new Error('No se encontró la URL de Supabase para registrar el pago')
+  }
+  return `${baseUrl.replace(/\/$/, '')}/functions/v1/registrar-pago`
 }
 
 export default function CargarPago() {
@@ -374,7 +387,7 @@ export default function CargarPago() {
 
     console.log('FALLBACK REGISTRAR PAGO: intento por fetch directo')
 
-    const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
+    const res = await fetch(obtenerFunctionsUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -459,65 +472,17 @@ export default function CargarPago() {
         monto_ingresado: Number(montoNumero.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
         aplicar_a_multiples: true,
+        access_token: session.access_token,
       }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
-<<<<<<< HEAD
-      const { data: invokeData, error: invokeError } = await supabase.functions.invoke(
-        'registrar-pago',
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: payload,
-        }
-      )
-
-      let json: any = invokeData
-      console.log('ERROR INVOKE REGISTRAR PAGO:', invokeError)
-
-      if (invokeError) {
-        console.log('REINTENTO REGISTRAR PAGO: fetch directo con apikey')
-
-        const res = await fetch(`${supabaseUrl}/functions/v1/registrar-pago`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify(payload),
-        })
-
-        json = await res.json().catch(() => null)
-
-        console.log('STATUS REINTENTO REGISTRAR PAGO:', res.status)
-        console.log('RESPUESTA REINTENTO REGISTRAR PAGO:', json)
-
-        if (!res.ok) {
-          Alert.alert(
-            'Error',
-            json?.error ||
-              json?.detalle ||
-              invokeError.message ||
-              `No se pudo registrar el pago (HTTP ${res.status})`
-          )
-          return
-        }
-      }
-
-      console.log('RESPUESTA REGISTRAR PAGO JSON:', json)
-
-      if (!json) {
-=======
       const json = await invocarFuncionConFallback(session.access_token, payload)
 
       if (!json || json.error) {
->>>>>>> origin/main
         Alert.alert(
           'Error',
-          'La función respondió vacío. Intentá nuevamente.'
+          json?.error || json?.detalle || 'La función respondió vacío. Intentá nuevamente.'
         )
         return
       }

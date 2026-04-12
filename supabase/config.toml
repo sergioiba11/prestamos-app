@@ -17,5 +17,5 @@ entrypoint = "./functions/crear-cliente/index.ts"
 
 [functions.registrar-pago]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 entrypoint = "./functions/registrar-pago/index.ts"
