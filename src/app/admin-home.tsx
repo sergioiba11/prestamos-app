@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -36,7 +37,9 @@ type Prestamo = {
 type Cliente = {
   id: string
   nombre: string
+  apellido?: string | null
   telefono: string | null
+  email?: string | null
   dni: string | null
   direccion?: string | null
 }
@@ -51,7 +54,9 @@ type Empleado = {
 type ClienteConPrestamo = {
   id: string
   nombre: string
+  apellido?: string | null
   telefono: string | null
+  email?: string | null
   dni: string | null
   prestamo?: Prestamo | null
   estadoVisual: {
@@ -77,6 +82,14 @@ function formatearFecha(fecha?: string | null) {
 function normalizarEstado(estado?: string | null) {
   if (!estado) return 'pendiente'
   return estado.toLowerCase()
+}
+
+function normalizarBusqueda(valor?: string | null) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
 }
 
 function calcularEstadoVisual(prestamo?: Prestamo | null) {
@@ -126,6 +139,8 @@ export default function AdminHome() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
+  const [busquedaCliente, setBusquedaCliente] = useState('')
+  const busquedaClienteDiferida = useDeferredValue(busquedaCliente)
 
   const cargarTodo = useCallback(async () => {
     try {
@@ -164,7 +179,7 @@ export default function AdminHome() {
 
         supabase
           .from('clientes')
-          .select('id, nombre, telefono, dni, direccion')
+          .select('*')
           .order('nombre', { ascending: true }),
 
         supabase
@@ -325,7 +340,9 @@ export default function AdminHome() {
     return {
       id: cliente.id,
       nombre: cliente.nombre,
+      apellido: cliente.apellido,
       telefono: cliente.telefono,
+      email: cliente.email,
       dni: cliente.dni,
       prestamo,
       estadoVisual,
@@ -352,6 +369,32 @@ export default function AdminHome() {
     return fechaA - fechaB
   })
 }, [clientes, prestamos])
+
+  const onChangeBusquedaCliente = useCallback((texto: string) => {
+    setBusquedaCliente(texto)
+  }, [])
+
+  const clientesFiltrados = useMemo(() => {
+    const termino = normalizarBusqueda(busquedaClienteDiferida)
+
+    if (!termino) return clientesConPrestamo
+
+    return clientesConPrestamo.filter((cliente) => {
+      const nombre = normalizarBusqueda(cliente.nombre)
+      const dni = normalizarBusqueda(cliente.dni)
+      const telefono = normalizarBusqueda(cliente.telefono)
+      const email = normalizarBusqueda(cliente.email)
+      const apellido = normalizarBusqueda(cliente.apellido)
+
+      return (
+        nombre.includes(termino) ||
+        dni.includes(termino) ||
+        email.includes(termino) ||
+        telefono.includes(termino) ||
+        apellido.includes(termino)
+      )
+    })
+  }, [busquedaClienteDiferida, clientesConPrestamo])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
@@ -570,17 +613,38 @@ export default function AdminHome() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          value={busquedaCliente}
+          onChangeText={onChangeBusquedaCliente}
+          placeholder="Buscar cliente..."
+          placeholderTextColor="#64748B"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       {clientesConPrestamo.length === 0 ? (
         <Text style={styles.emptyText}>No hay clientes cargados todavía.</Text>
+      ) : clientesFiltrados.length === 0 ? (
+        <Text style={styles.emptyText}>No se encontraron clientes.</Text>
       ) : (
         <View style={styles.clientsList}>
-          {clientesConPrestamo.map((cliente) => (
+          {clientesFiltrados.map((cliente) => (
             <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
               <View style={styles.clientTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>{cliente.nombre}</Text>
+                  <Text style={styles.clientName}>
+                    {cliente.apellido
+                      ? `${cliente.nombre} ${cliente.apellido}`
+                      : cliente.nombre}
+                  </Text>
                   <Text style={styles.clientMeta}>DNI: {cliente.dni || '—'}</Text>
                   <Text style={styles.clientMeta}>{cliente.telefono || 'Sin teléfono'}</Text>
+                  {cliente.email ? (
+                    <Text style={styles.clientMeta}>Email: {cliente.email}</Text>
+                  ) : null}
                 </View>
 
                 <BadgeEstado
@@ -664,7 +728,7 @@ export default function AdminHome() {
 
                 <View style={styles.bottomGridDesktop}>
                   <View style={styles.bottomLeftDesktop}>
-                    <ListaClientes />
+                    {ListaClientes()}
                     <ListaEmpleados />
                   </View>
 
@@ -679,7 +743,7 @@ export default function AdminHome() {
                 <AccionesRapidas />
                 <ResumenGeneral />
                 <ListaEmpleados />
-                <ListaClientes />
+                {ListaClientes()}
               </>
             )}
 
@@ -1063,6 +1127,22 @@ const styles = StyleSheet.create({
 
   clientsList: {
     marginTop: 6,
+  },
+
+  searchContainer: {
+    marginTop: 6,
+    marginBottom: 12,
+  },
+
+  searchInput: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    color: '#E2E8F0',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
   },
 
   clientCard: {
