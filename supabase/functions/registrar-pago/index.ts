@@ -222,16 +222,21 @@ Deno.serve(async (req) => {
       )
     }
 
+    const body = await req.json()
+
     const authHeader =
       req.headers.get('authorization') || req.headers.get('Authorization')
-
-    const token = extraerTokenBearer(authHeader)
+    const tokenDesdeHeader = extraerTokenBearer(authHeader)
+    const tokenDesdeBody =
+      typeof body?.access_token === 'string' ? body.access_token.trim() : ''
+    const token = tokenDesdeHeader || tokenDesdeBody
 
     if (!token) {
       return jsonResponse(
         {
-          error: 'Authorization header inválido',
-          detalle: 'Debe venir como: Bearer TOKEN',
+          error: 'Token de sesión faltante',
+          detalle:
+            'Enviá Authorization: Bearer TOKEN o access_token en el body',
         },
         401
       )
@@ -259,8 +264,6 @@ Deno.serve(async (req) => {
         401
       )
     }
-
-    const body = await req.json()
 
     const prestamo_id = body?.prestamo_id
     const cliente_id = body?.cliente_id

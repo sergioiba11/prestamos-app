@@ -501,6 +501,7 @@ export default function CargarPago() {
         monto_ingresado: Number(montoNumero.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
         aplicar_a_multiples: true,
+        access_token: session.access_token,
       }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
