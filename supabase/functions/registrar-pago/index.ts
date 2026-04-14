@@ -54,12 +54,103 @@ function formatearMonto(valor: number) {
   }).format(Number(valor || 0))
 }
 
-async function enviarCorreoFactura({
+function escaparHtml(valor: unknown) {
+  return String(valor ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function construirHtmlTicketPago(data: {
+  clienteNombre: string
+  prestamoId: string
+  pagoId: string
+  montoAplicado: number
+  montoIngresado: number
+  vuelto: number
+  saldoRestante: number
+  metodo: string
+  fechaPago: string
+  cuotasImpactadas: number[]
+  proximaCuotaTexto: string
+}) {
+  const cuotasTexto = data.cuotasImpactadas.length
+    ? data.cuotasImpactadas.map((n) => `#${n}`).join(', ')
+    : 'No informado'
+
+  return `
+    <div style="font-family: Arial, sans-serif; background: #020817; padding: 24px; color: #F8FAFC;">
+      <h1 style="color: #22C55E; margin: 0 0 20px 0; font-size: 24px;">✅ Pago aprobado</h1>
+      <div style="background: #0F172A; border-radius: 16px; padding: 20px; border: 1px solid #1E293B;">
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Cliente</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${escaparHtml(
+          data.clienteNombre
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Monto pagado</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${formatearMonto(
+          data.montoAplicado
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Monto ingresado</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${formatearMonto(
+          data.montoIngresado
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Vuelto</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${formatearMonto(
+          data.vuelto
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Método</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${escaparHtml(
+          data.metodo
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Fecha</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${escaparHtml(
+          data.fechaPago
+        )}</p>
+
+        <p style="margin: 0 0 10px 0; color: #94A3B8; font-size: 13px;">Saldo restante</p>
+        <p style="margin: 0 0 14px 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">${formatearMonto(
+          data.saldoRestante
+        )}</p>
+
+        <hr style="border: 0; border-top: 1px solid #1E293B; margin: 12px 0;" />
+
+        <p style="margin: 0 0 8px 0; color: #94A3B8; font-size: 13px;">Cuotas impactadas</p>
+        <p style="margin: 0 0 12px 0; color: #E2E8F0; font-size: 15px; font-weight: 600;">${escaparHtml(
+          cuotasTexto
+        )}</p>
+
+        <p style="margin: 0 0 8px 0; color: #94A3B8; font-size: 13px;">Próxima cuota pendiente</p>
+        <p style="margin: 0 0 12px 0; color: #E2E8F0; font-size: 15px; font-weight: 600;">${escaparHtml(
+          data.proximaCuotaTexto
+        )}</p>
+
+        <p style="margin: 0 0 8px 0; color: #94A3B8; font-size: 13px;">ID préstamo</p>
+        <p style="margin: 0 0 12px 0; color: #E2E8F0; font-size: 15px; font-weight: 600;">${escaparHtml(
+          data.prestamoId
+        )}</p>
+
+        <p style="margin: 0 0 8px 0; color: #94A3B8; font-size: 13px;">ID pago</p>
+        <p style="margin: 0; color: #E2E8F0; font-size: 15px; font-weight: 600;">${escaparHtml(
+          data.pagoId
+        )}</p>
+      </div>
+    </div>
+  `
+}
+
+async function enviarCorreo({
   to,
   subject,
   html,
 }: {
-  to: string[]
+  to: string
   subject: string
   html: string
 }) {
@@ -67,38 +158,46 @@ async function enviarCorreoFactura({
   const remitente =
     Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
 
-  if (!resendApiKey || !remitente || to.length === 0) {
+  if (!resendApiKey || !remitente || !to) {
     return {
       ok: false,
       motivo:
-        'No se envió correo: faltan RESEND_API_KEY, RESEND_FROM_EMAIL/FACTURAS_FROM_EMAIL o destinatarios',
+        'No se envió correo: faltan RESEND_API_KEY, RESEND_FROM_EMAIL/FACTURAS_FROM_EMAIL o destinatario',
     }
   }
 
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: remitente,
-      to,
-      subject,
-      html,
-    }),
-  })
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: remitente,
+        to: [to],
+        subject,
+        html,
+      }),
+    })
 
-  if (!res.ok) {
-    const detalle = await res.text()
+    if (!res.ok) {
+      const detalle = await res.text()
+      return {
+        ok: false,
+        motivo: `Fallo envío de correo (${res.status})`,
+        detalle,
+      }
+    }
+
+    return { ok: true }
+  } catch (error) {
     return {
       ok: false,
-      motivo: `Fallo envío de correo (${res.status})`,
-      detalle,
+      motivo: 'Excepción al enviar correo',
+      detalle: error instanceof Error ? error.message : 'Error desconocido',
     }
   }
-
-  return { ok: true }
 }
 
 Deno.serve(async (req) => {
@@ -443,57 +542,73 @@ Deno.serve(async (req) => {
       .eq('id', clienteUsuarioId)
       .maybeSingle()
 
-    const { data: adminsData } = await supabase
-      .from('usuarios')
-      .select('email')
-      .eq('rol', 'admin')
-
     const clienteEmail = String(usuarioClienteData?.email || '')
       .trim()
       .toLowerCase()
-
-    const adminEmails = (adminsData || [])
-      .map((item) => String(item?.email || '').trim().toLowerCase())
-      .filter(Boolean)
-
-    const destinatarios = Array.from(
-      new Set([clienteEmail, ...adminEmails].filter(Boolean))
-    )
+    const adminEmail = String(Deno.env.get('PAGOS_ADMIN_EMAIL') || '')
+      .trim()
+      .toLowerCase()
 
     const fechaPago = new Date().toLocaleString('es-AR', {
       timeZone: 'America/Argentina/Buenos_Aires',
       dateStyle: 'medium',
       timeStyle: 'short',
     })
-    const cuotasTexto = cuotasImpactadas.length
-      ? cuotasImpactadas.map((n) => `#${n}`).join(', ')
-      : '—'
+    const proximaCuotaTexto = proximaCuota
+      ? `Cuota #${proximaCuota.numero_cuota} - Saldo ${formatearMonto(
+          Number(proximaCuota.saldo_pendiente || proximaCuota.monto_cuota || 0)
+        )}`
+      : 'No informada'
 
-    const htmlFactura = `
-      <div style="font-family: Arial, sans-serif; line-height: 1.45;">
-        <h2 style="margin-bottom: 8px;">Factura de pago aprobada</h2>
-        <p>Hola ${clienteNombre}, se registró correctamente un pago.</p>
-        <ul>
-          <li><strong>Cliente:</strong> ${clienteNombre}</li>
-          <li><strong>Préstamo:</strong> ${prestamo_id}</li>
-          <li><strong>Pago ID:</strong> ${pago.id}</li>
-          <li><strong>Fecha:</strong> ${fechaPago}</li>
-          <li><strong>Método:</strong> ${metodo}</li>
-          <li><strong>Monto aplicado:</strong> ${formatearMonto(totalAplicado)}</li>
-          <li><strong>Monto recibido:</strong> ${formatearMonto(montoIngresado)}</li>
-          <li><strong>Vuelto:</strong> ${formatearMonto(vuelto)}</li>
-          <li><strong>Cuotas impactadas:</strong> ${cuotasTexto}</li>
-          <li><strong>Saldo restante:</strong> ${formatearMonto(saldoRestante)}</li>
-          <li><strong>Estado del préstamo:</strong> ${nuevoEstadoPrestamo}</li>
-        </ul>
-      </div>
-    `
-
-    const resultadoCorreo = await enviarCorreoFactura({
-      to: destinatarios,
-      subject: `Factura de pago aprobada - ${clienteNombre}`,
-      html: htmlFactura,
+    const htmlTicket = construirHtmlTicketPago({
+      clienteNombre,
+      prestamoId: String(prestamo_id),
+      pagoId: String(pago.id),
+      montoAplicado: totalAplicado,
+      montoIngresado,
+      vuelto,
+      saldoRestante,
+      metodo,
+      fechaPago,
+      cuotasImpactadas,
+      proximaCuotaTexto,
     })
+
+    const resultadoCorreos = {
+      cliente: { ok: false, motivo: 'Sin destinatario' },
+      admin: { ok: false, motivo: 'Sin destinatario' },
+    }
+
+    try {
+      if (clienteEmail) {
+        resultadoCorreos.cliente = await enviarCorreo({
+          to: clienteEmail,
+          subject: 'Pago registrado correctamente',
+          html: htmlTicket,
+        })
+      } else {
+        console.warn(
+          `[registrar-pago] No se enviará correo al cliente para pago ${pago.id}: cliente sin email`
+        )
+      }
+
+      if (adminEmail) {
+        resultadoCorreos.admin = await enviarCorreo({
+          to: adminEmail,
+          subject: 'Nuevo pago registrado',
+          html: htmlTicket,
+        })
+      } else {
+        console.warn(
+          `[registrar-pago] No se enviará correo al admin para pago ${pago.id}: faltó PAGOS_ADMIN_EMAIL`
+        )
+      }
+    } catch (error) {
+      console.error(
+        `[registrar-pago] Error inesperado al enviar correos del pago ${pago.id}:`,
+        error
+      )
+    }
 
     return jsonResponse({
       ok: true,
@@ -507,7 +622,7 @@ Deno.serve(async (req) => {
       cuota_actualizada: cuotaActualizada,
       proxima_cuota: proximaCuota,
       prestamo_estado: nuevoEstadoPrestamo,
-      factura_email: resultadoCorreo,
+      factura_email: resultadoCorreos,
     })
   } catch (error) {
     return jsonResponse(
