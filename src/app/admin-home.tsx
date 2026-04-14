@@ -134,21 +134,42 @@ export default function AdminHome() {
   const [busquedaCliente, setBusquedaCliente] = useState('')
 
   const cargarClientes = useCallback(async () => {
+    console.log('CARGANDO CLIENTES')
+
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, apellido, telefono, email, dni, direccion')
-      .order('nombre', { ascending: true })
+      .select('*')
+      .order('created_at', { ascending: false })
 
-    console.log('CLIENTES data:', data)
-    console.log('CLIENTES error:', error)
+    console.log('DATA CLIENTES:', data)
+    console.log('ERROR CLIENTES:', error)
+
+    let clientesData = data
 
     if (error) {
-      console.log('ERROR clientes:', error)
-      setClientes([])
-      return
+      const puedeSerColumna = (error.message || '').toLowerCase().includes('created_at')
+      if (puedeSerColumna) {
+        const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
+          .from('clientes')
+          .select('*')
+          .order('id', { ascending: false })
+
+        console.log('DATA CLIENTES (fallback id):', dataSinCreatedAt)
+        console.log('ERROR CLIENTES (fallback id):', errorSinCreatedAt)
+
+        if (errorSinCreatedAt) {
+          setClientes([])
+          return
+        }
+
+        clientesData = dataSinCreatedAt
+      } else {
+        setClientes([])
+        return
+      }
     }
 
-    setClientes((data as Cliente[]) ?? [])
+    setClientes((clientesData as Cliente[]) || [])
   }, [])
 
   const cargarTodo = useCallback(async () => {
@@ -208,11 +229,13 @@ export default function AdminHome() {
 
   useFocusEffect(
     useCallback(() => {
+      console.log('ADMIN HOME useFocusEffect -> cargarTodo')
       void cargarTodo()
     }, [cargarTodo])
   )
 
   useEffect(() => {
+    console.log('ADMIN HOME useEffect mount -> cargarTodo')
     void cargarTodo()
   }, [cargarTodo])
 
@@ -399,6 +422,14 @@ export default function AdminHome() {
       )
     })
   }, [busquedaCliente, clientesConPrestamo])
+
+  useEffect(() => {
+    console.log('BUSQUEDA CLIENTES:', busquedaCliente)
+  }, [busquedaCliente])
+
+  useEffect(() => {
+    console.log('CLIENTES FILTRADOS:', clientesFiltrados)
+  }, [clientesFiltrados])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
