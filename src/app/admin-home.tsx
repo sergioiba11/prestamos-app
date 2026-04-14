@@ -39,7 +39,7 @@ type Cliente = {
   nombre: string
   apellido?: string | null
   telefono: string | null
-  email?: string | null
+  email: string | null
   dni: string | null
   direccion?: string | null
 }
@@ -56,7 +56,7 @@ type ClienteConPrestamo = {
   nombre: string
   apellido?: string | null
   telefono: string | null
-  email?: string | null
+  email: string | null
   dni: string | null
   prestamo?: Prestamo | null
   estadoVisual: {
@@ -138,7 +138,10 @@ export default function AdminHome() {
     const requestId = ++searchRequestIdRef.current
     const termino = terminoBusqueda.trim()
 
-    let query = supabase.from('clientes').select('*').order('nombre', { ascending: true })
+    let query = supabase
+      .from('clientes')
+      .select('id, nombre, apellido, telefono, email, dni, direccion')
+      .order('nombre', { ascending: true })
 
     if (termino) {
       if (termino.includes('@')) {
@@ -642,11 +645,13 @@ export default function AdminHome() {
                       ? `${cliente.nombre} ${cliente.apellido}`
                       : cliente.nombre}
                   </Text>
-                  <Text style={styles.clientMeta}>DNI: {cliente.dni || '—'}</Text>
-                  <Text style={styles.clientMeta}>{cliente.telefono || 'Sin teléfono'}</Text>
-                  {cliente.email ? (
-                    <Text style={styles.clientMeta}>Email: {cliente.email}</Text>
-                  ) : null}
+                  <Text style={styles.clientMetaHighlight}>DNI: {cliente.dni || '—'}</Text>
+                  <Text style={styles.clientMetaHighlight}>
+                    Email: {cliente.email || 'Sin correo'}
+                  </Text>
+                  <Text style={styles.clientMetaMuted}>
+                    Teléfono: {cliente.telefono || 'Sin teléfono'}
+                  </Text>
                 </View>
 
                 <BadgeEstado
@@ -1178,6 +1183,19 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 12,
     marginTop: 4,
+  },
+
+  clientMetaHighlight: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+
+  clientMetaMuted: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 6,
   },
 
   clientInfoGrid: {
