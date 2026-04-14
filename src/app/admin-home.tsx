@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -39,7 +39,7 @@ type Cliente = {
   nombre: string
   apellido?: string | null
   telefono: string | null
-  email?: string | null
+  email: string | null
   dni: string | null
   direccion?: string | null
 }
@@ -56,7 +56,7 @@ type ClienteConPrestamo = {
   nombre: string
   apellido?: string | null
   telefono: string | null
-  email?: string | null
+  email: string | null
   dni: string | null
   prestamo?: Prestamo | null
   estadoVisual: {
@@ -82,14 +82,6 @@ function formatearFecha(fecha?: string | null) {
 function normalizarEstado(estado?: string | null) {
   if (!estado) return 'pendiente'
   return estado.toLowerCase()
-}
-
-function normalizarBusqueda(valor?: string | null) {
-  return String(valor || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
 }
 
 function calcularEstadoVisual(prestamo?: Prestamo | null) {
@@ -140,7 +132,38 @@ export default function AdminHome() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [busquedaCliente, setBusquedaCliente] = useState('')
-  const busquedaClienteDiferida = useDeferredValue(busquedaCliente)
+  const searchRequestIdRef = useRef(0)
+
+  const cargarClientes = useCallback(async (terminoBusqueda = '') => {
+    const requestId = ++searchRequestIdRef.current
+    const termino = terminoBusqueda.trim()
+
+    let query = supabase
+      .from('clientes')
+      .select('id, nombre, apellido, telefono, email, dni, direccion')
+      .order('nombre', { ascending: true })
+
+    if (termino) {
+      if (termino.includes('@')) {
+        query = query.ilike('email', `%${termino}%`)
+      } else if (/^\d+$/.test(termino)) {
+        query = query.ilike('dni', `%${termino}%`)
+      } else {
+        query = query.ilike('nombre', `%${termino}%`)
+      }
+    }
+
+    const { data, error } = await query
+
+    if (requestId !== searchRequestIdRef.current) return
+
+    if (error) {
+      console.log('ERROR clientes:', error)
+      return
+    }
+
+    setClientes((data as Cliente[]) || [])
+  }, [])
 
   const cargarTodo = useCallback(async () => {
     try {
@@ -153,7 +176,7 @@ export default function AdminHome() {
         setNombreAdmin(emailAuth.split('@')[0])
       }
 
-      const [prestamosRes, clientesRes, empleadosRes] = await Promise.all([
+      const [prestamosRes, empleadosRes] = await Promise.all([
         supabase
           .from('prestamos')
           .select(`
@@ -178,11 +201,6 @@ export default function AdminHome() {
           .order('fecha_inicio', { ascending: false }),
 
         supabase
-          .from('clientes')
-          .select('*')
-          .order('nombre', { ascending: true }),
-
-        supabase
           .from('usuarios')
           .select('id, nombre, email, rol')
           .eq('rol', 'empleado')
@@ -190,18 +208,17 @@ export default function AdminHome() {
       ])
 
       if (prestamosRes.error) console.log('ERROR prestamos:', prestamosRes.error)
-      if (clientesRes.error) console.log('ERROR clientes:', clientesRes.error)
       if (empleadosRes.error) console.log('ERROR empleados:', empleadosRes.error)
 
       setPrestamos((prestamosRes.data as unknown as Prestamo[]) || [])
-      setClientes((clientesRes.data as Cliente[]) || [])
       setEmpleados((empleadosRes.data as Empleado[]) || [])
+      await cargarClientes('')
     } catch (error) {
       console.log('ERROR cargarTodo:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [cargarClientes])
 
   useFocusEffect(
     useCallback(() => {
@@ -374,27 +391,15 @@ export default function AdminHome() {
     setBusquedaCliente(texto)
   }, [])
 
-  const clientesFiltrados = useMemo(() => {
-    const termino = normalizarBusqueda(busquedaClienteDiferida)
+  const clientesFiltrados = useMemo(() => clientesConPrestamo, [clientesConPrestamo])
 
-    if (!termino) return clientesConPrestamo
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void cargarClientes(busquedaCliente)
+    }, 300)
 
-    return clientesConPrestamo.filter((cliente) => {
-      const nombre = normalizarBusqueda(cliente.nombre)
-      const dni = normalizarBusqueda(cliente.dni)
-      const telefono = normalizarBusqueda(cliente.telefono)
-      const email = normalizarBusqueda(cliente.email)
-      const apellido = normalizarBusqueda(cliente.apellido)
-
-      return (
-        nombre.includes(termino) ||
-        dni.includes(termino) ||
-        email.includes(termino) ||
-        telefono.includes(termino) ||
-        apellido.includes(termino)
-      )
-    })
-  }, [busquedaClienteDiferida, clientesConPrestamo])
+    return () => clearTimeout(timer)
+  }, [busquedaCliente, cargarClientes])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
@@ -618,7 +623,7 @@ export default function AdminHome() {
           style={styles.searchInput}
           value={busquedaCliente}
           onChangeText={onChangeBusquedaCliente}
-          placeholder="Buscar cliente..."
+          placeholder="Buscar por nombre, DNI o email..."
           placeholderTextColor="#64748B"
           autoCapitalize="none"
           autoCorrect={false}
@@ -640,11 +645,13 @@ export default function AdminHome() {
                       ? `${cliente.nombre} ${cliente.apellido}`
                       : cliente.nombre}
                   </Text>
-                  <Text style={styles.clientMeta}>DNI: {cliente.dni || '—'}</Text>
-                  <Text style={styles.clientMeta}>{cliente.telefono || 'Sin teléfono'}</Text>
-                  {cliente.email ? (
-                    <Text style={styles.clientMeta}>Email: {cliente.email}</Text>
-                  ) : null}
+                  <Text style={styles.clientMetaHighlight}>DNI: {cliente.dni || '—'}</Text>
+                  <Text style={styles.clientMetaHighlight}>
+                    Email: {cliente.email || 'Sin correo'}
+                  </Text>
+                  <Text style={styles.clientMetaMuted}>
+                    Teléfono: {cliente.telefono || 'Sin teléfono'}
+                  </Text>
                 </View>
 
                 <BadgeEstado
@@ -1176,6 +1183,19 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 12,
     marginTop: 4,
+  },
+
+  clientMetaHighlight: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+
+  clientMetaMuted: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 6,
   },
 
   clientInfoGrid: {

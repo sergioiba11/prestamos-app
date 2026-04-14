@@ -1,12 +1,15 @@
 import { makeRedirectUri } from 'expo-auth-session'
 import * as QueryParams from 'expo-auth-session/build/QueryParams'
 import * as Linking from 'expo-linking'
+import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
 import { useEffect, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Alert,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -76,12 +79,23 @@ async function createSessionFromUrl(url: string) {
   return data.session
 }
 
+async function enviarRecuperacionPassword(email: string) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  })
+}
+
+type LoadingAction = 'login' | 'google' | 'recovery' | 'resend' | null
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const passwordRef = useRef<TextInput>(null)
+
+  const isLoading = loadingAction !== null
 
   useEffect(() => {
     let mounted = true
@@ -109,7 +123,7 @@ export default function Login() {
             await goByRole(session.user.id)
           }
         } catch (error: any) {
-          Alert.alert('Error', error?.message || 'No se pudo completar Google')
+          setErrorMsg(error?.message || 'No se pudo completar Google')
         }
       })()
     })
@@ -137,20 +151,21 @@ export default function Login() {
   }, [])
 
   const handleLogin = async () => {
-    if (loading) return
+    if (isLoading) return
 
     setErrorMsg('')
+    setSuccessMsg('')
 
     const cleanEmail = email.trim().toLowerCase()
     const cleanPassword = password.trim()
 
     if (!cleanEmail || !cleanPassword) {
-      setErrorMsg('Completá todos los campos')
+      setErrorMsg('Completá email y contraseña para continuar.')
       return
     }
 
     try {
-      setLoading(true)
+      setLoadingAction('login')
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -165,7 +180,7 @@ export default function Login() {
           msg.includes('not confirmed') ||
           msg.includes('confirmation')
         ) {
-          setErrorMsg('Primero tenés que confirmar tu email')
+          setErrorMsg('Tu cuenta todavía no está activada. Revisá tu correo.')
           return
         }
 
@@ -174,34 +189,35 @@ export default function Login() {
           msg.includes('invalid credentials') ||
           msg.includes('invalid email or password')
         ) {
-          setErrorMsg('Correo o contraseña incorrectos')
+          setErrorMsg('Correo o contraseña incorrectos.')
           return
         }
 
-        setErrorMsg(error.message || 'No se pudo iniciar sesión')
+        setErrorMsg(error.message || 'No se pudo iniciar sesión.')
         return
       }
 
       if (!data.user) {
-        setErrorMsg('No se encontró el usuario')
+        setErrorMsg('No se encontró el usuario.')
         return
       }
 
       await goByRole(data.user.id)
     } catch (error: any) {
-      setErrorMsg(error?.message || 'No se pudo iniciar sesión')
+      setErrorMsg(error?.message || 'No se pudo iniciar sesión.')
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
   const handleGoogleLogin = async () => {
-    if (loading) return
+    if (isLoading) return
 
     setErrorMsg('')
+    setSuccessMsg('')
 
     try {
-      setLoading(true)
+      setLoadingAction('google')
 
       if (Platform.OS === 'web') {
         const { error } = await supabase.auth.signInWithOAuth({
@@ -238,29 +254,57 @@ export default function Login() {
       }
 
       if (result.type !== 'cancel') {
-        setErrorMsg('No se pudo completar el login con Google')
+        setErrorMsg('No se pudo completar el login con Google.')
       }
     } catch (error: any) {
-      setErrorMsg(error?.message || 'No se pudo iniciar sesión con Google')
+      setErrorMsg(error?.message || 'No se pudo iniciar sesión con Google.')
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
-  const reenviarActivacion = async () => {
-    if (loading) return
+  const handleForgotPassword = async () => {
+    if (isLoading) return
 
     setErrorMsg('')
+    setSuccessMsg('')
 
-    if (!email.trim()) {
-      setErrorMsg('Ingresá tu email para reenviar la activación')
+    const cleanEmail = email.trim().toLowerCase()
+
+    if (!cleanEmail) {
+      setErrorMsg('Ingresá tu email para restablecer la contraseña.')
       return
     }
 
     try {
-      setLoading(true)
+      setLoadingAction('recovery')
+      const { error } = await enviarRecuperacionPassword(cleanEmail)
 
-      const cleanEmail = email.trim().toLowerCase()
+      if (error) throw error
+
+      setSuccessMsg('Te enviamos un enlace para restablecer tu contraseña.')
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'No se pudo enviar el correo de recuperación.')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  const reenviarActivacion = async () => {
+    if (isLoading) return
+
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    const cleanEmail = email.trim().toLowerCase()
+
+    if (!cleanEmail) {
+      setErrorMsg('Ingresá tu email para reenviar la activación.')
+      return
+    }
+
+    try {
+      setLoadingAction('resend')
 
       const { error } = await supabase.auth.resend({
         type: 'signup',
@@ -269,170 +313,273 @@ export default function Login() {
 
       if (error) throw error
 
-      Alert.alert('Correo enviado', 'Te reenviamos el correo de activación.')
+      setSuccessMsg('Te reenviamos el correo de activación.')
+      if (Platform.OS !== 'web') {
+        Alert.alert('Correo enviado', 'Te reenviamos el correo de activación.')
+      }
     } catch (error: any) {
-      setErrorMsg(error?.message || 'No se pudo reenviar el correo')
+      setErrorMsg(error?.message || 'No se pudo reenviar el correo.')
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
   const contenidoLogin = (
-    <>
-      <Text style={styles.title}>Iniciar sesión</Text>
+    <View style={styles.screen}>
+      <View style={styles.card}>
+        <View style={styles.logoWrap}>
+          <Image source={require('../../assets/images/logo-root.png')} style={styles.logo} contentFit="contain" />
+        </View>
 
-      <TextInput
-        style={[styles.input, errorMsg ? styles.inputError : null]}
-        placeholder="Email"
-        placeholderTextColor="#94A3B8"
-        value={email}
-        onChangeText={(text) => {
-          setEmail(text)
-          if (errorMsg) setErrorMsg('')
-        }}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        autoCorrect={false}
-        returnKeyType="next"
-        onSubmitEditing={() => passwordRef.current?.focus()}
-      />
+        <Text style={styles.title}>Iniciar sesión</Text>
+        <Text style={styles.subtitle}>Accedé a tu cuenta para continuar</Text>
 
-      <TextInput
-        ref={passwordRef}
-        style={[styles.input, errorMsg ? styles.inputError : null]}
-        placeholder="Contraseña"
-        placeholderTextColor="#94A3B8"
-        secureTextEntry
-        value={password}
-        onChangeText={(text) => {
-          setPassword(text)
-          if (errorMsg) setErrorMsg('')
-        }}
-        returnKeyType="done"
-        onSubmitEditing={handleLogin}
-      />
+        <View style={styles.form}>
+          <TextInput
+            style={[styles.input, errorMsg ? styles.inputError : null]}
+            placeholder="Email"
+            placeholderTextColor="#7C8BA5"
+            value={email}
+            onChangeText={(text) => {
+              setEmail(text)
+              if (errorMsg) setErrorMsg('')
+              if (successMsg) setSuccessMsg('')
+            }}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoCorrect={false}
+            returnKeyType="next"
+            onSubmitEditing={() => passwordRef.current?.focus()}
+          />
 
-      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+          <TextInput
+            ref={passwordRef}
+            style={[styles.input, errorMsg ? styles.inputError : null]}
+            placeholder="Contraseña"
+            placeholderTextColor="#7C8BA5"
+            secureTextEntry
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text)
+              if (errorMsg) setErrorMsg('')
+            }}
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
+          />
 
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleLogin}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {loading ? 'Ingresando...' : 'Ingresar'}
-        </Text>
-      </TouchableOpacity>
+          <Pressable onPress={handleForgotPassword} disabled={isLoading} style={styles.forgotWrap}>
+            <Text style={styles.forgotText}>
+              {loadingAction === 'recovery'
+                ? 'Enviando recuperación...'
+                : '¿Olvidaste tu contraseña?'}
+            </Text>
+          </Pressable>
 
-      <TouchableOpacity
-        style={[styles.googleButton, loading && styles.buttonDisabled]}
-        onPress={handleGoogleLogin}
-        disabled={loading}
-      >
-        <Text style={styles.googleButtonText}>
-          {loading ? 'Procesando...' : 'Ingresar con Google'}
-        </Text>
-      </TouchableOpacity>
+          {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+          {successMsg ? <Text style={styles.successText}>{successMsg}</Text> : null}
 
-      <TouchableOpacity
-        style={styles.secondary}
-        onPress={reenviarActivacion}
-        disabled={loading}
-      >
-        <Text style={styles.secondaryText}>Reenviar correo de activación</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.buttonPrimary, isLoading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {loadingAction === 'login' ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonPrimaryText}>Ingresar</Text>
+            )}
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.secondary}
-        onPress={() => router.push('/register' as any)}
-        disabled={loading}
-      >
-        <Text style={styles.secondaryText}>¿No tenés cuenta? Registrate</Text>
-      </TouchableOpacity>
-    </>
+          <TouchableOpacity
+            style={[styles.buttonSecondary, isLoading && styles.buttonDisabled]}
+            onPress={handleGoogleLogin}
+            disabled={isLoading}
+          >
+            {loadingAction === 'google' ? (
+              <ActivityIndicator color="#0F172A" />
+            ) : (
+              <Text style={styles.buttonSecondaryText}>Ingresar con Google</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.bottomLinks}>
+          <TouchableOpacity
+            onPress={reenviarActivacion}
+            disabled={isLoading}
+            style={styles.secondaryLinkWrap}
+          >
+            <Text style={styles.secondaryLinkText}>
+              {loadingAction === 'resend'
+                ? 'Reenviando activación...'
+                : 'Reenviar correo de activación'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/register' as any)}
+            disabled={isLoading}
+            style={styles.registerLinkWrap}
+          >
+            <Text style={styles.registerLinkText}>¿No tenés cuenta? Registrate</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   )
 
-  return (
+  return Platform.OS === 'web' ? (
     <View style={styles.container}>
-      {Platform.OS === 'web' ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void handleLogin()
-          }}
-        >
-          {contenidoLogin}
-        </form>
-      ) : contenidoLogin}
+      <form
+        style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          void handleLogin()
+        }}
+      >
+        {contenidoLogin}
+      </form>
     </View>
+  ) : (
+    <View style={styles.container}>{contenidoLogin}</View>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
-    padding: 20,
+    backgroundColor: '#020817',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 28,
+  },
+  screen: {
+    width: '100%',
+    alignItems: 'center',
     justifyContent: 'center',
   },
+  card: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 20,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  logo: {
+    width: 72,
+    height: 72,
+  },
   title: {
-    color: '#fff',
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 20,
+    color: '#F8FAFC',
+    fontSize: 30,
+    fontWeight: '700',
     textAlign: 'center',
   },
+  subtitle: {
+    color: '#94A3B8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 22,
+  },
+  form: {
+    gap: 12,
+  },
   input: {
-    backgroundColor: '#1E293B',
-    color: '#fff',
-    padding: 14,
-    borderRadius: 10,
-    marginBottom: 12,
+    backgroundColor: '#111C34',
+    color: '#F8FAFC',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#273449',
+    fontSize: 15,
   },
   inputError: {
     borderColor: '#EF4444',
   },
+  forgotWrap: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  forgotText: {
+    color: '#93C5FD',
+    fontSize: 13,
+    fontWeight: '500',
+  },
   errorText: {
-    color: '#EF4444',
-    marginBottom: 10,
+    color: '#FCA5A5',
+    fontSize: 13,
     textAlign: 'center',
-    fontSize: 14,
+    marginTop: -2,
   },
-  button: {
+  successText: {
+    color: '#86EFAC',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: -2,
+  },
+  buttonPrimary: {
+    marginTop: 4,
     backgroundColor: '#2563EB',
-    padding: 14,
-    borderRadius: 10,
-    marginTop: 8,
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 10,
-    marginTop: 12,
+  buttonPrimaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonSecondary: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonSecondaryText: {
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '700',
   },
   buttonDisabled: {
     opacity: 0.7,
   },
-  buttonText: {
-    color: '#fff',
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 16,
+  bottomLinks: {
+    marginTop: 16,
+    gap: 10,
+    alignItems: 'center',
   },
-  googleButtonText: {
-    color: '#0F172A',
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 16,
+  secondaryLinkWrap: {
+    paddingVertical: 2,
   },
-  secondary: {
-    marginTop: 12,
+  secondaryLinkText: {
+    color: '#64748B',
+    fontSize: 13,
   },
-  secondaryText: {
-    color: '#94A3B8',
-    textAlign: 'center',
+  registerLinkWrap: {
+    paddingVertical: 4,
+  },
+  registerLinkText: {
+    color: '#CBD5E1',
     fontSize: 14,
+    fontWeight: '600',
   },
 })
