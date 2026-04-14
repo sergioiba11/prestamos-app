@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -84,6 +84,14 @@ function normalizarEstado(estado?: string | null) {
   return estado.toLowerCase()
 }
 
+function normalizarBusqueda(valor?: string | null) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
 function calcularEstadoVisual(prestamo?: Prestamo | null) {
   if (!prestamo) {
     return { texto: 'Sin préstamo', tipo: 'pagado' as const }
@@ -132,6 +140,7 @@ export default function AdminHome() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [busquedaCliente, setBusquedaCliente] = useState('')
+  const busquedaClienteDiferida = useDeferredValue(busquedaCliente)
 
   const cargarTodo = useCallback(async () => {
     try {
@@ -361,25 +370,31 @@ export default function AdminHome() {
   })
 }, [clientes, prestamos])
 
+  const onChangeBusquedaCliente = useCallback((texto: string) => {
+    setBusquedaCliente(texto)
+  }, [])
+
   const clientesFiltrados = useMemo(() => {
-    const termino = busquedaCliente.trim().toLowerCase()
+    const termino = normalizarBusqueda(busquedaClienteDiferida)
 
     if (!termino) return clientesConPrestamo
 
     return clientesConPrestamo.filter((cliente) => {
-      const nombre = String(cliente.nombre || '').toLowerCase()
-      const apellido = String(cliente.apellido || '').toLowerCase()
-      const telefono = String(cliente.telefono || '').toLowerCase()
-      const email = String(cliente.email || '').toLowerCase()
+      const nombre = normalizarBusqueda(cliente.nombre)
+      const dni = normalizarBusqueda(cliente.dni)
+      const telefono = normalizarBusqueda(cliente.telefono)
+      const email = normalizarBusqueda(cliente.email)
+      const apellido = normalizarBusqueda(cliente.apellido)
 
       return (
         nombre.includes(termino) ||
-        apellido.includes(termino) ||
+        dni.includes(termino) ||
+        email.includes(termino) ||
         telefono.includes(termino) ||
-        email.includes(termino)
+        apellido.includes(termino)
       )
     })
-  }, [busquedaCliente, clientesConPrestamo])
+  }, [busquedaClienteDiferida, clientesConPrestamo])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
@@ -602,7 +617,7 @@ export default function AdminHome() {
         <TextInput
           style={styles.searchInput}
           value={busquedaCliente}
-          onChangeText={setBusquedaCliente}
+          onChangeText={onChangeBusquedaCliente}
           placeholder="Buscar cliente..."
           placeholderTextColor="#64748B"
           autoCapitalize="none"
@@ -713,7 +728,7 @@ export default function AdminHome() {
 
                 <View style={styles.bottomGridDesktop}>
                   <View style={styles.bottomLeftDesktop}>
-                    <ListaClientes />
+                    {ListaClientes()}
                     <ListaEmpleados />
                   </View>
 
@@ -728,7 +743,7 @@ export default function AdminHome() {
                 <AccionesRapidas />
                 <ResumenGeneral />
                 <ListaEmpleados />
-                <ListaClientes />
+                {ListaClientes()}
               </>
             )}
 
