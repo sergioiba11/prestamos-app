@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { Resend } from 'npm:resend@4.6.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -145,7 +146,15 @@ function construirHtmlTicketPago(data: {
   `
 }
 
-async function enviarCorreo({
+function leerEntorno(nombre: string) {
+  const desdeDeno = Deno.env.get(nombre)
+  if (desdeDeno) return desdeDeno
+
+  const processGlobal = (globalThis as { process?: { env?: Record<string, string> } }).process
+  return processGlobal?.env?.[nombre] || ''
+}
+
+async function sendPaymentReceipt({
   to,
   subject,
   html,
@@ -154,9 +163,8 @@ async function enviarCorreo({
   subject: string
   html: string
 }) {
-  const resendApiKey = Deno.env.get('RESEND_API_KEY')
-  const remitente =
-    Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
+  const resendApiKey = leerEntorno('RESEND_API_KEY')
+  const remitente = leerEntorno('RESEND_FROM_EMAIL') || leerEntorno('FACTURAS_FROM_EMAIL')
 
   if (!resendApiKey || !remitente || !to) {
     return {
@@ -167,30 +175,23 @@ async function enviarCorreo({
   }
 
   try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: remitente,
-        to: [to],
-        subject,
-        html,
-      }),
+    const resend = new Resend(resendApiKey)
+    const { data, error } = await resend.emails.send({
+      from: remitente,
+      to: [to],
+      subject,
+      html,
     })
 
-    if (!res.ok) {
-      const detalle = await res.text()
+    if (error) {
       return {
         ok: false,
-        motivo: `Fallo envío de correo (${res.status})`,
-        detalle,
+        motivo: 'Fallo envío de correo con Resend',
+        detalle: error.message,
       }
     }
 
-    return { ok: true }
+    return { ok: true, id: data?.id || null }
   } catch (error) {
     return {
       ok: false,
@@ -545,7 +546,7 @@ Deno.serve(async (req) => {
     const clienteEmail = String(usuarioClienteData?.email || '')
       .trim()
       .toLowerCase()
-    const adminEmail = String(Deno.env.get('PAGOS_ADMIN_EMAIL') || '')
+    const adminEmail = String(leerEntorno('PAGOS_ADMIN_EMAIL') || '')
       .trim()
       .toLowerCase()
 
@@ -581,7 +582,7 @@ Deno.serve(async (req) => {
 
     try {
       if (clienteEmail) {
-        resultadoCorreos.cliente = await enviarCorreo({
+        resultadoCorreos.cliente = await sendPaymentReceipt({
           to: clienteEmail,
           subject: 'Pago registrado correctamente',
           html: htmlTicket,
@@ -593,7 +594,7 @@ Deno.serve(async (req) => {
       }
 
       if (adminEmail) {
-        resultadoCorreos.admin = await enviarCorreo({
+        resultadoCorreos.admin = await sendPaymentReceipt({
           to: adminEmail,
           subject: 'Nuevo pago registrado',
           html: htmlTicket,
