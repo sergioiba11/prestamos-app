@@ -42,6 +42,11 @@ type Cliente = {
   email: string | null
   dni: string | null
   direccion?: string | null
+  usuarios?: {
+    email?: string | null
+  } | Array<{
+    email?: string | null
+  }> | null
 }
 
 type Empleado = {
@@ -138,7 +143,19 @@ export default function AdminHome() {
 
     const { data, error } = await supabase
       .from('clientes')
-      .select('*')
+      .select(`
+        id,
+        nombre,
+        apellido,
+        telefono,
+        email,
+        dni,
+        direccion,
+        usuario_id,
+        usuarios:usuario_id (
+          email
+        )
+      `)
       .order('created_at', { ascending: false })
 
     console.log('DATA CLIENTES:', data)
@@ -151,7 +168,19 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select('*')
+          .select(`
+            id,
+            nombre,
+            apellido,
+            telefono,
+            email,
+            dni,
+            direccion,
+            usuario_id,
+            usuarios:usuario_id (
+              email
+            )
+          `)
           .order('id', { ascending: false })
 
         console.log('DATA CLIENTES (fallback id):', dataSinCreatedAt)
@@ -169,7 +198,18 @@ export default function AdminHome() {
       }
     }
 
-    setClientes((clientesData as Cliente[]) || [])
+    const normalizados = ((clientesData as Cliente[]) || []).map((cliente) => {
+      const usuarioRelacion = Array.isArray(cliente.usuarios)
+        ? cliente.usuarios[0]
+        : cliente.usuarios
+
+      return {
+        ...cliente,
+        email: cliente.email || usuarioRelacion?.email || null,
+      }
+    })
+
+    setClientes(normalizados)
   }, [])
 
   const cargarTodo = useCallback(async () => {
@@ -430,6 +470,12 @@ export default function AdminHome() {
   useEffect(() => {
     console.log('CLIENTES FILTRADOS:', clientesFiltrados)
   }, [clientesFiltrados])
+
+  useEffect(() => {
+    clientes.forEach((cliente) => {
+      console.log('CLIENTE:', cliente)
+    })
+  }, [clientes])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
