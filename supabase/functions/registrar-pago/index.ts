@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { Resend } from 'npm:resend@4.6.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -165,6 +166,7 @@ async function sendEmail({
   html: string
   label: 'cliente' | 'admin'
 }) {
+  console.log(`[registrar-pago] sendEmail ejecutándose para ${label}`)
   const resendApiKey = Deno.env.get('RESEND_API_KEY')
   const remitente =
     Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
@@ -331,6 +333,8 @@ Deno.serve(async (req) => {
 
     const authHeader =
       req.headers.get('authorization') || req.headers.get('Authorization')
+    console.log('[registrar-pago] Authorization header presente:', Boolean(authHeader))
+    console.log('[registrar-pago] Authorization header (masked):', ocultar(authHeader))
 
     const token = extraerTokenBearer(authHeader)
 
@@ -356,6 +360,8 @@ Deno.serve(async (req) => {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser(token)
+    console.log('[registrar-pago] Resultado getUser userError:', userError?.message || null)
+    console.log('[registrar-pago] Resultado getUser user:', user || null)
 
     if (userError || !user) {
       return jsonResponse(
