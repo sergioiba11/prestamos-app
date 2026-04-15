@@ -42,11 +42,7 @@ type Cliente = {
   email: string | null
   dni: string | null
   direccion?: string | null
-  usuarios?: {
-    email?: string | null
-  } | Array<{
-    email?: string | null
-  }> | null
+  usuario_id?: string | null
 }
 
 type Empleado = {
@@ -143,22 +139,10 @@ export default function AdminHome() {
 
     const { data, error } = await supabase
       .from('clientes')
-      .select(`
-        id,
-        nombre,
-        apellido,
-        telefono,
-        email,
-        dni,
-        direccion,
-        usuario_id,
-        usuarios:usuario_id (
-          email
-        )
-      `)
+      .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
       .order('created_at', { ascending: false })
 
-    console.log('DATA CLIENTES:', data)
+    console.log('DATA CLIENTES (crudo):', data)
     console.log('ERROR CLIENTES:', error)
 
     let clientesData = data
@@ -168,22 +152,10 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select(`
-            id,
-            nombre,
-            apellido,
-            telefono,
-            email,
-            dni,
-            direccion,
-            usuario_id,
-            usuarios:usuario_id (
-              email
-            )
-          `)
+          .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
           .order('id', { ascending: false })
 
-        console.log('DATA CLIENTES (fallback id):', dataSinCreatedAt)
+        console.log('DATA CLIENTES fallback (crudo):', dataSinCreatedAt)
         console.log('ERROR CLIENTES (fallback id):', errorSinCreatedAt)
 
         if (errorSinCreatedAt) {
@@ -198,16 +170,38 @@ export default function AdminHome() {
       }
     }
 
-    const normalizados = ((clientesData as Cliente[]) || []).map((cliente) => {
-      const usuarioRelacion = Array.isArray(cliente.usuarios)
-        ? cliente.usuarios[0]
-        : cliente.usuarios
+    const baseClientes = (clientesData as Cliente[]) || []
+    console.log('CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
 
-      return {
-        ...cliente,
-        email: cliente.email || usuarioRelacion?.email || null,
+    // Fallback seguro de email desde tabla usuarios sin romper listado si esta consulta falla.
+    const usuarioIds = baseClientes
+      .map((c) => c.usuario_id)
+      .filter((id): id is string => Boolean(id))
+
+    let emailByUsuarioId = new Map<string, string>()
+
+    if (usuarioIds.length > 0) {
+      const { data: usuariosData, error: usuariosError } = await supabase
+        .from('usuarios')
+        .select('id, email')
+        .in('id', usuarioIds)
+
+      console.log('DATA USUARIOS (fallback email):', usuariosData)
+      console.log('ERROR USUARIOS (fallback email):', usuariosError)
+
+      if (!usuariosError && Array.isArray(usuariosData)) {
+        emailByUsuarioId = new Map(
+          usuariosData
+            .filter((u: any) => u?.id && u?.email)
+            .map((u: any) => [String(u.id), String(u.email)])
+        )
       }
-    })
+    }
+
+    const normalizados = baseClientes.map((cliente) => ({
+      ...cliente,
+      email: cliente.email || emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
+    }))
 
     setClientes(normalizados)
   }, [])
