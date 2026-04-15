@@ -146,50 +146,104 @@ function construirHtmlTicketPago(data: {
   `
 }
 
+function ocultar(valor: string | null | undefined) {
+  const limpio = String(valor || '')
+  if (!limpio) return ''
+  if (limpio.length <= 8) return `${limpio.slice(0, 2)}***`
+  return `${limpio.slice(0, 4)}***${limpio.slice(-4)}`
+}
+
 async function sendEmail({
   to,
   subject,
   html,
+  label,
 }: {
   to: string
   subject: string
   html: string
+  label: 'cliente' | 'admin'
 }) {
-  const resendApiKey = leerEntorno('RESEND_API_KEY')
-  const remitente = leerEntorno('RESEND_FROM_EMAIL') || leerEntorno('FACTURAS_FROM_EMAIL')
+  console.log(`[registrar-pago] sendEmail ejecutándose para ${label}`)
+  const resendApiKey = Deno.env.get('RESEND_API_KEY')
+  const remitente =
+    Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
+  const hasApiKey = Boolean(resendApiKey)
+  const hasFromEmail = Boolean(remitente)
+  const toLimpio = String(to || '').trim()
 
-  if (!resendApiKey || !remitente || !to) {
+  console.log(`[registrar-pago] ${label} env check -> hasApiKey:`, hasApiKey)
+  console.log(`[registrar-pago] ${label} env check -> hasFromEmail:`, hasFromEmail)
+  console.log(`[registrar-pago] ${label} from:`, remitente || '(vacío)')
+  console.log(`[registrar-pago] ${label} to:`, toLimpio || '(vacío)')
+  console.log(`[registrar-pago] ${label} apiKey (masked):`, ocultar(resendApiKey))
+
+  const fromValido = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(remitente || '').trim())
+  if (!fromValido) {
+    console.warn(`[registrar-pago] ${label} from inválido:`, remitente || '(vacío)')
+  }
+
+  if (!resendApiKey || !remitente || !toLimpio) {
     return {
       sent: false,
       error:
         'No se envió correo: faltan RESEND_API_KEY, RESEND_FROM_EMAIL/FACTURAS_FROM_EMAIL o destinatario',
       id: null,
+      resend_response: null,
     }
   }
 
   try {
-    const resend = new Resend(resendApiKey)
-    const { data, error } = await resend.emails.send({
+    const payload = {
       from: remitente,
-      to: [to],
+      to: [toLimpio],
       subject,
       html,
+    }
+    console.log(`[registrar-pago] ${label} fetch Resend payload:`, {
+      from: payload.from,
+      to: payload.to,
+      subject: payload.subject,
+      html_length: payload.html.length,
     })
+    console.log(`[registrar-pago] ${label} Authorization Bearer armado con apiKey masked:`, ocultar(resendApiKey))
 
-    if (error) {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    const rawText = await res.text()
+    console.log(`[registrar-pago] ${label} respuesta Resend status:`, res.status)
+    console.log(`[registrar-pago] ${label} respuesta Resend body:`, rawText)
+
+    if (!res.ok) {
       return {
         sent: false,
-        error: error.message,
+        error: `Resend HTTP ${res.status}`,
         id: null,
+        resend_response: rawText,
       }
     }
 
-    return { sent: true, error: null, id: data?.id || null }
+    let parsed: { id?: string } | null = null
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null
+    } catch {
+      parsed = null
+    }
+
+    return { sent: true, error: null, id: parsed?.id || null, resend_response: rawText }
   } catch (error) {
+    console.error(`[registrar-pago] ${label} excepción enviando correo:`, error)
     return {
       sent: false,
       error: error instanceof Error ? error.message : 'Error desconocido',
       id: null,
+      resend_response: null,
     }
   }
 }
@@ -205,6 +259,7 @@ async function sendPaymentReceiptToClient({
     to: clienteEmail,
     subject: 'Pago recibido correctamente',
     html,
+    label: 'cliente',
   })
 }
 
@@ -250,6 +305,7 @@ async function sendPaymentReceiptToAdmin({
     to: adminEmail,
     subject: 'Nuevo pago registrado',
     html,
+    label: 'admin',
   })
 }
 
@@ -277,6 +333,8 @@ Deno.serve(async (req) => {
 
     const authHeader =
       req.headers.get('authorization') || req.headers.get('Authorization')
+    console.log('[registrar-pago] Authorization header presente:', Boolean(authHeader))
+    console.log('[registrar-pago] Authorization header (masked):', ocultar(authHeader))
 
     const token = extraerTokenBearer(authHeader)
 
@@ -302,6 +360,8 @@ Deno.serve(async (req) => {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser(token)
+    console.log('[registrar-pago] Resultado getUser userError:', userError?.message || null)
+    console.log('[registrar-pago] Resultado getUser user:', user || null)
 
     if (userError || !user) {
       return jsonResponse(
@@ -314,6 +374,18 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
+    const debug = {
+      has_api_key: Boolean(Deno.env.get('RESEND_API_KEY')),
+      has_from_email: Boolean(
+        Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
+      ),
+      admin_email: null as string | null,
+      cliente_email: null as string | null,
+      resend_response_cliente: null as string | null,
+      resend_response_admin: null as string | null,
+    }
+    console.log('[registrar-pago] Debug env has_api_key:', debug.has_api_key)
+    console.log('[registrar-pago] Debug env has_from_email:', debug.has_from_email)
 
     const prestamo_id = body?.prestamo_id
     const cliente_id = body?.cliente_id
@@ -588,6 +660,7 @@ Deno.serve(async (req) => {
 
     const clienteNombre = String(clienteData?.nombre || 'Cliente')
     const clienteUsuarioId = clienteData?.usuario_id || cliente_id
+    console.log('[registrar-pago] Cliente data completo:', clienteData || null)
 
     const { data: usuarioClienteData } = await supabase
       .from('usuarios')
@@ -601,6 +674,10 @@ Deno.serve(async (req) => {
     const adminEmail = String(user.email || '')
       .trim()
       .toLowerCase()
+    debug.admin_email = adminEmail || null
+    debug.cliente_email = clienteEmail || null
+    console.log('[registrar-pago] admin email:', adminEmail || '(vacío)')
+    console.log('[registrar-pago] cliente email final (con fallback):', clienteEmail || '(vacío)')
 
     const fechaPago = new Date().toLocaleString('es-AR', {
       timeZone: 'America/Argentina/Buenos_Aires',
@@ -646,6 +723,7 @@ Deno.serve(async (req) => {
         resultadoCorreoCliente.sent = envioCliente.sent
         resultadoCorreoCliente.error = envioCliente.error
         resultadoCorreoCliente.id = envioCliente.id
+        debug.resend_response_cliente = envioCliente.resend_response
         console.log('[registrar-pago] Resultado correo cliente:', envioCliente)
       } catch (error) {
         resultadoCorreoCliente.sent = false
@@ -677,6 +755,7 @@ Deno.serve(async (req) => {
         resultadoCorreoAdmin.sent = envioAdmin.sent
         resultadoCorreoAdmin.error = envioAdmin.error
         resultadoCorreoAdmin.id = envioAdmin.id
+        debug.resend_response_admin = envioAdmin.resend_response
         console.log('[registrar-pago] Resultado correo admin:', envioAdmin)
       } catch (error) {
         resultadoCorreoAdmin.sent = false
@@ -706,6 +785,7 @@ Deno.serve(async (req) => {
       prestamo_estado: nuevoEstadoPrestamo,
       factura_email_cliente: resultadoCorreoCliente,
       factura_email_admin: resultadoCorreoAdmin,
+      debug,
     })
   } catch (error) {
     return jsonResponse(
