@@ -146,15 +146,7 @@ function construirHtmlTicketPago(data: {
   `
 }
 
-function leerEntorno(nombre: string) {
-  const desdeDeno = Deno.env.get(nombre)
-  if (desdeDeno) return desdeDeno
-
-  const processGlobal = (globalThis as { process?: { env?: Record<string, string> } }).process
-  return processGlobal?.env?.[nombre] || ''
-}
-
-async function sendPaymentReceipt({
+async function sendEmail({
   to,
   subject,
   html,
@@ -168,9 +160,10 @@ async function sendPaymentReceipt({
 
   if (!resendApiKey || !remitente || !to) {
     return {
-      ok: false,
-      motivo:
+      sent: false,
+      error:
         'No se envió correo: faltan RESEND_API_KEY, RESEND_FROM_EMAIL/FACTURAS_FROM_EMAIL o destinatario',
+      id: null,
     }
   }
 
@@ -185,20 +178,79 @@ async function sendPaymentReceipt({
 
     if (error) {
       return {
-        ok: false,
-        motivo: 'Fallo envío de correo con Resend',
-        detalle: error.message,
+        sent: false,
+        error: error.message,
+        id: null,
       }
     }
 
-    return { ok: true, id: data?.id || null }
+    return { sent: true, error: null, id: data?.id || null }
   } catch (error) {
     return {
-      ok: false,
-      motivo: 'Excepción al enviar correo',
-      detalle: error instanceof Error ? error.message : 'Error desconocido',
+      sent: false,
+      error: error instanceof Error ? error.message : 'Error desconocido',
+      id: null,
     }
   }
+}
+
+async function sendPaymentReceiptToClient({
+  clienteEmail,
+  html,
+}: {
+  clienteEmail: string
+  html: string
+}) {
+  return sendEmail({
+    to: clienteEmail,
+    subject: 'Pago recibido correctamente',
+    html,
+  })
+}
+
+async function sendPaymentReceiptToAdmin({
+  adminEmail,
+  clienteNombre,
+  clienteEmail,
+  montoAplicado,
+  fechaPago,
+  cuotasImpactadas,
+  prestamoId,
+  pagoId,
+}: {
+  adminEmail: string
+  clienteNombre: string
+  clienteEmail: string
+  montoAplicado: number
+  fechaPago: string
+  cuotasImpactadas: number[]
+  prestamoId: string
+  pagoId: string
+}) {
+  const cuotasTexto = cuotasImpactadas.length
+    ? cuotasImpactadas.map((cuota) => `#${cuota}`).join(', ')
+    : 'Sin cuotas'
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; background: #020817; padding: 24px; color: #F8FAFC;">
+      <h1 style="color: #22C55E; margin: 0 0 20px 0; font-size: 24px;">Nuevo pago registrado</h1>
+      <div style="background: #0F172A; border-radius: 16px; padding: 20px; border: 1px solid #1E293B;">
+        <p><strong>Cliente:</strong> ${escaparHtml(clienteNombre)}</p>
+        <p><strong>Email cliente:</strong> ${escaparHtml(clienteEmail || 'Sin email')}</p>
+        <p><strong>Monto:</strong> ${escaparHtml(formatearMonto(montoAplicado))}</p>
+        <p><strong>Fecha:</strong> ${escaparHtml(fechaPago)}</p>
+        <p><strong>Cuotas impactadas:</strong> ${escaparHtml(cuotasTexto)}</p>
+        <p><strong>ID préstamo:</strong> ${escaparHtml(prestamoId)}</p>
+        <p><strong>ID pago:</strong> ${escaparHtml(pagoId)}</p>
+      </div>
+    </div>
+  `
+
+  return sendEmail({
+    to: adminEmail,
+    subject: 'Nuevo pago registrado',
+    html,
+  })
 }
 
 Deno.serve(async (req) => {
@@ -530,7 +582,7 @@ Deno.serve(async (req) => {
 
     const { data: clienteData } = await supabase
       .from('clientes')
-      .select('id, nombre, usuario_id')
+      .select('id, nombre, usuario_id, email')
       .eq('id', cliente_id)
       .maybeSingle()
 
@@ -543,10 +595,10 @@ Deno.serve(async (req) => {
       .eq('id', clienteUsuarioId)
       .maybeSingle()
 
-    const clienteEmail = String(usuarioClienteData?.email || '')
+    const clienteEmail = String(clienteData?.email || usuarioClienteData?.email || '')
       .trim()
       .toLowerCase()
-    const adminEmail = String(leerEntorno('PAGOS_ADMIN_EMAIL') || '')
+    const adminEmail = String(user.email || '')
       .trim()
       .toLowerCase()
 
@@ -575,39 +627,68 @@ Deno.serve(async (req) => {
       proximaCuotaTexto,
     })
 
-    const resultadoCorreos = {
-      cliente: { ok: false, motivo: 'Sin destinatario' },
-      admin: { ok: false, motivo: 'Sin destinatario' },
+    const resultadoCorreoCliente: { sent: boolean; error: string | null; id?: string | null } = {
+      sent: false,
+      error: 'Sin destinatario',
+    }
+    const resultadoCorreoAdmin: { sent: boolean; error: string | null; id?: string | null } = {
+      sent: false,
+      error: 'Sin destinatario',
     }
 
-    try {
-      if (clienteEmail) {
-        resultadoCorreos.cliente = await sendPaymentReceipt({
-          to: clienteEmail,
-          subject: 'Pago registrado correctamente',
+    if (clienteEmail) {
+      console.log(`[registrar-pago] Intento envío correo cliente (${clienteEmail}) pago ${pago.id}`)
+      try {
+        const envioCliente = await sendPaymentReceiptToClient({
+          clienteEmail,
           html: htmlTicket,
         })
-      } else {
-        console.warn(
-          `[registrar-pago] No se enviará correo al cliente para pago ${pago.id}: cliente sin email`
-        )
+        resultadoCorreoCliente.sent = envioCliente.sent
+        resultadoCorreoCliente.error = envioCliente.error
+        resultadoCorreoCliente.id = envioCliente.id
+        console.log('[registrar-pago] Resultado correo cliente:', envioCliente)
+      } catch (error) {
+        resultadoCorreoCliente.sent = false
+        resultadoCorreoCliente.error =
+          error instanceof Error ? error.message : 'Error desconocido al enviar correo cliente'
+        console.error('[registrar-pago] Error inesperado correo cliente:', error)
       }
+    } else {
+      resultadoCorreoCliente.sent = false
+      resultadoCorreoCliente.error = 'Cliente sin email'
+      console.warn(
+        `[registrar-pago] No se enviará correo al cliente para pago ${pago.id}: cliente sin email`
+      )
+    }
 
-      if (adminEmail) {
-        resultadoCorreos.admin = await sendPaymentReceipt({
-          to: adminEmail,
-          subject: 'Nuevo pago registrado',
-          html: htmlTicket,
+    if (adminEmail) {
+      console.log(`[registrar-pago] Intento envío correo admin (${adminEmail}) pago ${pago.id}`)
+      try {
+        const envioAdmin = await sendPaymentReceiptToAdmin({
+          adminEmail,
+          clienteNombre,
+          clienteEmail,
+          montoAplicado: totalAplicado,
+          fechaPago,
+          cuotasImpactadas,
+          prestamoId: String(prestamo_id),
+          pagoId: String(pago.id),
         })
-      } else {
-        console.warn(
-          `[registrar-pago] No se enviará correo al admin para pago ${pago.id}: faltó PAGOS_ADMIN_EMAIL`
-        )
+        resultadoCorreoAdmin.sent = envioAdmin.sent
+        resultadoCorreoAdmin.error = envioAdmin.error
+        resultadoCorreoAdmin.id = envioAdmin.id
+        console.log('[registrar-pago] Resultado correo admin:', envioAdmin)
+      } catch (error) {
+        resultadoCorreoAdmin.sent = false
+        resultadoCorreoAdmin.error =
+          error instanceof Error ? error.message : 'Error desconocido al enviar correo admin'
+        console.error('[registrar-pago] Error inesperado correo admin:', error)
       }
-    } catch (error) {
-      console.error(
-        `[registrar-pago] Error inesperado al enviar correos del pago ${pago.id}:`,
-        error
+    } else {
+      resultadoCorreoAdmin.sent = false
+      resultadoCorreoAdmin.error = 'Admin logueado sin email'
+      console.warn(
+        `[registrar-pago] No se enviará correo al admin para pago ${pago.id}: admin sin email`
       )
     }
 
@@ -623,7 +704,8 @@ Deno.serve(async (req) => {
       cuota_actualizada: cuotaActualizada,
       proxima_cuota: proximaCuota,
       prestamo_estado: nuevoEstadoPrestamo,
-      factura_email: resultadoCorreos,
+      factura_email_cliente: resultadoCorreoCliente,
+      factura_email_admin: resultadoCorreoAdmin,
     })
   } catch (error) {
     return jsonResponse(
