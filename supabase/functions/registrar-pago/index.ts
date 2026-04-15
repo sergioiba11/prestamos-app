@@ -155,9 +155,8 @@ async function sendEmail({
   subject: string
   html: string
 }) {
-  const resendApiKey = Deno.env.get('RESEND_API_KEY')
-  const remitente =
-    Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('FACTURAS_FROM_EMAIL')
+  const resendApiKey = leerEntorno('RESEND_API_KEY')
+  const remitente = leerEntorno('RESEND_FROM_EMAIL') || leerEntorno('FACTURAS_FROM_EMAIL')
 
   if (!resendApiKey || !remitente || !to) {
     return {
