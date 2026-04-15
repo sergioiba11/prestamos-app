@@ -15,9 +15,20 @@ begin
   end loop;
 end $$;
 
-drop policy if exists "allow select clientes" on public.clientes;
+-- PASO 1 (solo diagnóstico temporal):
+-- Esta policy deja leer todo a usuarios autenticados para confirmar si el problema era RLS.
+create policy "debug_select_clientes"
+on public.clientes
+for select
+to authenticated
+using (true);
 
-create policy "allow select clientes"
+-- IMPORTANTE:
+-- Verificar listado en admin-home con esta policy temporal.
+-- Luego eliminarla y aplicar la policy final segura:
+drop policy if exists "debug_select_clientes" on public.clientes;
+
+create policy "allow select clientes admin"
 on public.clientes
 for select
 to authenticated
@@ -25,7 +36,7 @@ using (
   exists (
     select 1
     from public.usuarios u
-    where u.id = auth.uid()
+    where u.usuario_id = auth.uid()
       and u.rol in ('admin', 'administrador')
   )
 );
