@@ -1,9 +1,31 @@
--- Habilita RLS y permite leer clientes (ajusta en producción según tus reglas de seguridad).
 alter table public.clientes enable row level security;
+
+do $$
+declare
+  p record;
+begin
+  for p in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'clientes'
+      and cmd = 'SELECT'
+  loop
+    execute format('drop policy if exists %I on public.clientes', p.policyname);
+  end loop;
+end $$;
 
 drop policy if exists "allow select clientes" on public.clientes;
 
 create policy "allow select clientes"
 on public.clientes
 for select
-using (true);
+to authenticated
+using (
+  exists (
+    select 1
+    from public.usuarios u
+    where u.id = auth.uid()
+      and u.rol in ('admin', 'administrador')
+  )
+);
