@@ -37,7 +37,6 @@ type Prestamo = {
 type Cliente = {
   id: string
   nombre: string
-  apellido?: string | null
   telefono: string | null
   email: string | null
   dni: string | null
@@ -55,7 +54,6 @@ type Empleado = {
 type ClienteConPrestamo = {
   id: string
   nombre: string
-  apellido?: string | null
   telefono: string | null
   email: string | null
   dni: string | null
@@ -167,7 +165,7 @@ export default function AdminHome() {
 
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+      .select('id, nombre, telefono, email, dni, direccion, usuario_id')
       .order('created_at', { ascending: false })
 
     console.log('RESPUESTA SUPABASE CLIENTES (completa):', {
@@ -183,7 +181,7 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+          .select('id, nombre, telefono, email, dni, direccion, usuario_id')
           .order('id', { ascending: false })
 
         console.log('RESPUESTA SUPABASE CLIENTES fallback (completa):', {
@@ -446,7 +444,6 @@ export default function AdminHome() {
     return {
       id: cliente.id,
       nombre: cliente.nombre,
-      apellido: cliente.apellido,
       telefono: cliente.telefono,
       email: cliente.email,
       dni: cliente.dni,
@@ -485,7 +482,7 @@ export default function AdminHome() {
     if (!termino) return clientesConPrestamo
 
     return clientesConPrestamo.filter((cliente) => {
-      const nombre = `${cliente.nombre || ''} ${cliente.apellido || ''}`.toLowerCase()
+      const nombre = `${cliente.nombre || ''}`.toLowerCase()
       const email = (cliente.email || '').toLowerCase()
       const dni = String(cliente.dni || '').toLowerCase()
       const telefono = String(cliente.telefono || '').toLowerCase()
@@ -756,11 +753,7 @@ export default function AdminHome() {
             <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
               <View style={styles.clientTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>
-                    {cliente.apellido
-                      ? `${cliente.nombre} ${cliente.apellido}`
-                      : cliente.nombre}
-                  </Text>
+                  <Text style={styles.clientName}>{cliente.nombre}</Text>
                   <Text style={styles.clientMetaHighlight}>DNI: {cliente.dni || '—'}</Text>
                   <Text style={styles.clientMetaHighlight}>
                     Email: {cliente.email || 'Sin correo'}
