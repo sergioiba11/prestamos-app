@@ -38,7 +38,7 @@ type Cliente = {
   id: string
   nombre: string
   telefono: string | null
-  email: string | null
+  email?: string | null
   dni: string | null
   direccion?: string | null
   usuario_id?: string | null
@@ -165,7 +165,7 @@ export default function AdminHome() {
 
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, telefono, email, dni, direccion, usuario_id')
+      .select('id, nombre, telefono, dni, direccion, usuario_id')
       .order('created_at', { ascending: false })
 
     console.log('RESPUESTA SUPABASE CLIENTES (completa):', {
@@ -181,7 +181,7 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select('id, nombre, telefono, email, dni, direccion, usuario_id')
+          .select('id, nombre, telefono, dni, direccion, usuario_id')
           .order('id', { ascending: false })
 
         console.log('RESPUESTA SUPABASE CLIENTES fallback (completa):', {
@@ -236,7 +236,7 @@ export default function AdminHome() {
 
     const normalizados = baseClientes.map((cliente) => ({
       ...cliente,
-      email: cliente.email || emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
+      email: emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
     }))
 
     setClientes(normalizados)
