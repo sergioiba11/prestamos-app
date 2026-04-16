@@ -37,9 +37,8 @@ type Prestamo = {
 type Cliente = {
   id: string
   nombre: string
-  apellido?: string | null
   telefono: string | null
-  email: string | null
+  email?: string | null
   dni: string | null
   direccion?: string | null
   usuario_id?: string | null
@@ -55,7 +54,6 @@ type Empleado = {
 type ClienteConPrestamo = {
   id: string
   nombre: string
-  apellido?: string | null
   telefono: string | null
   email: string | null
   dni: string | null
@@ -132,18 +130,49 @@ export default function AdminHome() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
+  const [clientesError, setClientesError] = useState<string | null>(null)
   const [busquedaCliente, setBusquedaCliente] = useState('')
 
   const cargarClientes = useCallback(async () => {
     console.log('CARGANDO CLIENTES')
+    setClientesError(null)
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    const sessionUser = sessionData?.session?.user || null
+
+    let rol: string | null = null
+    if (sessionUser?.id) {
+      const { data: rolData, error: rolError } = await supabase
+        .from('usuarios')
+        .select('rol')
+        .eq('id', sessionUser.id)
+        .maybeSingle()
+
+      rol = rolData?.rol || null
+
+      console.log('ADMIN HOME DEBUG ROL:', {
+        rolData,
+        rolError,
+      })
+    }
+
+    console.log('ADMIN HOME DEBUG SESION:', {
+      sessionError,
+      userId: sessionUser?.id || null,
+      email: sessionUser?.email || null,
+      rol,
+    })
 
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+      .select('id, nombre, telefono, dni, direccion, usuario_id')
       .order('created_at', { ascending: false })
 
-    console.log('DATA CLIENTES (crudo):', data)
-    console.log('ERROR CLIENTES:', error)
+    console.log('RESPUESTA SUPABASE CLIENTES (completa):', {
+      data,
+      error,
+      count: Array.isArray(data) ? data.length : 0,
+    })
 
     let clientesData = data
 
@@ -152,19 +181,26 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+          .select('id, nombre, telefono, dni, direccion, usuario_id')
           .order('id', { ascending: false })
 
-        console.log('DATA CLIENTES fallback (crudo):', dataSinCreatedAt)
-        console.log('ERROR CLIENTES (fallback id):', errorSinCreatedAt)
+        console.log('RESPUESTA SUPABASE CLIENTES fallback (completa):', {
+          data: dataSinCreatedAt,
+          error: errorSinCreatedAt,
+          count: Array.isArray(dataSinCreatedAt) ? dataSinCreatedAt.length : 0,
+        })
 
         if (errorSinCreatedAt) {
+          console.log('ERROR CLIENTES EXACTO (fallback):', errorSinCreatedAt)
+          setClientesError(errorSinCreatedAt.message || 'Error al leer clientes')
           setClientes([])
           return
         }
 
         clientesData = dataSinCreatedAt
       } else {
+        console.log('ERROR CLIENTES EXACTO:', error)
+        setClientesError(error.message || 'Error al leer clientes')
         setClientes([])
         return
       }
@@ -200,10 +236,14 @@ export default function AdminHome() {
 
     const normalizados = baseClientes.map((cliente) => ({
       ...cliente,
-      email: cliente.email || emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
+      email: emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
     }))
 
     setClientes(normalizados)
+    console.log('CLIENTES NORMALIZADOS:', {
+      count: normalizados.length,
+      sample: normalizados.slice(0, 3),
+    })
   }, [])
 
   const cargarTodo = useCallback(async () => {
@@ -404,7 +444,6 @@ export default function AdminHome() {
     return {
       id: cliente.id,
       nombre: cliente.nombre,
-      apellido: cliente.apellido,
       telefono: cliente.telefono,
       email: cliente.email,
       dni: cliente.dni,
@@ -443,7 +482,7 @@ export default function AdminHome() {
     if (!termino) return clientesConPrestamo
 
     return clientesConPrestamo.filter((cliente) => {
-      const nombre = `${cliente.nombre || ''} ${cliente.apellido || ''}`.toLowerCase()
+      const nombre = `${cliente.nombre || ''}`.toLowerCase()
       const email = (cliente.email || '').toLowerCase()
       const dni = String(cliente.dni || '').toLowerCase()
       const telefono = String(cliente.telefono || '').toLowerCase()
@@ -700,7 +739,11 @@ export default function AdminHome() {
         />
       </View>
 
-      {clientesConPrestamo.length === 0 ? (
+      {clientesError ? (
+        <Text style={styles.emptyText}>
+          Error al cargar clientes: {clientesError}
+        </Text>
+      ) : clientesConPrestamo.length === 0 ? (
         <Text style={styles.emptyText}>No hay clientes cargados todavía.</Text>
       ) : clientesFiltrados.length === 0 ? (
         <Text style={styles.emptyText}>No se encontraron clientes.</Text>
@@ -710,11 +753,7 @@ export default function AdminHome() {
             <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
               <View style={styles.clientTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>
-                    {cliente.apellido
-                      ? `${cliente.nombre} ${cliente.apellido}`
-                      : cliente.nombre}
-                  </Text>
+                  <Text style={styles.clientName}>{cliente.nombre}</Text>
                   <Text style={styles.clientMetaHighlight}>DNI: {cliente.dni || '—'}</Text>
                   <Text style={styles.clientMetaHighlight}>
                     Email: {cliente.email || 'Sin correo'}
