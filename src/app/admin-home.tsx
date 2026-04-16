@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -42,6 +42,7 @@ type Cliente = {
   email: string | null
   dni: string | null
   direccion?: string | null
+  usuario_id?: string | null
 }
 
 type Empleado = {
@@ -132,37 +133,112 @@ export default function AdminHome() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [busquedaCliente, setBusquedaCliente] = useState('')
-  const searchRequestIdRef = useRef(0)
 
-  const cargarClientes = useCallback(async (terminoBusqueda = '') => {
-    const requestId = ++searchRequestIdRef.current
-    const termino = terminoBusqueda.trim()
+  const cargarClientes = useCallback(async () => {
+    console.log('[admin-home] CARGANDO CLIENTES')
+    const [{ data: sessionData, error: sessionError }, { data: userData, error: userError }] =
+      await Promise.all([supabase.auth.getSession(), supabase.auth.getUser()])
+    const authUser = userData?.user ?? sessionData?.session?.user ?? null
+    console.log('[admin-home] session user:', sessionData?.session?.user || null)
+    console.log('[admin-home] auth.uid:', authUser?.id || null)
+    console.log('[admin-home] auth error session:', sessionError || null)
+    console.log('[admin-home] auth error user:', userError || null)
 
-    let query = supabase
+    let rolUsuario: string | null = null
+
+    if (authUser?.id) {
+      const { data: usuarioAuthData, error: usuarioAuthError } = await supabase
+        .from('usuarios')
+        .select('id, rol, email')
+        .eq('id', authUser.id)
+        .maybeSingle()
+
+      rolUsuario = usuarioAuthData?.rol || null
+      console.log('[admin-home] usuario auth row:', usuarioAuthData || null)
+      console.log('[admin-home] usuario auth rol:', rolUsuario || null)
+      console.log('[admin-home] usuario auth error:', usuarioAuthError || null)
+    } else {
+      console.log('[admin-home] usuario auth row: null (sin usuario autenticado)')
+    }
+
+    console.log(
+      "[admin-home] query clientes: from('clientes').select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id').order('created_at', { ascending: false })"
+    )
+
+    const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, apellido, telefono, email, dni, direccion')
-      .order('nombre', { ascending: true })
+      .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+      .order('created_at', { ascending: false })
 
-    if (termino) {
-      if (termino.includes('@')) {
-        query = query.ilike('email', `%${termino}%`)
-      } else if (/^\d+$/.test(termino)) {
-        query = query.ilike('dni', `%${termino}%`)
+    console.log('[admin-home] DATA CLIENTES (crudo):', data)
+    console.log('[admin-home] ERROR CLIENTES:', error)
+
+    let clientesData = data
+
+    if (error) {
+      const puedeSerColumna = (error.message || '').toLowerCase().includes('created_at')
+      if (puedeSerColumna) {
+        const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
+          .from('clientes')
+          .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
+          .order('id', { ascending: false })
+
+        console.log('[admin-home] DATA CLIENTES fallback (crudo):', dataSinCreatedAt)
+        console.log('[admin-home] ERROR CLIENTES (fallback id):', errorSinCreatedAt)
+
+        if (errorSinCreatedAt) {
+          setClientes([])
+          return
+        }
+
+        clientesData = dataSinCreatedAt
       } else {
-        query = query.ilike('nombre', `%${termino}%`)
+        setClientes([])
+        return
       }
     }
 
-    const { data, error } = await query
+    const baseClientes = (clientesData as Cliente[]) || []
+    console.log('[admin-home] CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
+    console.log('[admin-home] FILTRO CLIENTES APLICADO EN QUERY:', {
+      rol_usuario: rolUsuario,
+      usa_eq: false,
+      usa_usuario_id: false,
+      usa_admin_id: false,
+      usa_created_by: false,
+    })
 
-    if (requestId !== searchRequestIdRef.current) return
+    // Fallback seguro de email desde tabla usuarios sin romper listado si esta consulta falla.
+    const usuarioIds = baseClientes
+      .map((c) => c.usuario_id)
+      .filter((id): id is string => Boolean(id))
 
-    if (error) {
-      console.log('ERROR clientes:', error)
-      return
+    let emailByUsuarioId = new Map<string, string>()
+
+    if (usuarioIds.length > 0) {
+      const { data: usuariosData, error: usuariosError } = await supabase
+        .from('usuarios')
+        .select('id, email')
+        .in('id', usuarioIds)
+
+      console.log('[admin-home] DATA USUARIOS (fallback email):', usuariosData)
+      console.log('[admin-home] ERROR USUARIOS (fallback email):', usuariosError)
+
+      if (!usuariosError && Array.isArray(usuariosData)) {
+        emailByUsuarioId = new Map(
+          usuariosData
+            .filter((u: any) => u?.id && u?.email)
+            .map((u: any) => [String(u.id), String(u.email)])
+        )
+      }
     }
 
-    setClientes((data as Cliente[]) || [])
+    const normalizados = baseClientes.map((cliente) => ({
+      ...cliente,
+      email: cliente.email || emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
+    }))
+
+    setClientes(normalizados)
   }, [])
 
   const cargarTodo = useCallback(async () => {
@@ -212,7 +288,7 @@ export default function AdminHome() {
 
       setPrestamos((prestamosRes.data as unknown as Prestamo[]) || [])
       setEmpleados((empleadosRes.data as Empleado[]) || [])
-      await cargarClientes('')
+      await cargarClientes()
     } catch (error) {
       console.log('ERROR cargarTodo:', error)
     } finally {
@@ -222,9 +298,15 @@ export default function AdminHome() {
 
   useFocusEffect(
     useCallback(() => {
-      cargarTodo()
+      console.log('ADMIN HOME useFocusEffect -> cargarTodo')
+      void cargarTodo()
     }, [cargarTodo])
   )
+
+  useEffect(() => {
+    console.log('ADMIN HOME useEffect mount -> cargarTodo')
+    void cargarTodo()
+  }, [cargarTodo])
 
   const resumenHoy = useMemo(() => {
     const hoy = new Date()
@@ -391,15 +473,38 @@ export default function AdminHome() {
     setBusquedaCliente(texto)
   }, [])
 
-  const clientesFiltrados = useMemo(() => clientesConPrestamo, [clientesConPrestamo])
+  const clientesFiltrados = useMemo(() => {
+    const termino = busquedaCliente.trim().toLowerCase()
+    if (!termino) return clientesConPrestamo
+
+    return clientesConPrestamo.filter((cliente) => {
+      const nombre = `${cliente.nombre || ''} ${cliente.apellido || ''}`.toLowerCase()
+      const email = (cliente.email || '').toLowerCase()
+      const dni = String(cliente.dni || '').toLowerCase()
+      const telefono = String(cliente.telefono || '').toLowerCase()
+
+      return (
+        nombre.includes(termino) ||
+        email.includes(termino) ||
+        dni.includes(termino) ||
+        telefono.includes(termino)
+      )
+    })
+  }, [busquedaCliente, clientesConPrestamo])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void cargarClientes(busquedaCliente)
-    }, 300)
+    console.log('BUSQUEDA CLIENTES:', busquedaCliente)
+  }, [busquedaCliente])
 
-    return () => clearTimeout(timer)
-  }, [busquedaCliente, cargarClientes])
+  useEffect(() => {
+    console.log('CLIENTES FILTRADOS:', clientesFiltrados)
+  }, [clientesFiltrados])
+
+  useEffect(() => {
+    clientes.forEach((cliente) => {
+      console.log('CLIENTE:', cliente)
+    })
+  }, [clientes])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()

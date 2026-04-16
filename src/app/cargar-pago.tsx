@@ -538,6 +538,9 @@ export default function CargarPago() {
             : '',
           prestamo_id: prestamoSeleccionado.id,
           cliente_id: clienteSeleccionado.id,
+          cliente_nombre: clienteSeleccionado.nombre,
+          cliente_apellido: clienteSeleccionado.apellido || '',
+          cliente_telefono: clienteSeleccionado.telefono || '',
         },
       })
     } catch (error: any) {
