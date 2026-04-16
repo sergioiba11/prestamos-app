@@ -20,6 +20,8 @@ import {
 type Cliente = {
   id: string
   nombre: string
+  apellido?: string | null
+  email?: string | null
   telefono: string | null
   dni: string | null
 }
@@ -526,6 +528,7 @@ export default function CargarPago() {
           monto: String(Number(montoAplicado.toFixed(2))),
           monto_ingresado: String(Number(montoNumero.toFixed(2))),
           vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
+          monto_cuota: String(Number(cuotaSeleccionada.monto_cuota ?? montoAplicado)),
           metodo,
           fecha: new Date().toLocaleString('es-AR'),
           saldo_restante: String(saldoRestantePrestamo),
@@ -533,6 +536,8 @@ export default function CargarPago() {
           cuota_id: cuotaSeleccionada.id,
           numero_cuota: String(cuotaSeleccionada.numero_cuota),
           cuotas_impactadas: JSON.stringify(json?.cuotas_impactadas || []),
+          cuotas_impactadas_detalle: JSON.stringify(json?.cuotas_impactadas_detalle || []),
+          estado_comprobante: String(json?.estado_comprobante || 'COMPLETO'),
           proxima_cuota: json?.proxima_cuota?.numero_cuota
             ? String(json.proxima_cuota.numero_cuota)
             : '',
@@ -540,7 +545,12 @@ export default function CargarPago() {
           cliente_id: clienteSeleccionado.id,
           cliente_nombre: clienteSeleccionado.nombre,
           cliente_apellido: clienteSeleccionado.apellido || '',
+          cliente_dni: clienteSeleccionado.dni || '',
+          cliente_email: clienteSeleccionado.email || '',
           cliente_telefono: clienteSeleccionado.telefono || '',
+          pago_id: json?.pago?.id ? String(json.pago.id) : '',
+          identificador_interno_pago: json?.pago?.id ? String(json.pago.id) : '',
+          observaciones: json?.pago?.nota ? String(json.pago.nota) : '',
         },
       })
     } catch (error: any) {

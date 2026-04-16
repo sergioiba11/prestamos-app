@@ -18,6 +18,10 @@ function redondear(valor: number) {
   return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
 }
 
+function esMontoCerrado(valor: number) {
+  return Math.abs(Number(valor || 0)) <= 0.009
+}
+
 function normalizarMetodoPago(metodo: unknown) {
   const valor = String(metodo || '').trim().toLowerCase()
 
@@ -390,8 +394,8 @@ Deno.serve(async (req) => {
     const cuota_id_inicial = body?.cuota_id || null
     const numero_cuota_inicial = body?.numero_cuota || null
     const metodo = normalizarMetodoPago(body?.metodo)
-    const montoIngresado = redondear(
-      Number(body?.monto_ingresado ?? body?.monto)
+    const montoEntregado = redondear(
+      Number(body?.monto_entregado ?? body?.monto_ingresado ?? body?.monto)
     )
     const aplicarAMultiples = body?.aplicar_a_multiples !== false
 
@@ -404,7 +408,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    if (Number.isNaN(montoIngresado) || montoIngresado <= 0) {
+    if (Number.isNaN(montoEntregado) || montoEntregado <= 0) {
       return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
@@ -485,7 +489,7 @@ Deno.serve(async (req) => {
       cuotasAProcesar = cuotasPendientes.slice(index)
     }
 
-    let restante = montoIngresado
+    let restante = montoEntregado
     const cuotasImpactadas: number[] = []
     const detalleAplicacion: Array<{
       cuota_id: string
@@ -509,20 +513,21 @@ Deno.serve(async (req) => {
       const montoAplicado = redondear(
         aplicarAMultiples
           ? Math.min(restante, saldoAnterior)
-          : Math.min(montoIngresado, saldoAnterior)
+          : Math.min(montoEntregado, saldoAnterior)
       )
 
       if (montoAplicado <= 0) continue
 
       const nuevoSaldo = redondear(saldoAnterior - montoAplicado)
       const nuevoMontoPagado = redondear(pagadoAnterior + montoAplicado)
-      const nuevoEstado = nuevoSaldo <= 0 ? 'pagada' : 'parcial'
+      const nuevoEstado = esMontoCerrado(nuevoSaldo) ? 'pagada' : 'parcial'
+      const saldoPersistido = esMontoCerrado(nuevoSaldo) ? 0 : nuevoSaldo
 
       const { error: updateCuotaError } = await supabase
         .from('cuotas')
         .update({
           monto_pagado: nuevoMontoPagado,
-          saldo_pendiente: nuevoSaldo,
+          saldo_pendiente: saldoPersistido,
           estado: nuevoEstado,
           fecha_pago: new Date().toISOString(),
         })
@@ -538,11 +543,17 @@ Deno.serve(async (req) => {
         numero_cuota: cuota.numero_cuota,
         monto_aplicado: montoAplicado,
         saldo_cuota_antes: saldoAnterior,
-        saldo_cuota_despues: nuevoSaldo,
+        saldo_cuota_despues: saldoPersistido,
         estado_resultante: nuevoEstado,
       })
 
       restante = aplicarAMultiples ? redondear(restante - montoAplicado) : 0
+
+      if (!esMontoCerrado(saldoPersistido)) {
+        // Regla de negocio: si la cuota quedó parcial, no avanzar a la siguiente.
+        restante = 0
+        break
+      }
     }
 
     const totalAplicado = redondear(
@@ -559,7 +570,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const vuelto = redondear(montoIngresado - totalAplicado)
+    const vuelto = redondear(montoEntregado - totalAplicado)
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
@@ -640,6 +651,8 @@ Deno.serve(async (req) => {
     }
 
     const proximaCuota = cuotasRestantes?.[0] || null
+    const estadoComprobante =
+      detalleAplicacion.some((item) => item.estado_resultante === 'parcial') ? 'PARCIAL' : 'COMPLETO'
     const cuotaActualizada =
       detalleAplicacion.length > 0
         ? {
@@ -701,7 +714,7 @@ Deno.serve(async (req) => {
       prestamoId: String(prestamo_id),
       pagoId: String(pago.id),
       montoAplicado: totalAplicado,
-      montoIngresado,
+      montoIngresado: montoEntregado,
       vuelto,
       saldoRestante,
       metodo,
@@ -777,9 +790,18 @@ Deno.serve(async (req) => {
       ok: true,
       pago,
       cuotas_impactadas: cuotasImpactadas,
+      cuotas_impactadas_detalle: detalleAplicacion.map((item) => ({
+        numero_cuota: item.numero_cuota,
+        estado: item.estado_resultante,
+        monto_aplicado: item.monto_aplicado,
+        saldo_antes: item.saldo_cuota_antes,
+        saldo_despues: item.saldo_cuota_despues,
+      })),
       detalle_aplicacion: detalleAplicacion,
+      estado_comprobante: estadoComprobante,
       total_aplicado: totalAplicado,
-      monto_ingresado: montoIngresado,
+      monto_ingresado: montoEntregado,
+      monto_entregado: montoEntregado,
       vuelto,
       saldo_restante: saldoRestante,
       cuota_actualizada: cuotaActualizada,
