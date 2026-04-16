@@ -29,25 +29,6 @@ type CuotaImpactadaDetalle = {
   saldo_despues: number
 }
 
-type WindowWithPdfLibs = Window & {
-  html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>
-  jspdf?: {
-    jsPDF: new (options?: Record<string, unknown>) => {
-      internal: { pageSize: { getWidth: () => number; getHeight: () => number } }
-      addImage: (
-        imageData: string,
-        format: string,
-        x: number,
-        y: number,
-        width: number,
-        height: number
-      ) => void
-      addPage: () => void
-      save: (filename: string) => void
-    }
-  }
-}
-
 function getParamString(value: ParamValue, fallback = '') {
   const raw = Array.isArray(value) ? value[0] : value
   if (typeof raw !== 'string') return fallback
@@ -132,13 +113,13 @@ function buildReceiptNumber(paymentId: string, loanId: string, dateTime: string)
   return `REC-${datePart || '000000000000'}-${loanPart}`
 }
 
-async function loadScript(src: string) {
-  if (typeof document === 'undefined') return
-  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
-  if (existing?.dataset.loaded === 'true') return
+async function loadScript(src: string, webDocument: any) {
+  if (!webDocument) return
+  const existing = webDocument.querySelector(`script[src="${src}"]`)
+  if (existing?.dataset?.loaded === 'true') return
 
   await new Promise<void>((resolve, reject) => {
-    const script = existing || document.createElement('script')
+    const script = existing || webDocument.createElement('script')
     script.src = src
     script.async = true
     script.onload = () => {
@@ -146,7 +127,7 @@ async function loadScript(src: string) {
       resolve()
     }
     script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
-    if (!existing) document.head.appendChild(script)
+    if (!existing) webDocument.head.appendChild(script)
   })
 }
 
@@ -289,43 +270,6 @@ export default function PagoAprobado() {
   })
 }
 
-function formatFileName(cliente: string, fecha: string) {
-  const safeCliente =
-    cliente
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .toLowerCase() || 'cliente'
-  const dateOnly = (fecha || new Date().toISOString()).replace(/[^\d]/g, '').slice(0, 8) || 'fecha'
-  return `comprobante-${safeCliente}-${dateOnly}.pdf`
-}
-
-export default function PagoAprobado() {
-  const params = useLocalSearchParams()
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
-  const receiptRef = useRef<View | null>(null)
-
-  const montoPagado = getParamNumber(params.monto)
-  const montoEntregado = getParamNumber(params.monto_ingresado)
-  const vuelto = getParamNumber(params.vuelto)
-  const saldoRestante = getParamNumber(params.saldo_restante)
-  const montoCuota = getParamNumber(params.monto_cuota, montoPagado)
-
-  const metodo = getParamString(params.metodo, 'No informado')
-  const prestamoId = getParamString(params.prestamo_id)
-  const clienteId = getParamString(params.cliente_id)
-  const numeroCuota = getParamString(params.numero_cuota)
-  const pagoId = getParamString(params.pago_id)
-  const pagoInternoId = getParamString(params.identificador_interno_pago)
-  const fechaRaw = getParamString(params.fecha)
-  const fechaFormateada = formatDateTimeLocal(fechaRaw)
-
-  const cuotasImpactadas = useMemo(
-    () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
-    [params.cuotas_aplicadas]
-  )
-
   const onShare = async () => {
     try {
       await Share.share({ message: shareText })
@@ -348,23 +292,27 @@ export default function PagoAprobado() {
   const handleDownloadPDF = async () => {
     if (downloadingPdf) return
 
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+    const webGlobal = globalThis as any
+    const webWindow = webGlobal?.window
+    const webDocument = webGlobal?.document
+    if (Platform.OS !== 'web' || !webWindow || !webDocument) {
       return
     }
 
     setDownloadingPdf(true)
     try {
-      await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js')
-      await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js')
+      await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js', webDocument)
+      await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js', webDocument)
 
-      const windowWithLibs = window as WindowWithPdfLibs
-      if (!windowWithLibs.html2canvas || !windowWithLibs.jspdf?.jsPDF) {
+      const html2canvas = webWindow?.html2canvas
+      const jsPDFCtor = webWindow?.jspdf?.jsPDF
+      if (!html2canvas || !jsPDFCtor) {
         throw new Error('No se pudieron inicializar las librerías de PDF')
       }
 
       const targetElement =
-        (receiptRef.current as unknown as HTMLElement | null) ||
-        document.getElementById('creditodo-recibo-paper')
+        (receiptRef.current as unknown as any) ||
+        webDocument.getElementById('creditodo-recibo-paper')
       if (!targetElement) {
         throw new Error('No se encontró el comprobante para exportar')
       }
@@ -372,7 +320,7 @@ export default function PagoAprobado() {
       const originalBackground = targetElement.style.backgroundColor
       targetElement.style.backgroundColor = '#FFFFFF'
 
-      const canvas = await windowWithLibs.html2canvas(targetElement, {
+      const canvas = await html2canvas(targetElement, {
         scale: 2,
         backgroundColor: '#FFFFFF',
         useCORS: true,
@@ -382,7 +330,7 @@ export default function PagoAprobado() {
       targetElement.style.backgroundColor = originalBackground
 
       const imageData = canvas.toDataURL('image/png', 1.0)
-      const pdf = new windowWithLibs.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' })
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
       const margin = 10
