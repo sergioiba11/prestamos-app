@@ -135,15 +135,43 @@ export default function AdminHome() {
   const [busquedaCliente, setBusquedaCliente] = useState('')
 
   const cargarClientes = useCallback(async () => {
-    console.log('CARGANDO CLIENTES')
+    console.log('[admin-home] CARGANDO CLIENTES')
+    const [{ data: sessionData, error: sessionError }, { data: userData, error: userError }] =
+      await Promise.all([supabase.auth.getSession(), supabase.auth.getUser()])
+    const authUser = userData?.user ?? sessionData?.session?.user ?? null
+    console.log('[admin-home] session user:', sessionData?.session?.user || null)
+    console.log('[admin-home] auth.uid:', authUser?.id || null)
+    console.log('[admin-home] auth error session:', sessionError || null)
+    console.log('[admin-home] auth error user:', userError || null)
+
+    let rolUsuario: string | null = null
+
+    if (authUser?.id) {
+      const { data: usuarioAuthData, error: usuarioAuthError } = await supabase
+        .from('usuarios')
+        .select('id, rol, email')
+        .eq('id', authUser.id)
+        .maybeSingle()
+
+      rolUsuario = usuarioAuthData?.rol || null
+      console.log('[admin-home] usuario auth row:', usuarioAuthData || null)
+      console.log('[admin-home] usuario auth rol:', rolUsuario || null)
+      console.log('[admin-home] usuario auth error:', usuarioAuthError || null)
+    } else {
+      console.log('[admin-home] usuario auth row: null (sin usuario autenticado)')
+    }
+
+    console.log(
+      "[admin-home] query clientes: from('clientes').select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id').order('created_at', { ascending: false })"
+    )
 
     const { data, error } = await supabase
       .from('clientes')
       .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
       .order('created_at', { ascending: false })
 
-    console.log('DATA CLIENTES (crudo):', data)
-    console.log('ERROR CLIENTES:', error)
+    console.log('[admin-home] DATA CLIENTES (crudo):', data)
+    console.log('[admin-home] ERROR CLIENTES:', error)
 
     let clientesData = data
 
@@ -155,8 +183,8 @@ export default function AdminHome() {
           .select('id, nombre, apellido, telefono, email, dni, direccion, usuario_id')
           .order('id', { ascending: false })
 
-        console.log('DATA CLIENTES fallback (crudo):', dataSinCreatedAt)
-        console.log('ERROR CLIENTES (fallback id):', errorSinCreatedAt)
+        console.log('[admin-home] DATA CLIENTES fallback (crudo):', dataSinCreatedAt)
+        console.log('[admin-home] ERROR CLIENTES (fallback id):', errorSinCreatedAt)
 
         if (errorSinCreatedAt) {
           setClientes([])
@@ -171,7 +199,14 @@ export default function AdminHome() {
     }
 
     const baseClientes = (clientesData as Cliente[]) || []
-    console.log('CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
+    console.log('[admin-home] CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
+    console.log('[admin-home] FILTRO CLIENTES APLICADO EN QUERY:', {
+      rol_usuario: rolUsuario,
+      usa_eq: false,
+      usa_usuario_id: false,
+      usa_admin_id: false,
+      usa_created_by: false,
+    })
 
     // Fallback seguro de email desde tabla usuarios sin romper listado si esta consulta falla.
     const usuarioIds = baseClientes
@@ -186,8 +221,8 @@ export default function AdminHome() {
         .select('id, email')
         .in('id', usuarioIds)
 
-      console.log('DATA USUARIOS (fallback email):', usuariosData)
-      console.log('ERROR USUARIOS (fallback email):', usuariosError)
+      console.log('[admin-home] DATA USUARIOS (fallback email):', usuariosData)
+      console.log('[admin-home] ERROR USUARIOS (fallback email):', usuariosError)
 
       if (!usuariosError && Array.isArray(usuariosData)) {
         emailByUsuarioId = new Map(
