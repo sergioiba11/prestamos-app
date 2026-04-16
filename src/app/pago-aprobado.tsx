@@ -284,7 +284,47 @@ export default function PagoAprobado() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.print()
     }
-  }
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
+    if (!existing) document.head.appendChild(script)
+  })
+}
+
+function formatFileName(cliente: string, fecha: string) {
+  const safeCliente =
+    cliente
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'cliente'
+  const dateOnly = (fecha || new Date().toISOString()).replace(/[^\d]/g, '').slice(0, 8) || 'fecha'
+  return `comprobante-${safeCliente}-${dateOnly}.pdf`
+}
+
+export default function PagoAprobado() {
+  const params = useLocalSearchParams()
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const receiptRef = useRef<View | null>(null)
+
+  const montoPagado = getParamNumber(params.monto)
+  const montoEntregado = getParamNumber(params.monto_ingresado)
+  const vuelto = getParamNumber(params.vuelto)
+  const saldoRestante = getParamNumber(params.saldo_restante)
+  const montoCuota = getParamNumber(params.monto_cuota, montoPagado)
+
+  const metodo = getParamString(params.metodo, 'No informado')
+  const prestamoId = getParamString(params.prestamo_id)
+  const clienteId = getParamString(params.cliente_id)
+  const numeroCuota = getParamString(params.numero_cuota)
+  const pagoId = getParamString(params.pago_id)
+  const pagoInternoId = getParamString(params.identificador_interno_pago)
+  const fechaRaw = getParamString(params.fecha)
+  const fechaFormateada = formatDateTimeLocal(fechaRaw)
+
+  const cuotasImpactadas = useMemo(
+    () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
+    [params.cuotas_aplicadas]
+  )
 
   const onShare = async () => {
     try {
