@@ -1,312 +1,709 @@
+import { Image } from 'expo-image'
 import { router, useLocalSearchParams } from 'expo-router'
-import { Linking, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
 
-function formatearMoneda(valor: number) {
-  return (
-    '$' +
-    new Intl.NumberFormat('es-AR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(Number(valor || 0))
-  )
+type ParamValue = string | string[] | undefined
+
+type ReceiptLineItem = {
+  label: string
+  value: string
+  emphasize?: boolean
 }
 
-function obtenerTextoSeguro(valor: unknown, fallback = '—') {
-  if (typeof valor === 'string' && valor.trim()) return valor
-  return fallback
+type CuotaImpactadaDetalle = {
+  numero_cuota: number
+  estado: string
+  monto_aplicado: number
+  saldo_antes: number
+  saldo_despues: number
 }
 
-function obtenerNumeroSeguro(valor: unknown) {
-  const numero = Number(valor || 0)
-  return Number.isFinite(numero) ? numero : 0
+type WindowWithPdfLibs = Window & {
+  html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>
+  jspdf?: {
+    jsPDF: new (options?: Record<string, unknown>) => {
+      internal: { pageSize: { getWidth: () => number; getHeight: () => number } }
+      addImage: (
+        imageData: string,
+        format: string,
+        x: number,
+        y: number,
+        width: number,
+        height: number
+      ) => void
+      addPage: () => void
+      save: (filename: string) => void
+    }
+  }
 }
 
-function normalizarTelefonoParaWhatsApp(valor: unknown) {
-  return String(valor || '').replace(/[^\d]/g, '')
+function getParamString(value: ParamValue, fallback = '') {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string') return fallback
+  const trimmed = raw.trim()
+  return trimmed || fallback
+}
+
+function getParamNumber(value: ParamValue, fallback = 0) {
+  const parsed = Number(getParamString(value, String(fallback)).replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatCurrencyArs(value: number) {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(value) ? value : 0)
+}
+
+function formatDateTimeLocal(value?: string) {
+  const source = value?.trim() ? value : undefined
+  const parsed = source ? new Date(source) : new Date()
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleString('es-AR', {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    })
+  }
+  return parsed.toLocaleString('es-AR', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  })
+}
+
+function parseCuotasImpactadas(value: string) {
+  if (!value) return [] as number[]
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+    }
+  } catch {
+    const number = Number(value)
+    if (Number.isFinite(number)) return [number]
+  }
+  return [] as number[]
+}
+
+function parseCuotasImpactadasDetalle(value: string): CuotaImpactadaDetalle[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => ({
+        numero_cuota: Number(item?.numero_cuota || 0),
+        estado: String(item?.estado || ''),
+        monto_aplicado: Number(item?.monto_aplicado || 0),
+        saldo_antes: Number(item?.saldo_antes || 0),
+        saldo_despues: Number(item?.saldo_despues || 0),
+      }))
+      .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
+  } catch {
+    return []
+  }
+}
+
+function formatFallback(value: string, fallback = 'No informado') {
+  return value.trim() ? value : fallback
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/[^\d]/g, '')
+}
+
+function buildReceiptNumber(paymentId: string, loanId: string, dateTime: string) {
+  if (paymentId) return `REC-${paymentId.slice(0, 8).toUpperCase()}`
+  const datePart = dateTime.replace(/\D/g, '').slice(0, 12)
+  const loanPart = loanId.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase() || 'PAGO'
+  return `REC-${datePart || '000000000000'}-${loanPart}`
+}
+
+async function loadScript(src: string) {
+  if (typeof document === 'undefined') return
+  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
+  if (existing?.dataset.loaded === 'true') return
+
+  await new Promise<void>((resolve, reject) => {
+    const script = existing || document.createElement('script')
+    script.src = src
+    script.async = true
+    script.onload = () => {
+      script.dataset.loaded = 'true'
+      resolve()
+    }
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
+    if (!existing) document.head.appendChild(script)
+  })
+}
+
+function formatFileName(cliente: string, fecha: string) {
+  const safeCliente =
+    cliente
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'cliente'
+  const dateOnly = (fecha || new Date().toISOString()).replace(/[^\d]/g, '').slice(0, 8) || 'fecha'
+  return `comprobante-${safeCliente}-${dateOnly}.pdf`
 }
 
 export default function PagoAprobado() {
   const params = useLocalSearchParams()
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const receiptRef = useRef<View | null>(null)
 
-  const monto = obtenerNumeroSeguro(params.monto)
-  const montoIngresado = obtenerNumeroSeguro(params.monto_ingresado)
-  const vuelto = obtenerNumeroSeguro(params.vuelto)
-  const saldo = obtenerNumeroSeguro(params.saldo_restante)
+  const montoPagado = getParamNumber(params.monto)
+  const montoEntregado = getParamNumber(params.monto_ingresado)
+  const vuelto = getParamNumber(params.vuelto)
+  const saldoRestante = getParamNumber(params.saldo_restante)
+  const montoCuota = getParamNumber(params.monto_cuota, montoPagado)
 
-  const metodo = obtenerTextoSeguro(params.metodo)
-  const clienteId = Array.isArray(params.cliente_id)
-    ? params.cliente_id[0]
-    : params.cliente_id
+  const metodo = getParamString(params.metodo, 'No informado')
+  const prestamoId = getParamString(params.prestamo_id)
+  const clienteId = getParamString(params.cliente_id)
+  const numeroCuota = getParamString(params.numero_cuota)
+  const pagoId = getParamString(params.pago_id)
+  const pagoInternoId = getParamString(params.identificador_interno_pago)
+  const fechaRaw = getParamString(params.fecha)
+  const fechaFormateada = formatDateTimeLocal(fechaRaw)
 
-  const prestamoId = Array.isArray(params.prestamo_id)
-    ? params.prestamo_id[0]
-    : params.prestamo_id
-
-  const cuotasAplicadasRaw = obtenerTextoSeguro(
-    Array.isArray(params.cuotas_aplicadas)
-      ? params.cuotas_aplicadas[0]
-      : params.cuotas_aplicadas,
-    ''
+  const cuotasImpactadas = useMemo(
+    () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
+    [params.cuotas_aplicadas]
   )
-  let cuotasAplicadas = 'No informado'
-  try {
-    const parsed = JSON.parse(cuotasAplicadasRaw)
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      cuotasAplicadas = parsed.map((n) => `#${n}`).join(', ')
-    } else if (typeof cuotasAplicadasRaw === 'string' && cuotasAplicadasRaw.trim()) {
-      cuotasAplicadas = cuotasAplicadasRaw
-    }
-  } catch {
-    cuotasAplicadas = cuotasAplicadasRaw || 'No informado'
-  }
-
-  const proximaCuota = obtenerTextoSeguro(
-    Array.isArray(params.proxima_cuota)
-      ? params.proxima_cuota[0]
-      : params.proxima_cuota,
-    'No informada'
+  const cuotasImpactadasDetalle = useMemo(
+    () => parseCuotasImpactadasDetalle(getParamString(params.cuotas_impactadas_detalle)),
+    [params.cuotas_impactadas_detalle]
   )
-  const clienteNombre = obtenerTextoSeguro(
-    `${obtenerTextoSeguro(
-      Array.isArray(params.cliente_nombre) ? params.cliente_nombre[0] : params.cliente_nombre,
-      ''
-    )} ${obtenerTextoSeguro(
-      Array.isArray(params.cliente_apellido) ? params.cliente_apellido[0] : params.cliente_apellido,
-      ''
-    )}`.trim(),
-    'Cliente'
+  const estadoComprobante = getParamString(params.estado_comprobante, 'COMPLETO').toUpperCase()
+
+  const proximaCuota = getParamString(params.proxima_cuota)
+  const clienteNombre = formatFallback(
+    `${getParamString(params.cliente_nombre)} ${getParamString(params.cliente_apellido)}`.trim(),
+    'Cliente no informado'
   )
-  const clienteTelefonoParam = obtenerTextoSeguro(
-    Array.isArray(params.cliente_telefono) ? params.cliente_telefono[0] : params.cliente_telefono,
-    ''
-  )
+  const clienteDni = getParamString(params.cliente_dni)
+  const clienteEmail = getParamString(params.cliente_email)
+  const clienteTelefono = getParamString(params.cliente_telefono)
+  const observaciones = getParamString(params.observaciones)
 
-  const fecha = new Date().toLocaleString('es-AR')
+  const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
+  const cuotasTexto = cuotasImpactadasDetalle.length
+    ? cuotasImpactadasDetalle
+        .map((item) => `#${item.numero_cuota} (${String(item.estado || '').toUpperCase()})`)
+        .join(', ')
+    : cuotasImpactadas.length > 0
+      ? cuotasImpactadas.map((item) => `#${item}`).join(', ')
+      : 'Sin detalle de cuotas impactadas'
 
-  const imprimir = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.print()
-      return
-    }
-  }
+  const proximaCuotaTexto = proximaCuota
+    ? `Cuota #${proximaCuota}`
+    : saldoRestante <= 0
+      ? 'Préstamo saldado / sin saldo pendiente'
+      : 'Sin próxima cuota informada'
 
-  const mensajeWhatsApp = [
-    'Hola, te comparto el comprobante de tu pago:',
-    '',
+  const isEfectivo = metodo.toLowerCase() === 'efectivo'
+  const paymentMethodLabel =
+    metodo.toLowerCase() === 'mercadopago' ? 'Mercado Pago' : metodo[0]?.toUpperCase() + metodo.slice(1)
+
+  const shareText = [
+    'Comprobante de pago - Creditodo',
+    `Recibo: ${receiptNumber}`,
     `Cliente: ${clienteNombre}`,
-    `Monto: ${formatearMoneda(monto)}`,
-    `Fecha: ${fecha}`,
-    `Cuotas: ${cuotasAplicadas}`,
-    `Saldo restante: ${formatearMoneda(saldo)}`,
-    '',
-    'Gracias.',
+    `Monto pagado: ${formatCurrencyArs(montoPagado)}`,
+    `Método: ${paymentMethodLabel}`,
+    `Fecha: ${fechaFormateada}`,
+    `Cuotas impactadas: ${cuotasTexto}`,
+    `Saldo restante: ${formatCurrencyArs(saldoRestante)}`,
   ].join('\n')
 
-  const copiarMensaje = async () => {
-    const nav = globalThis as typeof globalThis & {
-      navigator?: { clipboard?: { writeText: (text: string) => Promise<void> } }
-    }
-    if (Platform.OS === 'web' && nav.navigator?.clipboard?.writeText) {
-      await nav.navigator.clipboard.writeText(mensajeWhatsApp)
-      return
+  const receiptMetaItems: ReceiptLineItem[] = [
+    {
+      label: 'Estado',
+      value: estadoComprobante === 'PARCIAL' ? 'Pago aprobado (PARCIAL)' : 'Pago aprobado (COMPLETO)',
+      emphasize: true,
+    },
+    { label: 'Recibo N.º', value: receiptNumber },
+    { label: 'Fecha y hora', value: fechaFormateada },
+    { label: 'ID préstamo', value: formatFallback(prestamoId) },
+  ]
+
+  const clientItems: ReceiptLineItem[] = [
+    { label: 'Nombre completo', value: clienteNombre },
+    { label: 'DNI', value: formatFallback(clienteDni, 'No registrado') },
+    { label: 'Email', value: formatFallback(clienteEmail, 'No registrado') },
+    { label: 'ID cliente', value: formatFallback(clienteId) },
+  ]
+
+  const paymentItems: ReceiptLineItem[] = [
+    { label: 'Método de pago', value: formatFallback(paymentMethodLabel) },
+    { label: 'Cuota abonada', value: numeroCuota ? `Cuota #${numeroCuota}` : 'No informada' },
+    {
+      label: 'Cantidad de cuotas impactadas',
+      value: cuotasImpactadas.length ? String(cuotasImpactadas.length) : 'No informado',
+    },
+    { label: 'Cuotas impactadas', value: cuotasTexto },
+    { label: 'Próxima cuota pendiente', value: proximaCuotaTexto },
+  ]
+
+  const financeItems: ReceiptLineItem[] = [
+    { label: 'Monto de cuota', value: formatCurrencyArs(montoCuota) },
+    { label: 'Monto pagado', value: formatCurrencyArs(montoPagado), emphasize: true },
+    {
+      label: isEfectivo ? 'Monto entregado' : 'Monto acreditado',
+      value: formatCurrencyArs(isEfectivo ? montoEntregado : montoPagado),
+    },
+    ...(isEfectivo
+      ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }]
+      : []),
+    {
+      label: 'Saldo restante',
+      value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
+      emphasize: saldoRestante <= 0,
+    },
+  ]
+
+  const paymentIdentifier = formatFallback(pagoInternoId || pagoId, 'No disponible')
+
+  const onPrint = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.print()
     }
   }
 
-  const enviarPorWhatsApp = async () => {
-    let telefono = normalizarTelefonoParaWhatsApp(clienteTelefonoParam)
-
-    if (!telefono && Platform.OS === 'web' && typeof window !== 'undefined') {
-      const manual = window.prompt('Ingresá el número de WhatsApp (con código de país):', '')
-      telefono = normalizarTelefonoParaWhatsApp(manual || '')
+  const onShare = async () => {
+    try {
+      await Share.share({ message: shareText })
+    } catch {
+      const nav = globalThis as typeof globalThis & {
+        navigator?: { clipboard?: { writeText: (text: string) => Promise<void> } }
+      }
+      if (Platform.OS === 'web' && nav.navigator?.clipboard?.writeText) {
+        await nav.navigator.clipboard.writeText(shareText)
+        return
+      }
+      const toPhone = normalizePhone(clienteTelefono)
+      const waUrl = `https://wa.me/${toPhone}?text=${encodeURIComponent(shareText)}`
+      if (toPhone) {
+        await Linking.openURL(waUrl)
+      }
     }
+  }
 
-    if (!telefono) {
-      console.warn('No se pudo abrir WhatsApp: el cliente no tiene teléfono cargado.')
+  const handleDownloadPDF = async () => {
+    if (downloadingPdf) return
+
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
       return
     }
 
-    const mensajeCodificado = encodeURIComponent(mensajeWhatsApp)
-    const url = `https://wa.me/${telefono}?text=${mensajeCodificado}`
-    await Linking.openURL(url)
+    setDownloadingPdf(true)
+    try {
+      await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js')
+      await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js')
+
+      const windowWithLibs = window as WindowWithPdfLibs
+      if (!windowWithLibs.html2canvas || !windowWithLibs.jspdf?.jsPDF) {
+        throw new Error('No se pudieron inicializar las librerías de PDF')
+      }
+
+      const targetElement =
+        (receiptRef.current as unknown as HTMLElement | null) ||
+        document.getElementById('creditodo-recibo-paper')
+      if (!targetElement) {
+        throw new Error('No se encontró el comprobante para exportar')
+      }
+
+      const originalBackground = targetElement.style.backgroundColor
+      targetElement.style.backgroundColor = '#FFFFFF'
+
+      const canvas = await windowWithLibs.html2canvas(targetElement, {
+        scale: 2,
+        backgroundColor: '#FFFFFF',
+        useCORS: true,
+        logging: false,
+      })
+
+      targetElement.style.backgroundColor = originalBackground
+
+      const imageData = canvas.toDataURL('image/png', 1.0)
+      const pdf = new windowWithLibs.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 10
+      const usableWidth = pageWidth - margin * 2
+      const usableHeight = pageHeight - margin * 2
+      const imageHeight = (canvas.height * usableWidth) / canvas.width
+
+      let y = margin
+      let heightLeft = imageHeight
+      pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
+      heightLeft -= usableHeight
+
+      while (heightLeft > 0) {
+        y = heightLeft - imageHeight + margin
+        pdf.addPage()
+        pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
+        heightLeft -= usableHeight
+      }
+
+      pdf.save(formatFileName(clienteNombre, fechaRaw || new Date().toISOString()))
+    } catch (error) {
+      console.error('Error al generar PDF', error)
+      Alert.alert('No se pudo descargar el PDF', 'Intentá nuevamente en unos segundos.')
+    } finally {
+      setDownloadingPdf(false)
+    }
   }
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return
+
+    const styleTag = document.createElement('style')
+    styleTag.setAttribute('id', 'creditodo-recibo-print-styles')
+    styleTag.textContent = `
+      @media print {
+        body {
+          background: #ffffff !important;
+        }
+        #creditodo-recibo-root {
+          background: #ffffff !important;
+          padding: 0 !important;
+        }
+        #creditodo-recibo-actions,
+        #creditodo-recibo-back {
+          display: none !important;
+        }
+        #creditodo-recibo-paper {
+          max-width: 760px !important;
+          border: 1px solid #d1d5db !important;
+          border-radius: 12px !important;
+          margin: 0 auto !important;
+          box-shadow: none !important;
+        }
+      }
+    `
+    document.head.appendChild(styleTag)
+
+    return () => {
+      styleTag.remove()
+    }
+  }, [])
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>✅ Pago aprobado</Text>
+    <View style={styles.screen} nativeID="creditodo-recibo-root">
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.paper} nativeID="creditodo-recibo-paper" ref={receiptRef}>
+          <View style={styles.header}>
+            <Image
+              source={require('../../assets/images/logo-root.png')}
+              style={styles.logo}
+              contentFit="contain"
+            />
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.brandName}>Creditodo</Text>
+              <Text style={styles.title}>Recibo de pago</Text>
+              <Text style={styles.subtitle}>Comprobante financiero</Text>
+            </View>
+          </View>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Monto pagado</Text>
-        <Text style={styles.value}>{formatearMoneda(monto)}</Text>
+          <View style={styles.metaGrid}>
+            {receiptMetaItems.map((item) => (
+              <View key={item.label} style={styles.metaItem}>
+                <Text style={styles.metaLabel}>{item.label}</Text>
+                <Text style={[styles.metaValue, item.emphasize && styles.approvedValue]}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
-        <Text style={styles.label}>Monto ingresado</Text>
-        <Text style={styles.value}>{formatearMoneda(montoIngresado)}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Datos del cliente</Text>
+            {clientItems.map((item) => (
+              <View key={item.label} style={styles.row}>
+                <Text style={styles.rowLabel}>{item.label}</Text>
+                <Text style={styles.rowValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
-        <Text style={styles.label}>Vuelto</Text>
-        <Text style={styles.value}>{formatearMoneda(vuelto)}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Datos del pago</Text>
+            {paymentItems.map((item) => (
+              <View key={item.label} style={styles.row}>
+                <Text style={styles.rowLabel}>{item.label}</Text>
+                <Text style={styles.rowValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
-        <Text style={styles.label}>Método</Text>
-        <Text style={styles.value}>{metodo}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Detalle financiero</Text>
+            {financeItems.map((item) => (
+              <View key={item.label} style={styles.row}>
+                <Text style={styles.rowLabel}>{item.label}</Text>
+                <Text style={[styles.rowValue, item.emphasize && styles.highlightValue]}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
 
-        <Text style={styles.label}>Fecha</Text>
-        <Text style={styles.value}>{fecha}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Observaciones</Text>
+            <Text style={styles.notes}>{formatFallback(observaciones, 'Sin observaciones registradas')}</Text>
+          </View>
 
-        <Text style={styles.label}>Saldo restante</Text>
-        <Text style={styles.value}>{formatearMoneda(saldo)}</Text>
+          <View style={styles.footer}>
+            <Text style={styles.footerLabel}>Identificador interno del pago</Text>
+            <Text style={styles.footerValue}>{paymentIdentifier}</Text>
+          </View>
+        </View>
 
-        <View style={styles.divider} />
-
-        <Text style={styles.label}>Cuotas impactadas</Text>
-        <Text style={styles.valueSmall}>{cuotasAplicadas}</Text>
-
-        <Text style={styles.label}>Próxima cuota pendiente</Text>
-        <Text style={styles.valueSmall}>{proximaCuota}</Text>
-
-        <Text style={styles.label}>ID préstamo</Text>
-        <Text style={styles.valueSmall}>{obtenerTextoSeguro(prestamoId)}</Text>
-      </View>
-
-      <View style={styles.actionsRow}>
-        {Platform.OS === 'web' ? (
-          <Pressable
-            style={({ hovered, pressed }) => [
-              styles.button,
-              styles.buttonHalf,
-              hovered && styles.buttonHover,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={imprimir}
-          >
-            <Text style={styles.buttonText}>🖨️ Imprimir ticket</Text>
+        <View style={styles.actions} nativeID="creditodo-recibo-actions">
+          <Pressable style={styles.actionPrimary} onPress={onPrint}>
+            <Text style={styles.actionPrimaryText}>Imprimir</Text>
           </Pressable>
-        ) : null}
-
-        <Pressable
-          style={({ hovered, pressed }) => [
-            styles.button,
-            styles.buttonHalf,
-            styles.whatsappButton,
-            hovered && styles.whatsappButtonHover,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={enviarPorWhatsApp}
-        >
-          <Text style={styles.buttonText}>🟢 Enviar por WhatsApp</Text>
-        </Pressable>
-      </View>
-
-      {Platform.OS === 'web' ? (
-        <Pressable
-          style={({ hovered, pressed }) => [
-            styles.secondaryButton,
-            hovered && styles.secondaryButtonHover,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={() => void copiarMensaje()}
-        >
-          <Text style={styles.secondaryButtonText}>📋 Copiar mensaje</Text>
-        </Pressable>
-      ) : null}
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() =>
-          router.replace(`/cliente-detalle?cliente_id=${clienteId}` as any)
-        }
-      >
-        <Text style={styles.buttonText}>← Volver al cliente</Text>
-      </TouchableOpacity>
+          <Pressable style={styles.actionSecondary} onPress={() => void onShare()}>
+            <Text style={styles.actionSecondaryText}>Compartir comprobante</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.actionPdf, downloadingPdf && styles.actionPdfDisabled]}
+            disabled={downloadingPdf}
+            onPress={() => void handleDownloadPDF()}
+          >
+            <Text style={styles.actionPdfText}>
+              {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.actionGhost}
+            onPress={() => router.replace(`/cliente-detalle?cliente_id=${clienteId}` as any)}
+            nativeID="creditodo-recibo-back"
+          >
+            <Text style={styles.actionGhostText}>Volver al préstamo / cliente</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#020817',
-    padding: 20,
-    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+  },
+  scrollContent: {
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    gap: 14,
+    alignItems: 'center',
+  },
+  paper: {
+    width: '100%',
+    maxWidth: 820,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    gap: 14,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  logo: {
+    width: 60,
+    height: 60,
+  },
+  headerTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  brandName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
   },
   title: {
-    color: '#22C55E',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 20,
+    color: '#1E3A8A',
   },
-  card: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 20,
-    gap: 10,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  label: {
-    color: '#94A3B8',
+  subtitle: {
     fontSize: 13,
+    color: '#475569',
+    fontWeight: '500',
   },
-  value: {
-    color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  valueSmall: {
-    color: '#E2E8F0',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#1E293B',
-    marginVertical: 8,
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    padding: 14,
-    borderRadius: 12,
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
-  },
-  buttonHalf: {
-    flex: 1,
-    marginTop: 0,
-  },
-  buttonHover: {
-    backgroundColor: '#1D4ED8',
-  },
-  buttonPressed: {
-    opacity: 0.85,
-  },
-  whatsappButton: {
-    backgroundColor: '#16A34A',
-  },
-  whatsappButtonHover: {
-    backgroundColor: '#15803D',
-  },
-  secondaryButton: {
-    marginTop: 10,
-    borderColor: '#334155',
+  metaGrid: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    backgroundColor: '#0B1220',
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    overflow: 'hidden',
   },
-  secondaryButtonHover: {
-    backgroundColor: '#111B2F',
+  metaItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    gap: 2,
   },
-  secondaryButtonText: {
-    color: '#CBD5E1',
+  metaLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  metaValue: {
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  approvedValue: {
+    color: '#166534',
+  },
+  section: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  sectionTitle: {
+    backgroundColor: '#F8FAFC',
+    color: '#1E293B',
+    fontWeight: '800',
+    fontSize: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  row: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#F1F5F9',
+    gap: 4,
+  },
+  rowLabel: {
+    color: '#64748B',
+    fontSize: 12,
     fontWeight: '600',
   },
-  buttonText: {
-    color: '#FFF',
+  rowValue: {
+    color: '#0F172A',
+    fontSize: 15,
     fontWeight: '700',
+  },
+  highlightValue: {
+    color: '#14532D',
+  },
+  notes: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#0F172A',
+    lineHeight: 20,
+  },
+  footer: {
+    borderTopWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingTop: 12,
+    gap: 4,
+  },
+  footerLabel: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  footerValue: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  actions: {
+    width: '100%',
+    maxWidth: 820,
+    gap: 10,
+    marginBottom: 8,
+  },
+  actionPrimary: {
+    backgroundColor: '#1D4ED8',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  actionPrimaryText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  actionSecondary: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  actionSecondaryText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  actionPdf: {
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+  },
+  actionPdfDisabled: {
+    opacity: 0.6,
+  },
+  actionPdfText: {
+    color: '#1E3A8A',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  actionGhost: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+  },
+  actionGhostText: {
+    color: '#1E293B',
+    fontWeight: '700',
+    fontSize: 14,
   },
 })
