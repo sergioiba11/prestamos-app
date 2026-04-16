@@ -21,6 +21,14 @@ type ReceiptLineItem = {
   emphasize?: boolean
 }
 
+type CuotaImpactadaDetalle = {
+  numero_cuota: number
+  estado: string
+  monto_aplicado: number
+  saldo_antes: number
+  saldo_despues: number
+}
+
 type WindowWithPdfLibs = Window & {
   html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>
   jspdf?: {
@@ -88,6 +96,25 @@ function parseCuotasImpactadas(value: string) {
     if (Number.isFinite(number)) return [number]
   }
   return [] as number[]
+}
+
+function parseCuotasImpactadasDetalle(value: string): CuotaImpactadaDetalle[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => ({
+        numero_cuota: Number(item?.numero_cuota || 0),
+        estado: String(item?.estado || ''),
+        monto_aplicado: Number(item?.monto_aplicado || 0),
+        saldo_antes: Number(item?.saldo_antes || 0),
+        saldo_despues: Number(item?.saldo_despues || 0),
+      }))
+      .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
+  } catch {
+    return []
+  }
 }
 
 function formatFallback(value: string, fallback = 'No informado') {
@@ -159,6 +186,11 @@ export default function PagoAprobado() {
     () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
     [params.cuotas_aplicadas]
   )
+  const cuotasImpactadasDetalle = useMemo(
+    () => parseCuotasImpactadasDetalle(getParamString(params.cuotas_impactadas_detalle)),
+    [params.cuotas_impactadas_detalle]
+  )
+  const estadoComprobante = getParamString(params.estado_comprobante, 'COMPLETO').toUpperCase()
 
   const proximaCuota = getParamString(params.proxima_cuota)
   const clienteNombre = formatFallback(
@@ -171,8 +203,11 @@ export default function PagoAprobado() {
   const observaciones = getParamString(params.observaciones)
 
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
-  const cuotasTexto =
-    cuotasImpactadas.length > 0
+  const cuotasTexto = cuotasImpactadasDetalle.length
+    ? cuotasImpactadasDetalle
+        .map((item) => `#${item.numero_cuota} (${String(item.estado || '').toUpperCase()})`)
+        .join(', ')
+    : cuotasImpactadas.length > 0
       ? cuotasImpactadas.map((item) => `#${item}`).join(', ')
       : 'Sin detalle de cuotas impactadas'
 
@@ -198,7 +233,11 @@ export default function PagoAprobado() {
   ].join('\n')
 
   const receiptMetaItems: ReceiptLineItem[] = [
-    { label: 'Estado', value: 'Pago aprobado', emphasize: true },
+    {
+      label: 'Estado',
+      value: estadoComprobante === 'PARCIAL' ? 'Pago aprobado (PARCIAL)' : 'Pago aprobado (COMPLETO)',
+      emphasize: true,
+    },
     { label: 'Recibo N.º', value: receiptNumber },
     { label: 'Fecha y hora', value: fechaFormateada },
     { label: 'ID préstamo', value: formatFallback(prestamoId) },
@@ -245,7 +284,47 @@ export default function PagoAprobado() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.print()
     }
-  }
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
+    if (!existing) document.head.appendChild(script)
+  })
+}
+
+function formatFileName(cliente: string, fecha: string) {
+  const safeCliente =
+    cliente
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'cliente'
+  const dateOnly = (fecha || new Date().toISOString()).replace(/[^\d]/g, '').slice(0, 8) || 'fecha'
+  return `comprobante-${safeCliente}-${dateOnly}.pdf`
+}
+
+export default function PagoAprobado() {
+  const params = useLocalSearchParams()
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const receiptRef = useRef<View | null>(null)
+
+  const montoPagado = getParamNumber(params.monto)
+  const montoEntregado = getParamNumber(params.monto_ingresado)
+  const vuelto = getParamNumber(params.vuelto)
+  const saldoRestante = getParamNumber(params.saldo_restante)
+  const montoCuota = getParamNumber(params.monto_cuota, montoPagado)
+
+  const metodo = getParamString(params.metodo, 'No informado')
+  const prestamoId = getParamString(params.prestamo_id)
+  const clienteId = getParamString(params.cliente_id)
+  const numeroCuota = getParamString(params.numero_cuota)
+  const pagoId = getParamString(params.pago_id)
+  const pagoInternoId = getParamString(params.identificador_interno_pago)
+  const fechaRaw = getParamString(params.fecha)
+  const fechaFormateada = formatDateTimeLocal(fechaRaw)
+
+  const cuotasImpactadas = useMemo(
+    () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
+    [params.cuotas_aplicadas]
+  )
 
   const onShare = async () => {
     try {

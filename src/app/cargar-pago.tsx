@@ -536,6 +536,8 @@ export default function CargarPago() {
           cuota_id: cuotaSeleccionada.id,
           numero_cuota: String(cuotaSeleccionada.numero_cuota),
           cuotas_impactadas: JSON.stringify(json?.cuotas_impactadas || []),
+          cuotas_impactadas_detalle: JSON.stringify(json?.cuotas_impactadas_detalle || []),
+          estado_comprobante: String(json?.estado_comprobante || 'COMPLETO'),
           proxima_cuota: json?.proxima_cuota?.numero_cuota
             ? String(json.proxima_cuota.numero_cuota)
             : '',
