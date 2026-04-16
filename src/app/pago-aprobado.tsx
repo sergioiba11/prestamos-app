@@ -1,7 +1,8 @@
 import { Image } from 'expo-image'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   Linking,
   Platform,
   Pressable,
@@ -18,6 +19,25 @@ type ReceiptLineItem = {
   label: string
   value: string
   emphasize?: boolean
+}
+
+type WindowWithPdfLibs = Window & {
+  html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>
+  jspdf?: {
+    jsPDF: new (options?: Record<string, unknown>) => {
+      internal: { pageSize: { getWidth: () => number; getHeight: () => number } }
+      addImage: (
+        imageData: string,
+        format: string,
+        x: number,
+        y: number,
+        width: number,
+        height: number
+      ) => void
+      addPage: () => void
+      save: (filename: string) => void
+    }
+  }
 }
 
 function getParamString(value: ParamValue, fallback = '') {
@@ -85,8 +105,40 @@ function buildReceiptNumber(paymentId: string, loanId: string, dateTime: string)
   return `REC-${datePart || '000000000000'}-${loanPart}`
 }
 
+async function loadScript(src: string) {
+  if (typeof document === 'undefined') return
+  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
+  if (existing?.dataset.loaded === 'true') return
+
+  await new Promise<void>((resolve, reject) => {
+    const script = existing || document.createElement('script')
+    script.src = src
+    script.async = true
+    script.onload = () => {
+      script.dataset.loaded = 'true'
+      resolve()
+    }
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
+    if (!existing) document.head.appendChild(script)
+  })
+}
+
+function formatFileName(cliente: string, fecha: string) {
+  const safeCliente =
+    cliente
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'cliente'
+  const dateOnly = (fecha || new Date().toISOString()).replace(/[^\d]/g, '').slice(0, 8) || 'fecha'
+  return `comprobante-${safeCliente}-${dateOnly}.pdf`
+}
+
 export default function PagoAprobado() {
   const params = useLocalSearchParams()
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const receiptRef = useRef<View | null>(null)
 
   const montoPagado = getParamNumber(params.monto)
   const montoEntregado = getParamNumber(params.monto_ingresado)
@@ -214,6 +266,72 @@ export default function PagoAprobado() {
     }
   }
 
+  const handleDownloadPDF = async () => {
+    if (downloadingPdf) return
+
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return
+    }
+
+    setDownloadingPdf(true)
+    try {
+      await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js')
+      await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js')
+
+      const windowWithLibs = window as WindowWithPdfLibs
+      if (!windowWithLibs.html2canvas || !windowWithLibs.jspdf?.jsPDF) {
+        throw new Error('No se pudieron inicializar las librerías de PDF')
+      }
+
+      const targetElement =
+        (receiptRef.current as unknown as HTMLElement | null) ||
+        document.getElementById('creditodo-recibo-paper')
+      if (!targetElement) {
+        throw new Error('No se encontró el comprobante para exportar')
+      }
+
+      const originalBackground = targetElement.style.backgroundColor
+      targetElement.style.backgroundColor = '#FFFFFF'
+
+      const canvas = await windowWithLibs.html2canvas(targetElement, {
+        scale: 2,
+        backgroundColor: '#FFFFFF',
+        useCORS: true,
+        logging: false,
+      })
+
+      targetElement.style.backgroundColor = originalBackground
+
+      const imageData = canvas.toDataURL('image/png', 1.0)
+      const pdf = new windowWithLibs.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 10
+      const usableWidth = pageWidth - margin * 2
+      const usableHeight = pageHeight - margin * 2
+      const imageHeight = (canvas.height * usableWidth) / canvas.width
+
+      let y = margin
+      let heightLeft = imageHeight
+      pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
+      heightLeft -= usableHeight
+
+      while (heightLeft > 0) {
+        y = heightLeft - imageHeight + margin
+        pdf.addPage()
+        pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
+        heightLeft -= usableHeight
+      }
+
+      pdf.save(formatFileName(clienteNombre, fechaRaw || new Date().toISOString()))
+    } catch (error) {
+      console.error('Error al generar PDF', error)
+      Alert.alert('No se pudo descargar el PDF', 'Intentá nuevamente en unos segundos.')
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return
 
@@ -251,7 +369,7 @@ export default function PagoAprobado() {
   return (
     <View style={styles.screen} nativeID="creditodo-recibo-root">
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.paper} nativeID="creditodo-recibo-paper">
+        <View style={styles.paper} nativeID="creditodo-recibo-paper" ref={receiptRef}>
           <View style={styles.header}>
             <Image
               source={require('../../assets/images/logo-root.png')}
@@ -322,8 +440,14 @@ export default function PagoAprobado() {
           <Pressable style={styles.actionSecondary} onPress={() => void onShare()}>
             <Text style={styles.actionSecondaryText}>Compartir comprobante</Text>
           </Pressable>
-          <Pressable style={styles.actionDisabled}>
-            <Text style={styles.actionDisabledText}>Descargar PDF (próximamente)</Text>
+          <Pressable
+            style={[styles.actionPdf, downloadingPdf && styles.actionPdfDisabled]}
+            disabled={downloadingPdf}
+            onPress={() => void handleDownloadPDF()}
+          >
+            <Text style={styles.actionPdfText}>
+              {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
+            </Text>
           </Pressable>
           <Pressable
             style={styles.actionGhost}
@@ -515,16 +639,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  actionDisabled: {
+  actionPdf: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#1D4ED8',
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#EFF6FF',
   },
-  actionDisabledText: {
-    color: '#64748B',
+  actionPdfDisabled: {
+    opacity: 0.6,
+  },
+  actionPdfText: {
+    color: '#1E3A8A',
     fontWeight: '700',
     fontSize: 14,
   },
