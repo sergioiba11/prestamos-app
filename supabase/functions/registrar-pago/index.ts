@@ -25,14 +25,18 @@ function esMontoCerrado(valor: number) {
 function normalizarMetodoPago(metodo: unknown) {
   const valor = String(metodo || '').trim().toLowerCase()
 
-  if (valor === 'mp' || valor === 'mercado_pago' || valor === 'mercado-pago') {
-    return 'mercadopago'
+  if (
+    valor === 'mp' ||
+    valor === 'mercado_pago' ||
+    valor === 'mercado-pago' ||
+    valor === 'mercadopago'
+  ) {
+    return 'mercado_pago'
   }
 
   if (
     valor === 'efectivo' ||
-    valor === 'transferencia' ||
-    valor === 'mercadopago'
+    valor === 'transferencia'
   ) {
     return valor
   }
@@ -398,6 +402,8 @@ Deno.serve(async (req) => {
       Number(body?.monto_entregado ?? body?.monto_ingresado ?? body?.monto)
     )
     const aplicarAMultiples = body?.aplicar_a_multiples !== false
+    const comprobanteUrl = String(body?.comprobante_url || body?.comprobante || '').trim() || null
+    const mpPreferenceId = String(body?.mp_preference_id || '').trim() || null
 
     if (!prestamo_id || !cliente_id || !metodo) {
       return jsonResponse(
@@ -410,6 +416,41 @@ Deno.serve(async (req) => {
 
     if (Number.isNaN(montoEntregado) || montoEntregado <= 0) {
       return jsonResponse({ error: 'Monto inválido' }, 400)
+    }
+
+    if (metodo === 'transferencia' || metodo === 'mercado_pago') {
+      const { data: pagoPendiente, error: pagoPendienteError } = await supabase
+        .from('pagos')
+        .insert({
+          prestamo_id,
+          cliente_id,
+          monto: montoEntregado,
+          metodo,
+          estado: 'pendiente',
+          comprobante_url: comprobanteUrl,
+          mp_preference_id: metodo === 'mercado_pago' ? mpPreferenceId : null,
+          registrado_por: user.id,
+        })
+        .select()
+        .single()
+
+      if (pagoPendienteError || !pagoPendiente) {
+        return jsonResponse(
+          { error: pagoPendienteError?.message || 'No se pudo registrar el pago pendiente' },
+          500
+        )
+      }
+
+      return jsonResponse({
+        ok: true,
+        pendiente: true,
+        pago: pagoPendiente,
+        estado: 'pendiente',
+        mensaje:
+          metodo === 'transferencia'
+            ? 'Pago pendiente de aprobación'
+            : 'Pago de Mercado Pago pendiente de confirmación',
+      })
     }
 
     const { data: prestamo, error: prestamoError } = await supabase
@@ -579,7 +620,10 @@ Deno.serve(async (req) => {
         cliente_id,
         monto: totalAplicado,
         metodo,
+        estado: 'aprobado',
         registrado_por: user.id,
+        aprobado_por: user.id,
+        fecha_pago: new Date().toISOString(),
       })
       .select()
       .single()

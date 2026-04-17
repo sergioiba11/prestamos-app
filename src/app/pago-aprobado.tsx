@@ -200,7 +200,9 @@ export default function PagoAprobado() {
 
   const isEfectivo = metodo.toLowerCase() === 'efectivo'
   const paymentMethodLabel =
-    metodo.toLowerCase() === 'mercadopago' ? 'Mercado Pago' : metodo[0]?.toUpperCase() + metodo.slice(1)
+    metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
+      ? 'Mercado Pago'
+      : metodo[0]?.toUpperCase() + metodo.slice(1)
 
   const shareText = [
     'Comprobante de pago - Creditodo',

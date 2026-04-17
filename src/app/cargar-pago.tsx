@@ -51,8 +51,8 @@ type Cuota = {
   estado: string | null
 }
 
-type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
-type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercadopago'
+type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mercado_pago'
+type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
 
 type RegistrarPagoResponse = {
   ok?: boolean
@@ -91,7 +91,6 @@ type RegistrarPagoResponse = {
 }
 
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
-  if (metodo === 'mp') return 'mercadopago'
   return metodo
 }
 
@@ -234,6 +233,8 @@ export default function CargarPago() {
 
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
+  const [comprobante, setComprobante] = useState('')
+  const [mpPreferenceId, setMpPreferenceId] = useState('')
 
   useEffect(() => {
     cargarClientes()
@@ -407,6 +408,8 @@ export default function CargarPago() {
     setBusqueda('')
     setMonto('')
     setMetodo('efectivo')
+    setComprobante('')
+    setMpPreferenceId('')
   }
 
   const invocarFuncionConFallback = async (
@@ -502,6 +505,9 @@ export default function CargarPago() {
         monto: Number(montoAplicado.toFixed(2)),
         monto_ingresado: Number(montoNumero.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
+        comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
+        mp_preference_id:
+          metodo === 'mercado_pago' ? mpPreferenceId.trim() || null : null,
         aplicar_a_multiples: true,
       }
 
@@ -514,6 +520,20 @@ export default function CargarPago() {
           'Error',
           json?.error || json?.detalle || 'La función respondió vacío. Intentá nuevamente.'
         )
+        return
+      }
+
+      if (json?.pendiente) {
+        Alert.alert(
+          'Pago registrado',
+          metodo === 'transferencia'
+            ? 'Pago pendiente de aprobación.'
+            : 'Pago pendiente de confirmación automática por webhook.'
+        )
+        void cargarCuotasPrestamo(prestamoSeleccionado.id)
+        setMonto('')
+        setComprobante('')
+        setMpPreferenceId('')
         return
       }
 
@@ -778,20 +798,46 @@ export default function CargarPago() {
                 <TouchableOpacity
                   style={[
                     styles.methodButton,
-                    metodo === 'mp' && styles.methodButtonActive,
+                    metodo === 'mercado_pago' && styles.methodButtonActive,
                   ]}
-                  onPress={() => setMetodo('mp')}
+                  onPress={() => setMetodo('mercado_pago')}
                 >
                   <Text
                     style={[
                       styles.methodButtonText,
-                      metodo === 'mp' && styles.methodButtonTextActive,
+                      metodo === 'mercado_pago' && styles.methodButtonTextActive,
                     ]}
                   >
                     MP
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {metodo === 'transferencia' && (
+                <>
+                  <Text style={styles.label}>Comprobante (texto o URL opcional)</Text>
+                  <TextInput
+                    value={comprobante}
+                    onChangeText={setComprobante}
+                    placeholder="Pegá una URL o nota del comprobante"
+                    placeholderTextColor="#64748B"
+                    style={styles.input}
+                  />
+                </>
+              )}
+
+              {metodo === 'mercado_pago' && (
+                <>
+                  <Text style={styles.label}>ID de preferencia MP (opcional)</Text>
+                  <TextInput
+                    value={mpPreferenceId}
+                    onChangeText={setMpPreferenceId}
+                    placeholder="Ej: pref_123..."
+                    placeholderTextColor="#64748B"
+                    style={styles.input}
+                  />
+                </>
+              )}
 
               <View style={styles.resumeCard}>
                 <View style={styles.resumeRow}>
@@ -804,10 +850,12 @@ export default function CargarPago() {
                   <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
                 </View>
 
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Vuelto</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
-                </View>
+                {metodo === 'efectivo' && (
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Vuelto</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
+                  </View>
+                )}
 
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
