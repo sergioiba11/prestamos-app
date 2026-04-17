@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -54,6 +55,8 @@ type Empleado = {
 type PagoPendiente = {
   id: string
   cliente_id: string | null
+  cuota_id: string | null
+  numero_cuota: number | null
   monto: number | null
   metodo: string | null
   estado: string | null
@@ -281,6 +284,8 @@ export default function AdminHome() {
           .select(`
             id,
             cliente_id,
+            cuota_id,
+            numero_cuota,
             monto,
             interes,
             total_a_pagar,
@@ -310,6 +315,8 @@ export default function AdminHome() {
           .select(`
             id,
             cliente_id,
+            cuota_id,
+            numero_cuota,
             monto,
             metodo,
             estado,
@@ -573,8 +580,9 @@ export default function AdminHome() {
       if (data?.error) throw new Error(String(data.error))
 
       await cargarTodo()
-    } catch (error) {
+    } catch (error: any) {
       console.log('ERROR procesarPagoPendiente:', error)
+      Alert.alert('Error', error?.message || 'No se pudo procesar el pago pendiente')
     } finally {
       setProcesandoPagoId(null)
     }
@@ -759,10 +767,16 @@ export default function AdminHome() {
                   </Text>
                   <Text style={styles.clientMetaHighlight}>DNI: {pago.clientes?.dni || '—'}</Text>
                   <Text style={styles.clientMeta}>
+                    Cuota: {pago.numero_cuota ? `#${pago.numero_cuota}` : 'Sin cuota asignada'}
+                  </Text>
+                  <Text style={styles.clientMeta}>
                     Monto: {formatearMoneda(Number(pago.monto || 0))}
                   </Text>
                   <Text style={styles.clientMeta}>
                     Método: {String(pago.metodo || '').replace('_', ' ')}
+                  </Text>
+                  <Text style={styles.clientMeta}>
+                    Estado: {String(pago.estado || 'pendiente')}
                   </Text>
                   <Text style={styles.clientMetaMuted}>
                     Fecha: {formatearFecha(pago.created_at || pago.fecha_pago)}

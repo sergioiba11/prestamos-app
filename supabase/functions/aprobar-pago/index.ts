@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .select('id, prestamo_id, cliente_id, monto, metodo, estado, registrado_por')
+      .select('id, prestamo_id, cliente_id, cuota_id, numero_cuota, monto, metodo, estado, registrado_por')
       .eq('id', pagoId)
       .maybeSingle()
 
@@ -147,6 +147,19 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'El préstamo no tiene cuotas pendientes para aplicar el pago' }, 400)
     }
 
+    let cuotasAProcesar = cuotasPendientes
+
+    if (pago.cuota_id) {
+      const index = cuotasPendientes.findIndex((cuota) => cuota.id === pago.cuota_id)
+      if (index === -1) {
+        return jsonResponse({
+          error: 'La cuota asociada al pago ya no está pendiente. Revisá el estado antes de aprobar.',
+        }, 400)
+      }
+
+      cuotasAProcesar = cuotasPendientes.slice(index)
+    }
+
     const detalleAplicacion: Array<{
       cuota_id: string
       numero_cuota: number
@@ -156,7 +169,7 @@ Deno.serve(async (req) => {
       estado_resultante: string
     }> = []
 
-    for (const cuota of cuotasPendientes) {
+    for (const cuota of cuotasAProcesar) {
       if (restante <= 0) break
 
       const saldoAnterior = redondear(Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0))
@@ -216,6 +229,7 @@ Deno.serve(async (req) => {
       .update({
         estado: 'aprobado',
         aprobado_por: user.id,
+        approved_at: new Date().toISOString(),
         fecha_pago: new Date().toISOString(),
       })
       .eq('id', pago.id)
