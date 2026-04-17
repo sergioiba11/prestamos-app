@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -56,6 +57,12 @@ type Cuota = {
 
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mercado_pago'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
+
+type MercadoPagoEstado = {
+  connected: boolean
+  aliasCuenta: string | null
+  mpUserId: string | null
+}
 
 type RegistrarPagoResponse = {
   ok?: boolean
@@ -257,6 +264,12 @@ export default function CargarPago() {
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
   const [comprobante, setComprobante] = useState('')
+  const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
+    connected: false,
+    aliasCuenta: null,
+    mpUserId: null,
+  })
+
   const [mpCheckout, setMpCheckout] = useState<{
     preferenceId: string
     initPoint: string
@@ -267,6 +280,12 @@ export default function CargarPago() {
   useEffect(() => {
     cargarClientes()
   }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarEstadoMercadoPago()
+    }, [metodo])
+  )
 
   useEffect(() => {
     if (clienteSeleccionado?.id) {
@@ -289,6 +308,47 @@ export default function CargarPago() {
       setMonto('')
     }
   }, [prestamoSeleccionado])
+
+  const cargarEstadoMercadoPago = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.user?.id) {
+        setMpEstado({ connected: false, aliasCuenta: null, mpUserId: null })
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('admin_settings')
+        .select('connected, mp_access_token, alias_cuenta, mp_user_id')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+
+      if (error) {
+        console.log('[cargar-pago] No se pudo leer estado MP:', error)
+        setMpEstado({ connected: false, aliasCuenta: null, mpUserId: null })
+        return
+      }
+
+      const hasToken = Boolean(String(data?.mp_access_token || '').trim())
+      const connected = Boolean(data?.connected) && hasToken
+
+      setMpEstado({
+        connected,
+        aliasCuenta: data?.alias_cuenta ? String(data.alias_cuenta) : null,
+        mpUserId: data?.mp_user_id ? String(data.mp_user_id) : null,
+      })
+
+      if (!connected && metodo === 'mercado_pago') {
+        setMetodo('efectivo')
+      }
+    } catch (error) {
+      console.log('[cargar-pago] Error validando estado MP:', error)
+      setMpEstado({ connected: false, aliasCuenta: null, mpUserId: null })
+    }
+  }
 
   const cargarClientes = async () => {
     try {
@@ -422,6 +482,7 @@ export default function CargarPago() {
   const vuelto = Math.max(0, montoNormalizado - deudaActual)
   const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicado)
   const cuotaPendienteValida = Boolean(cuotaSeleccionada?.id) && deudaActual > 0
+  const mpDisponible = mpEstado.connected
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -579,6 +640,11 @@ export default function CargarPago() {
 
     if (!montoNormalizado || montoNormalizado <= 0) {
       Alert.alert('Error', 'Ingresá un monto válido')
+      return
+    }
+
+    if (metodo === 'mercado_pago' && !mpDisponible) {
+      Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
       return
     }
 
@@ -922,8 +988,16 @@ export default function CargarPago() {
                   style={[
                     styles.methodButton,
                     metodo === 'mercado_pago' && styles.methodButtonActive,
+                    !mpDisponible && styles.methodButtonDisabled,
                   ]}
-                  onPress={() => setMetodo('mercado_pago')}
+                  onPress={() => {
+                    if (!mpDisponible) {
+                      Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
+                      return
+                    }
+                    setMetodo('mercado_pago')
+                  }}
+                  activeOpacity={mpDisponible ? 0.8 : 1}
                 >
                   <Text
                     style={[
@@ -935,6 +1009,12 @@ export default function CargarPago() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {!mpDisponible ? (
+                <Text style={styles.mpDisabledHelper}>
+                  Primero conectá Mercado Pago en Configuraciones
+                </Text>
+              ) : null}
 
               {metodo === 'transferencia' && (
                 <>
@@ -1249,6 +1329,18 @@ const styles = StyleSheet.create({
 
   methodButtonTextActive: {
     color: '#DBEAFE',
+  },
+
+  methodButtonDisabled: {
+    opacity: 0.45,
+    borderColor: '#334155',
+  },
+
+  mpDisabledHelper: {
+    color: '#FCA5A5',
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   resumeCard: {

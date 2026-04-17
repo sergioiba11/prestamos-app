@@ -101,10 +101,32 @@ Deno.serve(async (req) => {
     }
 
     const mpAccessToken = String(mpJson?.access_token || '').trim()
+    const mpRefreshToken = String(mpJson?.refresh_token || '').trim()
     const mpUserId = String(mpJson?.user_id || '').trim()
+    const mpPublicKey = String(mpJson?.public_key || '').trim()
 
     if (!mpAccessToken) {
       return jsonResponse({ error: 'Mercado Pago no devolvió access_token' }, 502)
+    }
+
+    let aliasCuenta: string | null = null
+
+    try {
+      const userRes = await fetch('https://api.mercadopago.com/users/me', {
+        headers: {
+          Authorization: `Bearer ${mpAccessToken}`,
+        },
+      })
+      const userJson = await userRes.json().catch(() => ({}))
+
+      if (userRes.ok) {
+        const nickname = String(userJson?.nickname || '').trim()
+        const firstName = String(userJson?.first_name || '').trim()
+        const lastName = String(userJson?.last_name || '').trim()
+        aliasCuenta = nickname || `${firstName} ${lastName}`.trim() || null
+      }
+    } catch (_error) {
+      aliasCuenta = null
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -114,8 +136,12 @@ Deno.serve(async (req) => {
     const { error: upsertError } = await adminClient.from('admin_settings').upsert(
       {
         user_id: user.id,
+        connected: true,
         mp_access_token: mpAccessToken,
+        mp_refresh_token: mpRefreshToken || null,
         mp_user_id: mpUserId || null,
+        public_key: mpPublicKey || null,
+        alias_cuenta: aliasCuenta,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id' }
@@ -125,7 +151,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: upsertError.message }, 500)
     }
 
-    return jsonResponse({ ok: true, mp_user_id: mpUserId || null })
+    return jsonResponse({
+      ok: true,
+      connected: true,
+      mp_user_id: mpUserId || null,
+      public_key: mpPublicKey || null,
+      alias_cuenta: aliasCuenta,
+    })
   } catch (error) {
     return jsonResponse(
       { error: error instanceof Error ? error.message : 'Error interno en mp-exchange-token' },

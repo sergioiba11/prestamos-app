@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
 
     const { data: adminSettings, error: adminSettingsError } = await supabaseAdmin
       .from('admin_settings')
-      .select('mp_access_token')
+.select('connected, mp_access_token')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -73,8 +73,9 @@ Deno.serve(async (req) => {
     }
 
     const mercadoPagoAccessToken = String(adminSettings?.mp_access_token || '').trim()
+    const mpConnected = Boolean(adminSettings?.connected) && Boolean(mercadoPagoAccessToken)
 
-    if (!mercadoPagoAccessToken) {
+    if (!mpConnected) {
       return jsonResponse({ error: 'Mercado Pago no está conectado para este admin' }, 400)
     }
     const body = await req.json()
