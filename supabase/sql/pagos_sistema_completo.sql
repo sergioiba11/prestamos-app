@@ -19,9 +19,13 @@ $$;
 
 ALTER TABLE IF EXISTS pagos
   ADD COLUMN IF NOT EXISTS estado estado_pago NOT NULL DEFAULT 'pendiente',
+  ADD COLUMN IF NOT EXISTS cuota_id uuid,
+  ADD COLUMN IF NOT EXISTS numero_cuota integer,
   ADD COLUMN IF NOT EXISTS comprobante_url text,
   ADD COLUMN IF NOT EXISTS mp_preference_id text,
+  ADD COLUMN IF NOT EXISTS registrado_por uuid,
   ADD COLUMN IF NOT EXISTS aprobado_por uuid,
+  ADD COLUMN IF NOT EXISTS approved_at timestamptz,
   ADD COLUMN IF NOT EXISTS fecha_pago timestamptz,
   ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 
@@ -34,10 +38,50 @@ ALTER TABLE IF EXISTS pagos
     END
   );
 
-ALTER TABLE IF EXISTS pagos
-  ADD CONSTRAINT pagos_aprobado_por_fk
-  FOREIGN KEY (aprobado_por) REFERENCES usuarios(id)
-  ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'pagos_aprobado_por_fk'
+  ) THEN
+    ALTER TABLE pagos
+      ADD CONSTRAINT pagos_aprobado_por_fk
+      FOREIGN KEY (aprobado_por) REFERENCES usuarios(id)
+      ON DELETE SET NULL;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'pagos_registrado_por_fk'
+  ) THEN
+    ALTER TABLE pagos
+      ADD CONSTRAINT pagos_registrado_por_fk
+      FOREIGN KEY (registrado_por) REFERENCES usuarios(id)
+      ON DELETE SET NULL;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'pagos_cuota_id_fk'
+  ) THEN
+    ALTER TABLE pagos
+      ADD CONSTRAINT pagos_cuota_id_fk
+      FOREIGN KEY (cuota_id) REFERENCES cuotas(id)
+      ON DELETE SET NULL;
+  END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS pagos_logs (
   id bigserial PRIMARY KEY,

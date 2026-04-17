@@ -424,12 +424,15 @@ Deno.serve(async (req) => {
         .insert({
           prestamo_id,
           cliente_id,
+          cuota_id: cuota_id_inicial,
+          numero_cuota: numero_cuota_inicial ? Number(numero_cuota_inicial) : null,
           monto: montoEntregado,
           metodo,
           estado: 'pendiente',
           comprobante_url: comprobanteUrl,
           mp_preference_id: metodo === 'mercado_pago' ? mpPreferenceId : null,
           registrado_por: user.id,
+          created_at: new Date().toISOString(),
         })
         .select()
         .single()

@@ -411,11 +411,15 @@ export default function CargarPago() {
     })
   }, [clientes, busqueda])
 
-  const montoNumero = textoAMonto(monto)
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
-  const montoAplicado = Math.min(montoNumero, deudaActual)
-  const vuelto = Math.max(0, montoNumero - deudaActual)
+  const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
+  const montoNormalizado = metodo === 'transferencia'
+    ? transferenciaMontoAutomatico
+    : textoAMonto(monto)
+  const montoAplicado = Math.min(montoNormalizado, deudaActual)
+  const vuelto = Math.max(0, montoNormalizado - deudaActual)
   const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicado)
+  const cuotaPendienteValida = Boolean(cuotaSeleccionada?.id) && deudaActual > 0
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -424,6 +428,14 @@ export default function CargarPago() {
     }
     router.back()
   }
+
+  useEffect(() => {
+    if (!cuotaSeleccionada) return
+
+    if (metodo === 'transferencia') {
+      setMonto(formatearMonedaInput(String(transferenciaMontoAutomatico)))
+    }
+  }, [metodo, cuotaSeleccionada, transferenciaMontoAutomatico])
 
   const limpiarTodo = () => {
     setClienteSeleccionado(null)
@@ -558,13 +570,13 @@ export default function CargarPago() {
       return
     }
 
-    if (!montoNumero || montoNumero <= 0) {
-      Alert.alert('Error', 'Ingresá un monto válido')
+    if (!cuotaPendienteValida) {
+      Alert.alert('Error', 'No hay una cuota pendiente válida para registrar este pago.')
       return
     }
 
-    if (deudaActual <= 0) {
-      Alert.alert('Error', 'La cuota seleccionada no tiene saldo pendiente')
+    if (!montoNormalizado || montoNormalizado <= 0) {
+      Alert.alert('Error', 'Ingresá un monto válido')
       return
     }
 
@@ -588,7 +600,7 @@ export default function CargarPago() {
         cuota_id: cuotaSeleccionada.id,
         numero_cuota: cuotaSeleccionada.numero_cuota,
         monto: Number(montoAplicado.toFixed(2)),
-        monto_ingresado: Number(montoNumero.toFixed(2)),
+        monto_ingresado: Number(montoNormalizado.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
@@ -617,7 +629,7 @@ export default function CargarPago() {
             qrBase64: mpData.qr_base64 || null,
           })
         } else {
-          Alert.alert('Pago registrado', 'Pago pendiente de aprobación.')
+          Alert.alert('Pago registrado', 'Transferencia enviada para aprobación.')
         }
         void cargarCuotasPrestamo(prestamoSeleccionado.id)
         setMonto('')
@@ -634,7 +646,7 @@ export default function CargarPago() {
         pathname: '/pago-aprobado',
         params: {
           monto: String(Number(montoAplicado.toFixed(2))),
-          monto_ingresado: String(Number(montoNumero.toFixed(2))),
+          monto_ingresado: String(Number(montoNormalizado.toFixed(2))),
           vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
           monto_cuota: String(Number(cuotaSeleccionada.monto_cuota ?? montoAplicado)),
           metodo,
@@ -834,13 +846,23 @@ export default function CargarPago() {
               <Text style={styles.label}>Monto recibido</Text>
 
               <TextInput
-                value={monto}
+                value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
                 onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
                 placeholder="$0"
                 placeholderTextColor="#64748B"
                 keyboardType="decimal-pad"
-                style={styles.input}
+                style={[styles.input, metodo === 'transferencia' && styles.inputDisabled]}
+                editable={metodo !== 'transferencia'}
               />
+
+              {metodo === 'transferencia' && (
+                <>
+                  <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
+                  <Text style={styles.helperText}>
+                    En transferencia el monto se completa automáticamente con el saldo de la cuota.
+                  </Text>
+                </>
+              )}
 
               <Text style={styles.helperText}>
                 Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
@@ -924,7 +946,7 @@ export default function CargarPago() {
               <View style={styles.resumeCard}>
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Recibido</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(montoNumero)}</Text>
+                  <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
                 </View>
 
                 <View style={styles.resumeRow}>
@@ -942,15 +964,15 @@ export default function CargarPago() {
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
                   <Text style={styles.resumeValue}>
-                    {formatearMoneda(saldoLuegoDelPagoCuota)}
+                    {formatearMoneda(metodo === 'transferencia' ? 0 : saldoLuegoDelPagoCuota)}
                   </Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                style={[styles.saveButton, guardando && styles.saveButtonDisabled]}
+                style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
                 onPress={registrarPago}
-                disabled={guardando}
+                disabled={guardando || !cuotaPendienteValida}
               >
                 <Text style={styles.saveButtonText}>
                   {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
@@ -1091,6 +1113,23 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     color: '#F8FAFC',
     fontSize: 16,
+  },
+
+
+  inputDisabled: {
+    opacity: 0.6,
+  },
+
+  transferBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: '#78350F',
+    color: '#FDE68A',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   listBox: {
