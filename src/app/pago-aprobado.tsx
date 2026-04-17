@@ -265,10 +265,7 @@ export default function PagoAprobado() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.print()
     }
-    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`))
-    if (!existing) document.head.appendChild(script)
-  })
-}
+  }
 
   const onShare = async () => {
     try {
