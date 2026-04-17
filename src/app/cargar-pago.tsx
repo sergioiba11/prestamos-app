@@ -3,6 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Linking,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -88,6 +91,16 @@ type RegistrarPagoResponse = {
     fecha_vencimiento: string | null
   } | null
   prestamo_estado?: string
+}
+
+type CrearPagoMpResponse = {
+  ok?: boolean
+  error?: string
+  detalle?: string
+  preference_id?: string
+  init_point?: string
+  qr_url?: string
+  qr_base64?: string
 }
 
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
@@ -178,6 +191,14 @@ function obtenerFunctionsUrl() {
   return `${baseUrl.replace(/\/$/, '')}/functions/v1/registrar-pago`
 }
 
+function obtenerFunctionsUrlPorNombre(nombre: string) {
+  const baseUrl = supabaseUrl || SUPABASE_URL
+  if (!baseUrl) {
+    throw new Error('No se encontró la URL de Supabase')
+  }
+  return `${baseUrl.replace(/\/$/, '')}/functions/v1/${nombre}`
+}
+
 async function obtenerAccessTokenValido() {
   const {
     data: { session },
@@ -234,7 +255,12 @@ export default function CargarPago() {
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
   const [comprobante, setComprobante] = useState('')
-  const [mpPreferenceId, setMpPreferenceId] = useState('')
+  const [mpCheckout, setMpCheckout] = useState<{
+    preferenceId: string
+    initPoint: string
+    qrUrl: string | null
+    qrBase64: string | null
+  } | null>(null)
 
   useEffect(() => {
     cargarClientes()
@@ -409,7 +435,7 @@ export default function CargarPago() {
     setMonto('')
     setMetodo('efectivo')
     setComprobante('')
-    setMpPreferenceId('')
+    setMpCheckout(null)
   }
 
   const invocarFuncionConFallback = async (
@@ -463,6 +489,57 @@ export default function CargarPago() {
     return json
   }
 
+  const crearPagoMercadoPago = async (
+    accessToken: string
+  ): Promise<CrearPagoMpResponse> => {
+    if (!prestamoSeleccionado?.id || !clienteSeleccionado?.id || !cuotaSeleccionada?.id) {
+      throw new Error('Faltan datos para iniciar Mercado Pago')
+    }
+
+    const payload = {
+      prestamo_id: prestamoSeleccionado.id,
+      cliente_id: clienteSeleccionado.id,
+      cuota_id: cuotaSeleccionada.id,
+      numero_cuota: cuotaSeleccionada.numero_cuota,
+      monto: Number(montoAplicado.toFixed(2)),
+      title: `Pago cuota #${cuotaSeleccionada.numero_cuota}`,
+    }
+
+    const { data, error } = await supabase.functions.invoke('crear-pago-mp', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: payload,
+    })
+
+    if (!error) return (data || {}) as CrearPagoMpResponse
+
+    const res = await fetch(obtenerFunctionsUrlPorNombre('crear-pago-mp'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    let json: CrearPagoMpResponse = {}
+    try {
+      json = (await res.json()) as CrearPagoMpResponse
+    } catch {
+      json = {}
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        json?.error || json?.detalle || `No se pudo crear el pago de Mercado Pago (${res.status})`
+      )
+    }
+
+    return json
+  }
+
   const registrarPago = async () => {
     if (guardando) return
 
@@ -497,6 +574,14 @@ export default function CargarPago() {
       const accessToken = await obtenerAccessTokenValido()
       console.log('ACCESS TOKEN REGISTRAR PAGO (últimos 10):', accessToken.slice(-10))
 
+      let mpData: CrearPagoMpResponse | null = null
+      if (metodo === 'mercado_pago') {
+        mpData = await crearPagoMercadoPago(accessToken)
+        if (!mpData?.preference_id || !mpData?.init_point) {
+          throw new Error('Mercado Pago no devolvió preference_id/init_point')
+        }
+      }
+
       const payload = {
         prestamo_id: prestamoSeleccionado.id,
         cliente_id: clienteSeleccionado.id,
@@ -507,7 +592,7 @@ export default function CargarPago() {
         metodo: normalizarMetodoPago(metodo),
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
-          metodo === 'mercado_pago' ? mpPreferenceId.trim() || null : null,
+          metodo === 'mercado_pago' ? mpData?.preference_id || null : null,
         aplicar_a_multiples: true,
       }
 
@@ -524,16 +609,19 @@ export default function CargarPago() {
       }
 
       if (json?.pendiente) {
-        Alert.alert(
-          'Pago registrado',
-          metodo === 'transferencia'
-            ? 'Pago pendiente de aprobación.'
-            : 'Pago pendiente de confirmación automática por webhook.'
-        )
+        if (metodo === 'mercado_pago' && mpData?.preference_id && mpData?.init_point) {
+          setMpCheckout({
+            preferenceId: mpData.preference_id,
+            initPoint: mpData.init_point,
+            qrUrl: mpData.qr_url || null,
+            qrBase64: mpData.qr_base64 || null,
+          })
+        } else {
+          Alert.alert('Pago registrado', 'Pago pendiente de aprobación.')
+        }
         void cargarCuotasPrestamo(prestamoSeleccionado.id)
         setMonto('')
         setComprobante('')
-        setMpPreferenceId('')
         return
       }
 
@@ -593,7 +681,8 @@ export default function CargarPago() {
   }
 
   return (
-    <ScrollView
+    <>
+      <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -827,16 +916,9 @@ export default function CargarPago() {
               )}
 
               {metodo === 'mercado_pago' && (
-                <>
-                  <Text style={styles.label}>ID de preferencia MP (opcional)</Text>
-                  <TextInput
-                    value={mpPreferenceId}
-                    onChangeText={setMpPreferenceId}
-                    placeholder="Ej: pref_123..."
-                    placeholderTextColor="#64748B"
-                    style={styles.input}
-                  />
-                </>
+                <Text style={styles.helperText}>
+                  Se generará automáticamente un QR al registrar el pago.
+                </Text>
               )}
 
               <View style={styles.resumeCard}>
@@ -878,7 +960,52 @@ export default function CargarPago() {
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+      <Modal
+        visible={Boolean(mpCheckout)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMpCheckout(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Pago Mercado Pago generado</Text>
+            <Text style={styles.modalSub}>Escaneá el QR o abrí Mercado Pago.</Text>
+
+            {mpCheckout?.qrBase64 || mpCheckout?.qrUrl ? (
+              <Image
+                source={{
+                  uri: mpCheckout?.qrBase64
+                    ? `data:image/png;base64,${mpCheckout.qrBase64}`
+                    : String(mpCheckout?.qrUrl || ''),
+                }}
+                style={styles.qrImage}
+              />
+            ) : (
+              <Text style={styles.helperText}>No se pudo generar QR visual.</Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.saveButton, { width: '100%', marginTop: 14 }]}
+              onPress={() => {
+                if (mpCheckout?.initPoint) {
+                  void Linking.openURL(mpCheckout.initPoint)
+                }
+              }}
+            >
+              <Text style={styles.saveButtonText}>Abrir Mercado Pago</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.changeButton, { width: '100%', marginTop: 10 }]}
+              onPress={() => setMpCheckout(null)}
+            >
+              <Text style={styles.changeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
   )
 }
 
@@ -1116,5 +1243,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 18,
+    padding: 18,
+    alignItems: 'center',
+  },
+
+  modalTitle: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  modalSub: {
+    color: '#94A3B8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+
+  qrImage: {
+    width: 240,
+    height: 240,
+    borderRadius: 14,
+    backgroundColor: '#fff',
   },
 })
