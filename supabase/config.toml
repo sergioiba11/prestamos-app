@@ -19,3 +19,13 @@ entrypoint = "./functions/crear-cliente/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/registrar-pago/index.ts"
+
+[functions.crear-pago-mp]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/crear-pago-mp/index.ts"
+
+[functions.webhook-mp]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/webhook-mp/index.ts"

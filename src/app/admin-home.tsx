@@ -149,7 +149,7 @@ export default function AdminHome() {
   const [busquedaCliente, setBusquedaCliente] = useState('')
   const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
   const [procesandoPagoId, setProcesandoPagoId] = useState<string | null>(null)
-  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'efectivo' | 'transferencia' | 'mercado_pago'>('todos')
+  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'transferencia'>('todos')
 
   const cargarClientes = useCallback(async () => {
     console.log('CARGANDO CLIENTES')
@@ -321,6 +321,7 @@ export default function AdminHome() {
               dni
             )
           `)
+          .eq('metodo', 'transferencia')
           .eq('estado', 'pendiente')
           .order('created_at', { ascending: false }),
       ])
@@ -709,7 +710,7 @@ export default function AdminHome() {
       <View style={styles.panelHeaderTop}>
         <View>
           <Text style={styles.sectionTitle}>Pagos pendientes</Text>
-          <Text style={styles.sectionSub}>Transferencias y Mercado Pago en revisión</Text>
+          <Text style={styles.sectionSub}>Transferencias pendientes de aprobación</Text>
         </View>
         <View style={[styles.badge, styles.badgeAmarillo]}>
           <Text style={styles.badgeText}>{pagosPendientes.length} pendientes</Text>
@@ -717,7 +718,7 @@ export default function AdminHome() {
       </View>
 
       <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn, { marginBottom: 10 }]}>
-        {(['todos', 'efectivo', 'transferencia', 'mercado_pago'] as const).map((metodoItem) => (
+        {(['todos', 'transferencia'] as const).map((metodoItem) => (
           <TouchableOpacity
             key={metodoItem}
             style={[
