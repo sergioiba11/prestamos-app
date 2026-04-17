@@ -1,31 +1,20 @@
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
 type EstadoMp = 'loading' | 'connected' | 'disconnected'
 
-const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID || 'TU_CLIENT_ID'
-const MP_REDIRECT_URI =
-  process.env.EXPO_PUBLIC_MP_REDIRECT_URI || 'https://tuapp.vercel.app/mp-callback'
+const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
+const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
 
 export default function Configuraciones() {
   const { session } = useAuth()
   const [estadoMp, setEstadoMp] = useState<EstadoMp>('loading')
-
-  const oauthUrl = useMemo(() => {
-    const params = new URLSearchParams({
-      client_id: MP_CLIENT_ID,
-      response_type: 'code',
-      platform_id: 'mp',
-      redirect_uri: MP_REDIRECT_URI,
-    })
-
-    return `https://auth.mercadopago.com.ar/authorization?${params.toString()}`
-  }, [])
+  const [isConnectingMp, setIsConnectingMp] = useState(false)
 
   const cargarEstadoMercadoPago = useCallback(async () => {
     if (!session?.user?.id) {
@@ -57,28 +46,59 @@ export default function Configuraciones() {
     }, [cargarEstadoMercadoPago])
   )
 
-  const conectarMercadoPago = async () => {
-    if (MP_CLIENT_ID === 'TU_CLIENT_ID') {
+  const handleConnectMercadoPago = useCallback(async () => {
+    console.log('[MP] Iniciando conexión')
+
+    const clientId = String(MP_CLIENT_ID || '').trim()
+    const redirectUri = String(MP_REDIRECT_URI || '').trim()
+
+    console.log('[MP] Client ID presente:', Boolean(clientId))
+    console.log('[MP] Redirect URI:', redirectUri || '(vacío)')
+
+    if (!clientId || !redirectUri) {
       Alert.alert(
         'Falta configuración',
-        'Configurá EXPO_PUBLIC_MP_CLIENT_ID y EXPO_PUBLIC_MP_REDIRECT_URI para iniciar OAuth.'
+        'Faltan EXPO_PUBLIC_MP_CLIENT_ID o EXPO_PUBLIC_MP_REDIRECT_URI. Configuralas para conectar Mercado Pago.'
       )
       return
     }
 
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.location.href = oauthUrl
-      return
-    }
+    const params = new URLSearchParams({
+      client_id: clientId,
+      response_type: 'code',
+      platform_id: 'mp',
+      redirect_uri: redirectUri,
+    })
 
-    const canOpen = await Linking.canOpenURL(oauthUrl)
-    if (!canOpen) {
-      Alert.alert('Error', 'No se pudo abrir la URL de Mercado Pago')
-      return
-    }
+    const oauthUrl = `https://auth.mercadopago.com.ar/authorization?${params.toString()}`
 
-    await Linking.openURL(oauthUrl)
-  }
+    console.log('[MP] OAuth URL:', oauthUrl)
+    console.log('[MP] Plataforma:', Platform.OS)
+
+    setIsConnectingMp(true)
+
+    try {
+      console.log('[MP] Abriendo OAuth...')
+
+      if (Platform.OS === 'web') {
+        if (typeof window === 'undefined') {
+          throw new Error('No se encontró window en entorno web.')
+        }
+
+        window.location.href = oauthUrl
+        return
+      }
+
+      await Linking.openURL(oauthUrl)
+    } catch (error) {
+      console.log('[MP] Error conectando MP:', error)
+
+      const message = error instanceof Error ? error.message : String(error)
+      Alert.alert('Error', message || 'No se pudo abrir la conexión con Mercado Pago.')
+    } finally {
+      setIsConnectingMp(false)
+    }
+  }, [])
 
   const estadoTexto =
     estadoMp === 'connected'
@@ -86,6 +106,8 @@ export default function Configuraciones() {
       : estadoMp === 'loading'
         ? 'Verificando estado de conexión...'
         : 'No conectado ❌'
+
+  const botonTexto = estadoMp === 'connected' ? 'Reconectar Mercado Pago' : 'Conectar Mercado Pago'
 
   return (
     <View style={styles.screen}>
@@ -98,24 +120,27 @@ export default function Configuraciones() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity
-          style={[styles.card, styles.mpCard]}
-          onPress={conectarMercadoPago}
-          disabled={estadoMp === 'loading'}
-        >
+        <View style={[styles.card, styles.mpCard]}>
           <Text style={styles.cardTitleActive}>Cobros con Mercado Pago</Text>
           <Text style={styles.cardTextActive}>{estadoTexto}</Text>
 
           <View style={styles.buttonRow}>
-            <View style={styles.connectButton}>
-              <Text style={styles.connectButtonText}>Conectar Mercado Pago</Text>
-            </View>
+            <TouchableOpacity
+              style={[styles.connectButton, isConnectingMp ? styles.connectButtonDisabled : null]}
+              onPress={handleConnectMercadoPago}
+              disabled={isConnectingMp}
+              activeOpacity={0.8}
+            >
+              {isConnectingMp ? (
+                <ActivityIndicator size="small" color="#082F49" />
+              ) : (
+                <Text style={styles.connectButtonText}>{botonTexto}</Text>
+              )}
+            </TouchableOpacity>
 
-            {estadoMp === 'loading' ? (
-              <ActivityIndicator size="small" color="#38BDF8" />
-            ) : null}
+            {estadoMp === 'loading' ? <ActivityIndicator size="small" color="#38BDF8" /> : null}
           </View>
-        </TouchableOpacity>
+        </View>
 
         {/* 🔐 SEGURIDAD (DESTACADO) */}
         <TouchableOpacity
@@ -123,9 +148,7 @@ export default function Configuraciones() {
           onPress={() => router.push('/cambiar-password')}
         >
           <Text style={styles.cardTitleActive}>Seguridad</Text>
-          <Text style={styles.cardTextActive}>
-            Cambiar contraseña de tu cuenta
-          </Text>
+          <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
         </TouchableOpacity>
 
         {/* 🔒 RESTO (DESACTIVADO) */}
@@ -224,6 +247,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
+    minWidth: 220,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  connectButtonDisabled: {
+    opacity: 0.7,
   },
 
   connectButtonText: {
