@@ -136,15 +136,12 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const mpAccessToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN')
+    const fallbackMpAccessToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN')
 
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Faltan variables de entorno de Supabase' }, 500)
     }
 
-    if (!mpAccessToken) {
-      return jsonResponse({ error: 'Falta MERCADO_PAGO_ACCESS_TOKEN' }, 500)
-    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -164,7 +161,39 @@ Deno.serve(async (req) => {
     let preferenceId = preferenceIdFromBody
     let externalReference = ''
 
+
+    let mpAccessToken = String(fallbackMpAccessToken || '').trim()
+
+    if (!mpAccessToken && preferenceIdFromBody) {
+      const { data: pagoConPreferencia } = await supabase
+        .from('pagos')
+        .select('registrado_por')
+        .eq('metodo', 'mercado_pago')
+        .eq('mp_preference_id', preferenceIdFromBody)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const registradoPor = String(pagoConPreferencia?.registrado_por || '').trim()
+
+      if (registradoPor) {
+        const { data: adminSettings } = await supabase
+          .from('admin_settings')
+          .select('mp_access_token')
+          .eq('user_id', registradoPor)
+          .maybeSingle()
+
+        const tokenAdmin = String(adminSettings?.mp_access_token || '').trim()
+        if (tokenAdmin) {
+          mpAccessToken = tokenAdmin
+        }
+      }
+    }
+
     if (paymentId) {
+      if (!mpAccessToken) {
+        return jsonResponse({ error: 'No hay access_token de Mercado Pago configurado para validar el pago' }, 500)
+      }
       const paymentRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
         headers: {
           Authorization: `Bearer ${mpAccessToken}`,
@@ -195,7 +224,7 @@ Deno.serve(async (req) => {
 
     let pagoQuery = supabase
       .from('pagos')
-      .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id')
+      .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id, registrado_por')
       .eq('metodo', 'mercado_pago')
       .eq('estado', 'pendiente')
 
@@ -216,7 +245,7 @@ Deno.serve(async (req) => {
 
       const { data: porReferencia, error: refError } = await supabase
         .from('pagos')
-        .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id')
+        .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id, registrado_por')
         .eq('metodo', 'mercado_pago')
         .eq('estado', 'pendiente')
         .eq('prestamo_id', matchPrestamo)
