@@ -51,6 +51,21 @@ type Empleado = {
   rol: string | null
 }
 
+type PagoPendiente = {
+  id: string
+  cliente_id: string | null
+  monto: number | null
+  metodo: string | null
+  estado: string | null
+  comprobante_url: string | null
+  fecha_pago: string | null
+  created_at: string | null
+  clientes?: {
+    nombre: string | null
+    dni: string | null
+  } | null
+}
+
 type ClienteConPrestamo = {
   id: string
   nombre: string
@@ -132,6 +147,9 @@ export default function AdminHome() {
   const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [clientesError, setClientesError] = useState<string | null>(null)
   const [busquedaCliente, setBusquedaCliente] = useState('')
+  const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
+  const [procesandoPagoId, setProcesandoPagoId] = useState<string | null>(null)
+  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'efectivo' | 'transferencia' | 'mercado_pago'>('todos')
 
   const cargarClientes = useCallback(async () => {
     console.log('CARGANDO CLIENTES')
@@ -257,7 +275,7 @@ export default function AdminHome() {
         setNombreAdmin(emailAuth.split('@')[0])
       }
 
-      const [prestamosRes, empleadosRes] = await Promise.all([
+      const [prestamosRes, empleadosRes, pagosPendientesRes] = await Promise.all([
         supabase
           .from('prestamos')
           .select(`
@@ -286,13 +304,34 @@ export default function AdminHome() {
           .select('id, nombre, email, rol')
           .eq('rol', 'empleado')
           .order('nombre', { ascending: true }),
+
+        supabase
+          .from('pagos')
+          .select(`
+            id,
+            cliente_id,
+            monto,
+            metodo,
+            estado,
+            comprobante_url,
+            fecha_pago,
+            created_at,
+            clientes (
+              nombre,
+              dni
+            )
+          `)
+          .eq('estado', 'pendiente')
+          .order('created_at', { ascending: false }),
       ])
 
       if (prestamosRes.error) console.log('ERROR prestamos:', prestamosRes.error)
       if (empleadosRes.error) console.log('ERROR empleados:', empleadosRes.error)
+      if (pagosPendientesRes.error) console.log('ERROR pagos pendientes:', pagosPendientesRes.error)
 
       setPrestamos((prestamosRes.data as unknown as Prestamo[]) || [])
       setEmpleados((empleadosRes.data as Empleado[]) || [])
+      setPagosPendientes((pagosPendientesRes.data as unknown as PagoPendiente[]) || [])
       await cargarClientes()
     } catch (error) {
       console.log('ERROR cargarTodo:', error)
@@ -520,6 +559,26 @@ export default function AdminHome() {
   const irNuevoEmpleado = () => router.push('/nuevo-empleado' as any)
   const irConfiguraciones = () => router.push('/configuraciones' as any)
 
+  const procesarPagoPendiente = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
+    if (procesandoPagoId) return
+
+    try {
+      setProcesandoPagoId(pagoId)
+      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
+        body: { pago_id: pagoId, accion },
+      })
+
+      if (error) throw error
+      if (data?.error) throw new Error(String(data.error))
+
+      await cargarTodo()
+    } catch (error) {
+      console.log('ERROR procesarPagoPendiente:', error)
+    } finally {
+      setProcesandoPagoId(null)
+    }
+  }
+
   // ✅ FIX: usando cliente_id consistentemente (igual que cargar-pago y nuevo-prestamo)
   const verCliente = (clienteId: string) =>
     router.push({ pathname: '/cliente-detalle', params: { cliente_id: clienteId } } as any)
@@ -578,6 +637,7 @@ export default function AdminHome() {
         <View>
           <Text style={styles.headerTitle}>Hola, {nombreAdmin}</Text>
           <Text style={styles.headerSub}>Control rápido de cobros, clientes y empleados</Text>
+          <Text style={styles.headerSub}>Tenés {pagosPendientes.length} pagos pendientes</Text>
         </View>
       </View>
 
@@ -641,6 +701,98 @@ export default function AdminHome() {
           <Text style={styles.actionSub}>Agregar empleado al sistema</Text>
         </TouchableOpacity>
       </View>
+    </View>
+  )
+
+  const PagosPendientesPanel = () => (
+    <View style={styles.panel}>
+      <View style={styles.panelHeaderTop}>
+        <View>
+          <Text style={styles.sectionTitle}>Pagos pendientes</Text>
+          <Text style={styles.sectionSub}>Transferencias y Mercado Pago en revisión</Text>
+        </View>
+        <View style={[styles.badge, styles.badgeAmarillo]}>
+          <Text style={styles.badgeText}>{pagosPendientes.length} pendientes</Text>
+        </View>
+      </View>
+
+      <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn, { marginBottom: 10 }]}>
+        {(['todos', 'efectivo', 'transferencia', 'mercado_pago'] as const).map((metodoItem) => (
+          <TouchableOpacity
+            key={metodoItem}
+            style={[
+              styles.clientButton,
+              filtroMetodoPago === metodoItem && styles.clientButtonPrimary,
+            ]}
+            onPress={() => setFiltroMetodoPago(metodoItem)}
+          >
+            <Text
+              style={
+                filtroMetodoPago === metodoItem
+                  ? styles.clientButtonPrimaryText
+                  : styles.clientButtonText
+              }
+            >
+              {metodoItem === 'todos' ? 'Todos' : metodoItem.replace('_', ' ')}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {(filtroMetodoPago === 'todos'
+        ? pagosPendientes
+        : pagosPendientes.filter((p) => p.metodo === filtroMetodoPago)
+      ).length === 0 ? (
+        <Text style={styles.emptyText}>No hay pagos pendientes por aprobar.</Text>
+      ) : (
+        <View style={styles.clientsList}>
+          {(filtroMetodoPago === 'todos'
+            ? pagosPendientes
+            : pagosPendientes.filter((p) => p.metodo === filtroMetodoPago)
+          ).map((pago) => (
+            <View key={pago.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
+              <View style={styles.clientTop}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.clientName}>
+                    {pago.clientes?.nombre || 'Cliente sin nombre'}
+                  </Text>
+                  <Text style={styles.clientMetaHighlight}>DNI: {pago.clientes?.dni || '—'}</Text>
+                  <Text style={styles.clientMeta}>
+                    Monto: {formatearMoneda(Number(pago.monto || 0))}
+                  </Text>
+                  <Text style={styles.clientMeta}>
+                    Método: {String(pago.metodo || '').replace('_', ' ')}
+                  </Text>
+                  <Text style={styles.clientMetaMuted}>
+                    Fecha: {formatearFecha(pago.created_at || pago.fecha_pago)}
+                  </Text>
+                  {!!pago.comprobante_url && (
+                    <Text style={styles.clientMetaMuted}>Comprobante: {pago.comprobante_url}</Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn]}>
+                <TouchableOpacity
+                  style={[styles.clientButton, styles.clientButtonPrimary]}
+                  onPress={() => procesarPagoPendiente(pago.id, 'aprobar')}
+                  disabled={procesandoPagoId === pago.id}
+                >
+                  <Text style={styles.clientButtonPrimaryText}>✔ Aprobar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.clientButton}
+                  onPress={() => procesarPagoPendiente(pago.id, 'rechazar')}
+                  disabled={procesandoPagoId === pago.id}
+                >
+                  <Text style={styles.clientButtonText}>✖ Rechazar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   )
 
@@ -839,6 +991,7 @@ export default function AdminHome() {
 
                   <View style={styles.topRightDesktop}>
                     <AccionesRapidas />
+                    <PagosPendientesPanel />
                   </View>
                 </View>
 
@@ -857,6 +1010,7 @@ export default function AdminHome() {
               <>
                 <BloqueHoy />
                 <AccionesRapidas />
+                <PagosPendientesPanel />
                 <ResumenGeneral />
                 <ListaEmpleados />
                 {ListaClientes()}

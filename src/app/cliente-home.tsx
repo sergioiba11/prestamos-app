@@ -24,9 +24,18 @@ type PanelCliente = {
   restante: number
 }
 
+type PagoCliente = {
+  id: string
+  estado: 'pendiente' | 'aprobado' | 'rechazado' | string
+  metodo: string | null
+  monto: number | null
+  created_at: string | null
+}
+
 export default function ClienteHome() {
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [resumen, setResumen] = useState<PanelCliente | null>(null)
+  const [ultimoPago, setUltimoPago] = useState<PagoCliente | null>(null)
 
   useEffect(() => {
     cargarDatos()
@@ -63,6 +72,17 @@ export default function ClienteHome() {
       if (panelError) throw panelError
 
       setResumen(panelData)
+
+      const { data: pagoData, error: pagoError } = await supabase
+        .from('pagos')
+        .select('id, estado, metodo, monto, created_at')
+        .eq('cliente_id', clienteData.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (pagoError) throw pagoError
+      setUltimoPago((pagoData as PagoCliente) || null)
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudieron cargar tus datos')
     }
@@ -101,6 +121,18 @@ export default function ClienteHome() {
         <Text style={styles.label}>Restante</Text>
         <Text style={styles.restante}>
           ${Number(resumen?.restante || 0).toLocaleString('es-AR')}
+        </Text>
+
+        <View style={{ height: 16 }} />
+        <Text style={styles.label}>Estado del último pago</Text>
+        <Text style={styles.value}>
+          {ultimoPago?.estado === 'pendiente'
+            ? 'Pago pendiente de aprobación'
+            : ultimoPago?.estado === 'aprobado'
+              ? 'Pago aprobado'
+              : ultimoPago?.estado === 'rechazado'
+                ? 'Pago rechazado'
+                : 'Sin pagos registrados'}
         </Text>
       </View>
 
