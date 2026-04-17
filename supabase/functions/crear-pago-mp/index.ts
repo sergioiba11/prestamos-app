@@ -37,16 +37,11 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const mercadoPagoAccessToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN')
     const appBaseUrl = Deno.env.get('APP_BASE_URL') || Deno.env.get('FRONTEND_URL') || 'https://example.com'
     const webhookBase = `${supabaseUrl?.replace(/\/$/, '') || ''}/functions/v1/webhook-mp`
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
       return jsonResponse({ error: 'Faltan variables de Supabase' }, 500)
-    }
-
-    if (!mercadoPagoAccessToken) {
-      return jsonResponse({ error: 'Falta MERCADO_PAGO_ACCESS_TOKEN' }, 500)
     }
 
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
@@ -62,6 +57,26 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Token inválido o usuario no autenticado' }, 401)
     }
 
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    })
+
+    const { data: adminSettings, error: adminSettingsError } = await supabaseAdmin
+      .from('admin_settings')
+      .select('mp_access_token')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (adminSettingsError) {
+      return jsonResponse({ error: adminSettingsError.message }, 500)
+    }
+
+    const mercadoPagoAccessToken = String(adminSettings?.mp_access_token || '').trim()
+
+    if (!mercadoPagoAccessToken) {
+      return jsonResponse({ error: 'Mercado Pago no está conectado para este admin' }, 400)
+    }
     const body = await req.json()
     const prestamoId = String(body?.prestamo_id || '').trim()
     const clienteId = String(body?.cliente_id || '').trim()
@@ -74,7 +89,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Faltan datos obligatorios para crear pago MP' }, 400)
     }
 
-    const externalReference = `prestamo:${prestamoId}|cliente:${clienteId}|cuota:${cuotaId}|monto:${monto.toFixed(2)}`
+    const externalReference = `prestamo:${prestamoId}|cliente:${clienteId}|cuota:${cuotaId}|monto:${monto.toFixed(2)}|admin:${user.id}`
 
     const preferencePayload = {
       items: [
@@ -93,6 +108,7 @@ Deno.serve(async (req) => {
         cuota_id: cuotaId,
         numero_cuota: numeroCuota,
         monto,
+        admin_user_id: user.id,
       },
       notification_url: webhookBase,
       back_urls: {

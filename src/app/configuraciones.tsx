@@ -1,7 +1,92 @@
+import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import * as Linking from 'expo-linking'
+import { useCallback, useMemo, useState } from 'react'
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
+
+type EstadoMp = 'loading' | 'connected' | 'disconnected'
+
+const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID || 'TU_CLIENT_ID'
+const MP_REDIRECT_URI =
+  process.env.EXPO_PUBLIC_MP_REDIRECT_URI || 'https://tuapp.vercel.app/mp-callback'
 
 export default function Configuraciones() {
+  const { session } = useAuth()
+  const [estadoMp, setEstadoMp] = useState<EstadoMp>('loading')
+
+  const oauthUrl = useMemo(() => {
+    const params = new URLSearchParams({
+      client_id: MP_CLIENT_ID,
+      response_type: 'code',
+      platform_id: 'mp',
+      redirect_uri: MP_REDIRECT_URI,
+    })
+
+    return `https://auth.mercadopago.com.ar/authorization?${params.toString()}`
+  }, [])
+
+  const cargarEstadoMercadoPago = useCallback(async () => {
+    if (!session?.user?.id) {
+      setEstadoMp('disconnected')
+      return
+    }
+
+    setEstadoMp('loading')
+
+    const { data, error } = await supabase
+      .from('admin_settings')
+      .select('mp_access_token')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+
+    if (error) {
+      console.log('[configuraciones] error cargando admin_settings:', error)
+      setEstadoMp('disconnected')
+      return
+    }
+
+    const token = String(data?.mp_access_token || '').trim()
+    setEstadoMp(token ? 'connected' : 'disconnected')
+  }, [session?.user?.id])
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarEstadoMercadoPago()
+    }, [cargarEstadoMercadoPago])
+  )
+
+  const conectarMercadoPago = async () => {
+    if (MP_CLIENT_ID === 'TU_CLIENT_ID') {
+      Alert.alert(
+        'Falta configuración',
+        'Configurá EXPO_PUBLIC_MP_CLIENT_ID y EXPO_PUBLIC_MP_REDIRECT_URI para iniciar OAuth.'
+      )
+      return
+    }
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.href = oauthUrl
+      return
+    }
+
+    const canOpen = await Linking.canOpenURL(oauthUrl)
+    if (!canOpen) {
+      Alert.alert('Error', 'No se pudo abrir la URL de Mercado Pago')
+      return
+    }
+
+    await Linking.openURL(oauthUrl)
+  }
+
+  const estadoTexto =
+    estadoMp === 'connected'
+      ? 'Mercado Pago conectado ✅'
+      : estadoMp === 'loading'
+        ? 'Verificando estado de conexión...'
+        : 'No conectado ❌'
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -13,6 +98,24 @@ export default function Configuraciones() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <TouchableOpacity
+          style={[styles.card, styles.mpCard]}
+          onPress={conectarMercadoPago}
+          disabled={estadoMp === 'loading'}
+        >
+          <Text style={styles.cardTitleActive}>Cobros con Mercado Pago</Text>
+          <Text style={styles.cardTextActive}>{estadoTexto}</Text>
+
+          <View style={styles.buttonRow}>
+            <View style={styles.connectButton}>
+              <Text style={styles.connectButtonText}>Conectar Mercado Pago</Text>
+            </View>
+
+            {estadoMp === 'loading' ? (
+              <ActivityIndicator size="small" color="#38BDF8" />
+            ) : null}
+          </View>
+        </TouchableOpacity>
 
         {/* 🔐 SEGURIDAD (DESTACADO) */}
         <TouchableOpacity
@@ -53,7 +156,6 @@ export default function Configuraciones() {
             Próximamente: logo, colores, textos del negocio y accesos rápidos personalizados.
           </Text>
         </View>
-
       </ScrollView>
     </View>
   )
@@ -104,9 +206,33 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  /* 🔥 ACTIVO (MISMO ESTILO PERO DESTACA) */
+  mpCard: {
+    backgroundColor: '#082F49',
+    borderWidth: 1,
+    borderColor: '#0EA5E9',
+  },
+
+  buttonRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  connectButton: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+
+  connectButtonText: {
+    color: '#082F49',
+    fontWeight: '900',
+  },
+
   cardActive: {
-    backgroundColor: '#111827', // un poco más claro
+    backgroundColor: '#111827',
     borderWidth: 1.5,
     borderColor: '#334155',
     shadowColor: '#000',
@@ -127,7 +253,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* ⚫ DESACTIVADO */
   cardDisabled: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
