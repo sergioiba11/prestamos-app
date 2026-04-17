@@ -428,10 +428,11 @@ Deno.serve(async (req) => {
           numero_cuota: numero_cuota_inicial ? Number(numero_cuota_inicial) : null,
           monto: montoEntregado,
           metodo,
-          estado: 'pendiente',
+          estado: 'pendiente_aprobacion',
           comprobante_url: comprobanteUrl,
           mp_preference_id: metodo === 'mercado_pago' ? mpPreferenceId : null,
           registrado_por: user.id,
+          impactado: false,
           created_at: new Date().toISOString(),
         })
         .select()
@@ -448,7 +449,7 @@ Deno.serve(async (req) => {
         ok: true,
         pendiente: true,
         pago: pagoPendiente,
-        estado: 'pendiente',
+        estado: 'pendiente_aprobacion',
         mensaje:
           metodo === 'transferencia'
             ? 'Pago pendiente de aprobación'
@@ -626,6 +627,8 @@ Deno.serve(async (req) => {
         estado: 'aprobado',
         registrado_por: user.id,
         aprobado_por: user.id,
+        aprobado_at: new Date().toISOString(),
+        impactado: true,
         fecha_pago: new Date().toISOString(),
       })
       .select()

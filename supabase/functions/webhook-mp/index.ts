@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
       .from('pagos')
       .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id, registrado_por')
       .eq('metodo', 'mercado_pago')
-      .eq('estado', 'pendiente')
+      .eq('estado', 'pendiente_aprobacion')
 
     if (preferenceId) {
       pagoQuery = pagoQuery.eq('mp_preference_id', preferenceId)
@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
         .from('pagos')
         .select('id, prestamo_id, cliente_id, monto, estado, mp_preference_id, registrado_por')
         .eq('metodo', 'mercado_pago')
-        .eq('estado', 'pendiente')
+        .eq('estado', 'pendiente_aprobacion')
         .eq('prestamo_id', matchPrestamo)
         .eq('cliente_id', matchCliente)
         .eq('monto', Number(matchMonto.toFixed(2)))
@@ -262,22 +262,35 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Pago pendiente de Mercado Pago no encontrado' }, 404)
     }
 
-    const aplicado = await aplicarPagoPendiente(supabase, pago, {
-      payment_id: paymentId || null,
-      mp_preference_id: preferenceId || pago.mp_preference_id || null,
-      external_reference: externalReference || null,
-    })
+    const { error: updateError } = await supabase
+      .from('pagos')
+      .update({
+        estado: 'pendiente_aprobacion',
+        impactado: false,
+      })
+      .eq('id', pago.id)
+      .eq('estado', 'pendiente_aprobacion')
 
-    if ((aplicado as any).error) {
-      return jsonResponse({ error: (aplicado as any).error }, 500)
+    if (updateError) {
+      return jsonResponse({ error: updateError.message }, 500)
     }
+
+    await supabase.from('pagos_logs').insert({
+      pago_id: pago.id,
+      accion: 'webhook_mp_confirmado_pendiente_revision',
+      detalle: {
+        payment_id: paymentId || null,
+        mp_preference_id: preferenceId || pago.mp_preference_id || null,
+        external_reference: externalReference || null,
+      },
+    })
 
     return jsonResponse({
       ok: true,
-      aprobado: true,
+      aprobado: false,
       pago_id: pago.id,
-      estado: 'aprobado',
-      saldo_restante: (aplicado as any).saldo_restante,
+      estado: 'pendiente_aprobacion',
+      requiere_validacion_admin: true,
     })
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'Error interno' }, 500)

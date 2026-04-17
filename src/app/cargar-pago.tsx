@@ -59,6 +59,8 @@ type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
 
 type RegistrarPagoResponse = {
   ok?: boolean
+  pendiente?: boolean
+  estado?: string
   error?: string
   detalle?: string
   pago?: any
@@ -629,7 +631,7 @@ export default function CargarPago() {
             qrBase64: mpData.qr_base64 || null,
           })
         } else {
-          Alert.alert('Pago registrado', 'Transferencia enviada para aprobación.')
+          Alert.alert('Pago registrado', 'Pago enviado para aprobación administrativa.')
         }
         void cargarCuotasPrestamo(prestamoSeleccionado.id)
         setMonto('')
@@ -855,13 +857,23 @@ export default function CargarPago() {
                 editable={metodo !== 'transferencia'}
               />
 
-              {metodo === 'transferencia' && (
+              {(metodo === 'transferencia' || metodo === 'mercado_pago') && (
                 <>
                   <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
                   <Text style={styles.helperText}>
-                    En transferencia el monto se completa automáticamente con el saldo de la cuota.
+                    Este pago será validado por administración antes de impactar cuota y saldo.
                   </Text>
+                  {metodo === 'transferencia' && (
+                    <Text style={styles.helperText}>
+                      En transferencia el monto se completa automáticamente con el saldo de la cuota.
+                    </Text>
+                  )}
                 </>
+              )}
+              {metodo === 'efectivo' && (
+                <Text style={styles.helperText}>
+                  El pago en efectivo se acredita al instante.
+                </Text>
               )}
 
               <Text style={styles.helperText}>
