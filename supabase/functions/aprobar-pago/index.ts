@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const pagoId = String(body?.pago_id || '').trim()
     const accion = String(body?.accion || '').trim().toLowerCase()
+    const observacionRevision = String(body?.observacion_revision || '').trim() || null
 
     if (!pagoId || !['aprobar', 'rechazar'].includes(accion)) {
       return jsonResponse({ error: 'Input inválido. Requerido: pago_id y accion (aprobar|rechazar)' }, 400)
@@ -87,7 +88,7 @@ Deno.serve(async (req) => {
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .select('id, prestamo_id, cliente_id, cuota_id, numero_cuota, monto, metodo, estado, registrado_por')
+      .select('id, prestamo_id, cliente_id, cuota_id, numero_cuota, monto, metodo, estado, impactado, registrado_por')
       .eq('id', pagoId)
       .maybeSingle()
 
@@ -99,21 +100,34 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Pago no encontrado' }, 404)
     }
 
-    if (pago.estado !== 'pendiente') {
+    if (pago.estado !== 'pendiente_aprobacion') {
       return jsonResponse({ error: `El pago ya fue procesado con estado ${pago.estado}` }, 400)
+    }
+    if (pago.impactado) {
+      return jsonResponse({ error: 'El pago ya fue impactado previamente.' }, 400)
     }
 
     if (accion === 'rechazar') {
-      const { error: rechazarError } = await supabase
+      const { data: pagoRechazado, error: rechazarError } = await supabase
         .from('pagos')
         .update({
           estado: 'rechazado',
-          aprobado_por: user.id,
+          rechazado_por: user.id,
+          rechazado_at: new Date().toISOString(),
+          observacion_revision: observacionRevision,
+          impactado: false,
         })
         .eq('id', pago.id)
+        .eq('estado', 'pendiente_aprobacion')
+        .eq('impactado', false)
+        .select('id')
+        .maybeSingle()
 
       if (rechazarError) {
         return jsonResponse({ error: rechazarError.message }, 500)
+      }
+      if (!pagoRechazado) {
+        return jsonResponse({ error: 'El pago ya no está pendiente para rechazar.' }, 409)
       }
 
       await supabase.from('pagos_logs').insert({
@@ -224,18 +238,27 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'No se pudo aplicar el pago a ninguna cuota' }, 400)
     }
 
-    const { error: aprobarError } = await supabase
+    const { data: pagoAprobado, error: aprobarError } = await supabase
       .from('pagos')
       .update({
         estado: 'aprobado',
         aprobado_por: user.id,
-        approved_at: new Date().toISOString(),
+        aprobado_at: new Date().toISOString(),
+        observacion_revision: observacionRevision,
+        impactado: true,
         fecha_pago: new Date().toISOString(),
       })
       .eq('id', pago.id)
+      .eq('estado', 'pendiente_aprobacion')
+      .eq('impactado', false)
+      .select('id')
+      .maybeSingle()
 
     if (aprobarError) {
       return jsonResponse({ error: aprobarError.message }, 500)
+    }
+    if (!pagoAprobado) {
+      return jsonResponse({ error: 'El pago ya no está pendiente para aprobar.' }, 409)
     }
 
     const detalleRows = detalleAplicacion.map((item) => ({

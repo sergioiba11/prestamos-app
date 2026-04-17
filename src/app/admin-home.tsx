@@ -54,13 +54,16 @@ type Empleado = {
 
 type PagoPendiente = {
   id: string
+  prestamo_id: string | null
   cliente_id: string | null
   cuota_id: string | null
   numero_cuota: number | null
   monto: number | null
   metodo: string | null
   estado: string | null
+  comprobante: string | null
   comprobante_url: string | null
+  observacion_revision: string | null
   fecha_pago: string | null
   created_at: string | null
   clientes?: {
@@ -99,6 +102,13 @@ function formatearFecha(fecha?: string | null) {
 function normalizarEstado(estado?: string | null) {
   if (!estado) return 'pendiente'
   return estado.toLowerCase()
+}
+
+function estiloBadgePago(estado?: string | null) {
+  const normalizado = String(estado || '').toLowerCase()
+  if (normalizado === 'aprobado') return 'aprobado'
+  if (normalizado === 'rechazado') return 'rechazado'
+  return 'pendiente'
 }
 
 function calcularEstadoVisual(prestamo?: Prestamo | null) {
@@ -152,7 +162,7 @@ export default function AdminHome() {
   const [busquedaCliente, setBusquedaCliente] = useState('')
   const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
   const [procesandoPagoId, setProcesandoPagoId] = useState<string | null>(null)
-  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'transferencia'>('todos')
+  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'transferencia' | 'mercado_pago'>('todos')
 
   const cargarClientes = useCallback(async () => {
     console.log('CARGANDO CLIENTES')
@@ -314,13 +324,16 @@ export default function AdminHome() {
           .from('pagos')
           .select(`
             id,
+            prestamo_id,
             cliente_id,
             cuota_id,
             numero_cuota,
             monto,
             metodo,
             estado,
+            comprobante,
             comprobante_url,
+            observacion_revision,
             fecha_pago,
             created_at,
             clientes (
@@ -328,8 +341,8 @@ export default function AdminHome() {
               dni
             )
           `)
-          .eq('metodo', 'transferencia')
-          .eq('estado', 'pendiente')
+          .in('metodo', ['transferencia', 'mercado_pago'])
+          .eq('estado', 'pendiente_aprobacion')
           .order('created_at', { ascending: false }),
       ])
 
@@ -677,6 +690,10 @@ export default function AdminHome() {
           <Text style={[styles.hoyMiniNumber, { color: '#F87171' }]}>{resumenHoy.vencidos}</Text>
           <Text style={styles.hoyMiniLabel}>Vencidos</Text>
         </View>
+        <View style={styles.hoyMiniCard}>
+          <Text style={[styles.hoyMiniNumber, { color: '#F59E0B' }]}>{pagosPendientes.length}</Text>
+          <Text style={styles.hoyMiniLabel}>Pagos pendientes</Text>
+        </View>
       </View>
     </View>
   )
@@ -718,15 +735,15 @@ export default function AdminHome() {
       <View style={styles.panelHeaderTop}>
         <View>
           <Text style={styles.sectionTitle}>Pagos pendientes</Text>
-          <Text style={styles.sectionSub}>Transferencias pendientes de aprobación</Text>
+          <Text style={styles.sectionSub}>Transferencias y MP en validación administrativa</Text>
         </View>
-        <View style={[styles.badge, styles.badgeAmarillo]}>
+        <View style={[styles.badge, styles.badgePendiente]}>
           <Text style={styles.badgeText}>{pagosPendientes.length} pendientes</Text>
         </View>
       </View>
 
       <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn, { marginBottom: 10 }]}>
-        {(['todos', 'transferencia'] as const).map((metodoItem) => (
+        {(['todos', 'transferencia', 'mercado_pago'] as const).map((metodoItem) => (
           <TouchableOpacity
             key={metodoItem}
             style={[
@@ -742,17 +759,23 @@ export default function AdminHome() {
                   : styles.clientButtonText
               }
             >
-              {metodoItem === 'todos' ? 'Todos' : metodoItem.replace('_', ' ')}
+              {metodoItem === 'todos' ? 'Todos' : metodoItem === 'mercado_pago' ? 'MP' : 'Transferencia'}
             </Text>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
+          <Text style={styles.reloadButtonText}>Refrescar</Text>
+        </TouchableOpacity>
       </View>
 
       {(filtroMetodoPago === 'todos'
         ? pagosPendientes
         : pagosPendientes.filter((p) => p.metodo === filtroMetodoPago)
       ).length === 0 ? (
-        <Text style={styles.emptyText}>No hay pagos pendientes por aprobar.</Text>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No hay pagos pendientes por aprobar.</Text>
+          <Text style={styles.sectionSub}>Cuando se registren transferencias o MP aparecerán aquí.</Text>
+        </View>
       ) : (
         <View style={styles.clientsList}>
           {(filtroMetodoPago === 'todos'
@@ -766,6 +789,7 @@ export default function AdminHome() {
                     {pago.clientes?.nombre || 'Cliente sin nombre'}
                   </Text>
                   <Text style={styles.clientMetaHighlight}>DNI: {pago.clientes?.dni || '—'}</Text>
+                  <Text style={styles.clientMeta}>Préstamo: {pago.prestamo_id || '—'}</Text>
                   <Text style={styles.clientMeta}>
                     Cuota: {pago.numero_cuota ? `#${pago.numero_cuota}` : 'Sin cuota asignada'}
                   </Text>
@@ -775,14 +799,29 @@ export default function AdminHome() {
                   <Text style={styles.clientMeta}>
                     Método: {String(pago.metodo || '').replace('_', ' ')}
                   </Text>
-                  <Text style={styles.clientMeta}>
-                    Estado: {String(pago.estado || 'pendiente')}
-                  </Text>
+                  <View
+                    style={[
+                      styles.badge,
+                      estiloBadgePago(pago.estado) === 'aprobado' && styles.badgeVerde,
+                      estiloBadgePago(pago.estado) === 'rechazado' && styles.badgeRojo,
+                      estiloBadgePago(pago.estado) === 'pendiente' && styles.badgePendiente,
+                      { marginTop: 8 },
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>
+                      Estado: {String(pago.estado || 'pendiente_aprobacion')}
+                    </Text>
+                  </View>
                   <Text style={styles.clientMetaMuted}>
                     Fecha: {formatearFecha(pago.created_at || pago.fecha_pago)}
                   </Text>
-                  {!!pago.comprobante_url && (
-                    <Text style={styles.clientMetaMuted}>Comprobante: {pago.comprobante_url}</Text>
+                  {!!(pago.comprobante || pago.comprobante_url) && (
+                    <Text style={styles.clientMetaMuted}>
+                      Comprobante / nota: {pago.comprobante || pago.comprobante_url}
+                    </Text>
+                  )}
+                  {!!pago.observacion_revision && (
+                    <Text style={styles.clientMetaMuted}>Observación: {pago.observacion_revision}</Text>
                   )}
                 </View>
               </View>
@@ -999,17 +1038,9 @@ export default function AdminHome() {
           >
             {esDesktop ? (
               <>
-                <View style={styles.topGridDesktop}>
-                  <View style={styles.topLeftDesktop}>
-                    <BloqueHoy />
-                  </View>
-
-                  <View style={styles.topRightDesktop}>
-                    <AccionesRapidas />
-                    <PagosPendientesPanel />
-                  </View>
-                </View>
-
+                <BloqueHoy />
+                <AccionesRapidas />
+                <PagosPendientesPanel />
                 <View style={styles.bottomGridDesktop}>
                   <View style={styles.bottomLeftDesktop}>
                     {ListaClientes()}
@@ -1276,6 +1307,7 @@ const styles = StyleSheet.create({
   hoyStatsRow: {
     flexDirection: 'row',
     gap: 12,
+    flexWrap: 'wrap',
   },
 
   hoyStatsColumn: {
@@ -1284,6 +1316,7 @@ const styles = StyleSheet.create({
 
   hoyMiniCard: {
     flex: 1,
+    minWidth: 160,
     backgroundColor: '#0B1220',
     borderRadius: 18,
     borderWidth: 1,
@@ -1567,6 +1600,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#713F12',
     borderColor: '#F59E0B',
   },
+  badgePendiente: {
+    backgroundColor: '#7C2D12',
+    borderColor: '#FB923C',
+  },
 
   badgeRojo: {
     backgroundColor: '#7F1D1D',
@@ -1587,6 +1624,13 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 14,
     marginTop: 8,
+  },
+  emptyState: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 16,
+    padding: 14,
   },
 
   loadingContainer: {
