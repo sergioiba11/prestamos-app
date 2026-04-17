@@ -418,6 +418,36 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Monto inválido' }, 400)
     }
 
+    if (metodo === 'mercado_pago') {
+      const { data: adminSettings, error: adminSettingsError } = await supabase
+        .from('admin_settings')
+        .select('connected, mp_access_token')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (adminSettingsError) {
+        return jsonResponse({ error: adminSettingsError.message }, 500)
+      }
+
+      const mpConnected =
+        Boolean(adminSettings?.connected) &&
+        Boolean(String(adminSettings?.mp_access_token || '').trim())
+
+      if (!mpConnected) {
+        return jsonResponse(
+          { error: 'Primero conectá Mercado Pago en Configuraciones' },
+          400
+        )
+      }
+
+      if (!mpPreferenceId) {
+        return jsonResponse(
+          { error: 'Mercado Pago no generó una preferencia válida para este pago' },
+          400
+        )
+      }
+    }
+
     if (metodo === 'transferencia' || metodo === 'mercado_pago') {
       const { data: pagoPendiente, error: pagoPendienteError } = await supabase
         .from('pagos')

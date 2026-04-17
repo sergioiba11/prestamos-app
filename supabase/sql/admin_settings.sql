@@ -1,8 +1,12 @@
 CREATE TABLE IF NOT EXISTS admin_settings (
   id bigserial PRIMARY KEY,
   user_id uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  connected boolean NOT NULL DEFAULT false,
   mp_access_token text,
+  mp_refresh_token text,
   mp_user_id text,
+  public_key text,
+  alias_cuenta text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
