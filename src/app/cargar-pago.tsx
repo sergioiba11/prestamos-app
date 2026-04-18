@@ -927,7 +927,7 @@ export default function CargarPago() {
                 <>
                   <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
                   <Text style={styles.helperText}>
-                    Este pago será validado por administración antes de impactar cuota y saldo.
+                    Se registrará para revisión y recién se acreditará al aprobarse.
                   </Text>
                   {metodo === 'transferencia' && (
                     <Text style={styles.helperText}>
@@ -1042,7 +1042,7 @@ export default function CargarPago() {
                 </View>
 
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Se aplica a cuota</Text>
+                  <Text style={styles.resumeLabel}>{metodo === 'efectivo' ? 'Se aplica a cuota' : 'Monto a acreditar (pendiente)'}</Text>
                   <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
                 </View>
 
@@ -1056,7 +1056,7 @@ export default function CargarPago() {
                 <View style={styles.resumeRow}>
                   <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
                   <Text style={styles.resumeValue}>
-                    {formatearMoneda(metodo === 'transferencia' ? 0 : saldoLuegoDelPagoCuota)}
+                    {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
                   </Text>
                 </View>
               </View>
