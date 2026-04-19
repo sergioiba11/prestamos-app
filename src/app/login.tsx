@@ -42,9 +42,8 @@ export default function LoginScreen() {
     let mounted = true
 
     const bootstrap = async () => {
-      const [{ data: sessionData }, availability, biometricState] = await Promise.all([
+      const [{ data: sessionData }, biometricState] = await Promise.all([
         supabase.auth.getSession(),
-        getBiometricAvailability(),
         getBiometricState(),
       ])
 
@@ -55,9 +54,7 @@ export default function LoginScreen() {
         return
       }
 
-      setCanLoginWithBiometric(
-        availability.available && biometricState.enabled && Boolean(biometricState.userId)
-      )
+      setCanLoginWithBiometric(biometricState.enabled)
     }
 
     void bootstrap()
@@ -80,7 +77,7 @@ export default function LoginScreen() {
 
     const accepted = await new Promise<boolean>((resolve) => {
       Alert.alert(
-        'Ingreso rápido con biometría',
+        'Ingreso rápido con huella',
         '¿Querés activar huella o rostro para tus próximos ingresos?',
         [
           { text: 'Ahora no', style: 'cancel', onPress: () => resolve(false) },
@@ -288,7 +285,7 @@ export default function LoginScreen() {
               ) : (
                 <>
                   <Ionicons name="finger-print-outline" size={22} color={authTheme.primary} />
-                  <Text style={styles.biometricButtonText}>Ingresar con biometría</Text>
+                  <Text style={styles.biometricButtonText}>Ingreso rápido con huella</Text>
                 </>
               )}
             </TouchableOpacity>
