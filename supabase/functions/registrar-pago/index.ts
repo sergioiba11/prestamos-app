@@ -459,6 +459,7 @@ Deno.serve(async (req) => {
           monto: montoEntregado,
           metodo,
           estado: 'pendiente_aprobacion',
+          estado_validacion: 'pendiente',
           comprobante_url: comprobanteUrl,
           mp_preference_id: metodo === 'mercado_pago' ? mpPreferenceId : null,
           registrado_por: user.id,
@@ -474,6 +475,16 @@ Deno.serve(async (req) => {
           500
         )
       }
+
+      await supabase.from('notificaciones').insert({
+        tipo: 'pago_pendiente',
+        titulo: 'Pago pendiente de aprobación',
+        descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
+        cliente_id,
+        prestamo_id,
+        pago_id: pagoPendiente.id,
+        metadata: { metodo, monto: montoEntregado, registrado_por: user.id },
+      })
 
       return jsonResponse({
         ok: true,
@@ -655,6 +666,7 @@ Deno.serve(async (req) => {
         monto: totalAplicado,
         metodo,
         estado: 'aprobado',
+        estado_validacion: 'aprobado',
         registrado_por: user.id,
         aprobado_por: user.id,
         aprobado_at: new Date().toISOString(),
@@ -865,6 +877,16 @@ Deno.serve(async (req) => {
         `[registrar-pago] No se enviará correo al admin para pago ${pago.id}: admin sin email`
       )
     }
+
+    await supabase.from('notificaciones').insert({
+      tipo: 'pago_aprobado',
+      titulo: 'Pago aprobado',
+      descripcion: `Pago aplicado por ${formatearMonto(totalAplicado)}`,
+      cliente_id,
+      prestamo_id,
+      pago_id: pago.id,
+      metadata: { metodo, monto_aplicado: totalAplicado, estado_prestamo: nuevoEstadoPrestamo },
+    })
 
     return jsonResponse({
       ok: true,

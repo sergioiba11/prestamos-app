@@ -287,6 +287,16 @@ console.log('RESULTADO INSERT CLIENTES:', {
   insertClienteError,
 })
 
+if (!insertClienteError) {
+  await adminClient.from('notificaciones').insert({
+    tipo: 'nuevo_cliente',
+    titulo: 'Nuevo cliente creado',
+    descripcion: `Se creó el cliente ${nombre}`,
+    cliente_id: clienteId,
+    metadata: { creado_por: user.id },
+  })
+}
+
 if (insertClienteError) {
   await adminClient.from('usuarios').delete().eq('id', clienteId)
   await adminClient.auth.admin.deleteUser(clienteId)

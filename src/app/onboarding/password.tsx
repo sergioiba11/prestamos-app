@@ -40,7 +40,6 @@ export default function CreatePasswordScreen() {
       await registerUserFromOnboarding({
         dni: state.identity.dni,
         nombre: state.identity.nombre,
-        apellido: state.identity.apellido || '',
         password,
         email,
         phone: state.verifiedPhone,
