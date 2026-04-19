@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
+import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { ClientePrestamoActivo } from '../../lib/admin-dashboard'
 
@@ -17,7 +18,19 @@ function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
 }
 
-export function AdminClientsTable({ rows, onView }: { rows: ClientePrestamoActivo[]; onView: (clienteId: string) => void }) {
+export function AdminClientsTable({
+  rows,
+  onView,
+  onEdit,
+  onHistory,
+}: {
+  rows: ClientePrestamoActivo[]
+  onView: (row: ClientePrestamoActivo) => void
+  onEdit: (row: ClientePrestamoActivo) => void
+  onHistory: (row: ClientePrestamoActivo) => void
+}) {
+  const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null)
+
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
       <View style={styles.tableWrap}>
@@ -38,12 +51,21 @@ export function AdminClientsTable({ rows, onView }: { rows: ClientePrestamoActiv
             <Text style={[styles.cell, styles.text]}>{formatDate(row.proximoPago)}</Text>
             <View style={[styles.cell, styles.statusCell]}><StatusBadge status={row.estado} /></View>
             <View style={[styles.cell, styles.actionsCell]}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => onView(row.clienteId)}>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => onView(row)}>
                 <Ionicons name="eye-outline" size={16} color="#BFDBFE" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn}>
-                <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
-              </TouchableOpacity>
+              <View>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => setMenuOpenFor((prev) => (prev === row.prestamoId ? null : row.prestamoId))}>
+                  <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
+                </TouchableOpacity>
+                {menuOpenFor === row.prestamoId ? (
+                  <View style={styles.menu}>
+                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onView(row) }}><Text style={styles.menuItem}>Ver detalle</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onEdit(row) }}><Text style={styles.menuItem}>Editar cliente</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onHistory(row) }}><Text style={styles.menuItem}>Historial pagos</Text></TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
             </View>
           </View>
         ))}
@@ -117,4 +139,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#0B1220',
   },
+  menu: {
+    position: 'absolute',
+    top: 34,
+    right: 0,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 8,
+    gap: 8,
+    minWidth: 130,
+    zIndex: 40,
+  },
+  menuItem: { color: '#E2E8F0', fontSize: 12 },
 })

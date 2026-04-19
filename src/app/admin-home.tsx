@@ -15,10 +15,12 @@ import {
   View,
 } from 'react-native'
 import { AdminClientsTable } from '../components/admin/AdminClientsTable'
+import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
+import { EditClientModal } from '../components/admin/EditClientModal'
+import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
@@ -40,6 +42,10 @@ export default function AdminHome() {
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('Administrador')
   const [search, setSearch] = useState('')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const [selectedClient, setSelectedClient] = useState<ClientePrestamoActivo | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
 
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
@@ -47,8 +53,20 @@ export default function AdminHome() {
     prestamosVencidos: 0,
     pagosPendientes: 0,
   })
-  const [activeClients, setActiveClients] = useState<any[]>([])
+  const [activeClients, setActiveClients] = useState<ClientePrestamoActivo[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
+
+  const loadNotifications = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('notificaciones')
+      .select('id,titulo,descripcion,leida,created_at')
+      .order('created_at', { ascending: false })
+      .limit(12)
+
+    if (!error) {
+      setNotifications((data || []) as AdminNotification[])
+    }
+  }, [])
 
   const loadData = useCallback(async () => {
     try {
@@ -73,12 +91,13 @@ export default function AdminHome() {
       setKpis(data.kpis)
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
+      await loadNotifications()
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'No se pudo cargar el panel admin.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadNotifications])
 
   useFocusEffect(
     useCallback(() => {
@@ -101,6 +120,22 @@ export default function AdminHome() {
     router.replace('/login' as any)
   }
 
+  const markAllRead = async () => {
+    await supabase.from('notificaciones').update({ leida: true }).eq('leida', false)
+    await loadNotifications()
+  }
+
+  const updatePendingPayment = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
+    const { error } = await supabase.functions.invoke('aprobar-pago', { body: { pago_id: pagoId, accion } })
+
+    if (error) {
+      Alert.alert('Error', error.message)
+      return
+    }
+
+    await loadData()
+  }
+
   const filteredClients = useMemo(() => {
     const t = search.trim().toLowerCase()
     if (!t) return activeClients
@@ -114,6 +149,8 @@ export default function AdminHome() {
       )
     })
   }, [activeClients, search])
+
+  const unreadCount = notifications.filter((n) => !n.leida).length
 
   if (loading) {
     return (
@@ -140,7 +177,7 @@ export default function AdminHome() {
             <Ionicons name="menu" size={24} color="#E2E8F0" />
           </TouchableOpacity>
           <Text style={styles.mobileTitle}>CrediTodo Admin</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => setNotificationsOpen((p) => !p)}>
             <Ionicons name="notifications-outline" size={22} color="#E2E8F0" />
           </TouchableOpacity>
         </View>
@@ -160,9 +197,15 @@ export default function AdminHome() {
                 <Ionicons name="calendar-outline" size={16} color="#93C5FD" />
                 <Text style={styles.dateBadgeText}>{formatDate(new Date().toISOString())}</Text>
               </View>
-              <TouchableOpacity style={styles.bellBtn}>
-                <Ionicons name="notifications-outline" size={18} color="#DBEAFE" />
+              <TouchableOpacity style={styles.bellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+                <Ionicons name="mail-outline" size={18} color="#DBEAFE" />
+                {unreadCount > 0 ? (
+                  <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>
+                ) : null}
               </TouchableOpacity>
+              {notificationsOpen ? (
+                <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
+              ) : null}
             </View>
           </View>
 
@@ -191,10 +234,16 @@ export default function AdminHome() {
               pendingPayments.map((p) => (
                 <View key={p.id} style={styles.pendingRow}>
                   <View>
-                    <Text style={styles.pendingClient}>{p.cliente}</Text>
+                    <Text style={styles.pendingClient}>{p.cliente} · DNI {p.dni}</Text>
                     <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
                   </View>
-                  <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                    <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity style={styles.approveBtn} onPress={() => updatePendingPayment(p.id, 'aprobar')}><Text style={styles.smallBtnText}>Aprobar</Text></TouchableOpacity>
+                      <TouchableOpacity style={styles.rejectBtn} onPress={() => updatePendingPayment(p.id, 'rechazar')}><Text style={styles.smallBtnText}>Rechazar</Text></TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
               ))
             )}
@@ -215,9 +264,12 @@ export default function AdminHome() {
             ) : (
               <AdminClientsTable
                 rows={filteredClients}
-                onView={(clienteId) =>
-                  router.push({ pathname: '/cliente-detalle', params: { cliente_id: clienteId } } as any)
-                }
+                onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
+                onEdit={(row) => {
+                  setSelectedClient(row)
+                  setEditOpen(true)
+                }}
+                onHistory={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
               />
             )}
           </View>
@@ -225,6 +277,21 @@ export default function AdminHome() {
           <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
         </ScrollView>
       </View>
+
+      <EditClientModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => void loadData()}
+        client={selectedClient ? {
+          id: selectedClient.clienteId,
+          usuario_id: selectedClient.usuarioId || undefined,
+          nombre: selectedClient.nombre,
+          dni: selectedClient.dni,
+          telefono: selectedClient.telefono,
+          direccion: selectedClient.direccion,
+          email: selectedClient.email,
+        } : null}
+      />
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrap}>
@@ -244,18 +311,6 @@ export default function AdminHome() {
   )
 }
 
-function KpiCard({ label, value, icon }: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <View style={styles.kpiCard}>
-      <View style={styles.kpiIcon}>
-        <Ionicons name={icon} size={16} color="#93C5FD" />
-      </View>
-      <Text style={styles.kpiLabel}>{label}</Text>
-      <Text style={styles.kpiValue}>{value}</Text>
-    </View>
-  )
-}
-
 function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
@@ -271,93 +326,32 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   mobileTopBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 30,
-    height: 56,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
-    backgroundColor: '#0A1120',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, height: 56, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B',
+    backgroundColor: '#0A1120', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: '#0B1220',
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
+  headerBlock: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
   headerEyebrow: { color: '#60A5FA', fontSize: 12, fontWeight: '700' },
   headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
   headerSubtitle: { color: '#94A3B8', marginTop: 4 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  dateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#1D4ED8',
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative' },
+  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
-  bellBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0F172A',
-  },
+  bellBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155', backgroundColor: '#0F172A' },
+  unreadBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  sectionCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: '#0B1220',
-    padding: 14,
-  },
+  sectionCard: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 14 },
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
   actionsGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  pendingRow: {
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: '#0F172A',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 10,
-  },
+  pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 10, padding: 10, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
   pendingClient: { color: '#fff', fontWeight: '700' },
   pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
   pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
-  searchInput: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#020817',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#fff',
-    marginBottom: 12,
-  },
+  approveBtn: { backgroundColor: '#065F46', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  rejectBtn: { backgroundColor: '#7F1D1D', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  searchInput: { borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#020817', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', marginBottom: 12 },
   emptyText: { color: '#94A3B8' },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
   modalWrap: { flex: 1, flexDirection: 'row' },

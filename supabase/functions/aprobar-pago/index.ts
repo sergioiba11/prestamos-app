@@ -130,6 +130,14 @@ Deno.serve(async (req) => {
         detalle: { metodo: pago.metodo, estado_anterior: pago.estado },
       })
 
+      await supabase.from('notificaciones').insert({
+        tipo: 'pago_rechazado',
+        titulo: 'Pago rechazado',
+        descripcion: `Se rechazó un pago ${pago.metodo || ''}`.trim(),
+        pago_id: pago.id,
+        metadata: { actor_id: user.id, observacion: observacionRevision },
+      })
+
       return jsonResponse({ ok: true, estado: 'rechazado', pago_id: pago.id })
     }
 
@@ -162,6 +170,14 @@ Deno.serve(async (req) => {
       }
       return jsonResponse({ error: errorMsg }, 400)
     }
+
+    await supabase.from('notificaciones').insert({
+      tipo: 'pago_aprobado',
+      titulo: 'Pago aprobado',
+      descripcion: 'Se aprobó un pago pendiente',
+      pago_id: pago.id,
+      metadata: { actor_id: user.id, resultado },
+    })
 
     return jsonResponse({
       ok: true,
