@@ -43,6 +43,16 @@ type Cliente = {
   dni: string | null
   direccion?: string | null
   usuario_id?: string | null
+  usuarios?: {
+    email: string | null
+  } | null
+  prestamos?: {
+    id: string
+    estado: string | null
+    total_a_pagar: number | null
+    fecha_limite?: string | null
+    fecha_inicio?: string | null
+  }[]
 }
 
 type Empleado = {
@@ -78,11 +88,7 @@ type ClienteConPrestamo = {
   telefono: string | null
   email: string | null
   dni: string | null
-  prestamo?: Prestamo | null
-  estadoVisual: {
-    texto: string
-    tipo: 'aldia' | 'venceHoy' | 'mora' | 'pagado'
-  }
+  prestamo: NonNullable<Cliente['prestamos']>[number] | undefined
   deudaActual: number
   proximoPago: string | null
 }
@@ -109,41 +115,6 @@ function estiloBadgePago(estado?: string | null) {
   if (normalizado === 'aprobado') return 'aprobado'
   if (normalizado === 'rechazado') return 'rechazado'
   return 'pendiente'
-}
-
-function calcularEstadoVisual(prestamo?: Prestamo | null) {
-  if (!prestamo) {
-    return { texto: 'Sin préstamo', tipo: 'pagado' as const }
-  }
-
-  const estado = normalizarEstado(prestamo.estado)
-
-  if (estado === 'pagado' || estado === 'cancelado') {
-    return { texto: 'Pagado', tipo: 'pagado' as const }
-  }
-
-  const hoy = new Date()
-  hoy.setHours(0, 0, 0, 0)
-
-  if (prestamo.fecha_inicio_mora) {
-    const mora = new Date(prestamo.fecha_inicio_mora + 'T00:00:00')
-    mora.setHours(0, 0, 0, 0)
-
-    if (hoy.getTime() >= mora.getTime()) {
-      return { texto: 'En mora', tipo: 'mora' as const }
-    }
-  }
-
-  if (prestamo.fecha_limite) {
-    const limite = new Date(prestamo.fecha_limite + 'T00:00:00')
-    limite.setHours(0, 0, 0, 0)
-
-    if (hoy.getTime() === limite.getTime()) {
-      return { texto: 'Vence hoy', tipo: 'venceHoy' as const }
-    }
-  }
-
-  return { texto: 'Al día', tipo: 'aldia' as const }
 }
 
 export default function AdminHome() {
@@ -196,7 +167,22 @@ export default function AdminHome() {
 
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, telefono, dni, direccion, usuario_id')
+      .select(`
+        id,
+        nombre,
+        dni,
+        telefono,
+        direccion,
+        usuario_id,
+        usuarios(email),
+        prestamos (
+          id,
+          estado,
+          total_a_pagar,
+          fecha_limite,
+          fecha_inicio
+        )
+      `)
       .order('created_at', { ascending: false })
 
     console.log('RESPUESTA SUPABASE CLIENTES (completa):', {
@@ -212,7 +198,22 @@ export default function AdminHome() {
       if (puedeSerColumna) {
         const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
           .from('clientes')
-          .select('id, nombre, telefono, dni, direccion, usuario_id')
+          .select(`
+            id,
+            nombre,
+            dni,
+            telefono,
+            direccion,
+            usuario_id,
+            usuarios(email),
+            prestamos (
+              id,
+              estado,
+              total_a_pagar,
+              fecha_limite,
+              fecha_inicio
+            )
+          `)
           .order('id', { ascending: false })
 
         console.log('RESPUESTA SUPABASE CLIENTES fallback (completa):', {
@@ -240,34 +241,10 @@ export default function AdminHome() {
     const baseClientes = (clientesData as Cliente[]) || []
     console.log('CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
 
-    // Fallback seguro de email desde tabla usuarios sin romper listado si esta consulta falla.
-    const usuarioIds = baseClientes
-      .map((c) => c.usuario_id)
-      .filter((id): id is string => Boolean(id))
-
-    let emailByUsuarioId = new Map<string, string>()
-
-    if (usuarioIds.length > 0) {
-      const { data: usuariosData, error: usuariosError } = await supabase
-        .from('usuarios')
-        .select('id, email')
-        .in('id', usuarioIds)
-
-      console.log('DATA USUARIOS (fallback email):', usuariosData)
-      console.log('ERROR USUARIOS (fallback email):', usuariosError)
-
-      if (!usuariosError && Array.isArray(usuariosData)) {
-        emailByUsuarioId = new Map(
-          usuariosData
-            .filter((u: any) => u?.id && u?.email)
-            .map((u: any) => [String(u.id), String(u.email)])
-        )
-      }
-    }
-
     const normalizados = baseClientes.map((cliente) => ({
       ...cliente,
-      email: emailByUsuarioId.get(String(cliente.usuario_id || '')) || null,
+      email: cliente.usuarios?.email || null,
+      prestamos: Array.isArray(cliente.prestamos) ? cliente.prestamos : [],
     }))
 
     setClientes(normalizados)
@@ -440,98 +417,35 @@ export default function AdminHome() {
   }, [prestamos, clientes, empleados])
 
   const clientesConPrestamo = useMemo<ClienteConPrestamo[]>(() => {
-  const mapaPrestamos = new Map<string, Prestamo>()
+    const clientesActivos = clientes.filter((cliente) => {
+      const tienePrestamo = cliente.prestamos?.some((p) => p.estado === 'activo')
+      return Boolean(tienePrestamo)
+    })
 
-  for (const prestamo of prestamos) {
-    if (!prestamo.cliente_id) continue
+    return clientesActivos
+      .map((cliente) => {
+        const prestamosActivos = (cliente.prestamos || []).filter((p) => p.estado === 'activo')
+        const prestamo = prestamosActivos.sort((a, b) =>
+          String(b.fecha_inicio || '').localeCompare(String(a.fecha_inicio || ''))
+        )[0]
 
-    const actual = mapaPrestamos.get(prestamo.cliente_id)
-
-    if (!actual) {
-      mapaPrestamos.set(prestamo.cliente_id, prestamo)
-      continue
-    }
-
-    const actualFecha = actual.fecha_inicio || ''
-    const nuevaFecha = prestamo.fecha_inicio || ''
-
-    if (nuevaFecha > actualFecha) {
-      mapaPrestamos.set(prestamo.cliente_id, prestamo)
-    }
-  }
-
-  const hoy = new Date()
-  hoy.setHours(0, 0, 0, 0)
-
-  const lista = clientes.map((cliente) => {
-    const prestamo = mapaPrestamos.get(cliente.id) || null
-    const estadoVisual = calcularEstadoVisual(prestamo)
-
-    let prioridad = 4 // default (los últimos)
-
-    if (prestamo) {
-      const estado = normalizarEstado(prestamo.estado)
-
-      if (estado === 'pagado' || estado === 'cancelado') {
-        prioridad = 4
-      } else if (prestamo.fecha_inicio_mora) {
-        const mora = new Date(prestamo.fecha_inicio_mora + 'T00:00:00')
-        mora.setHours(0, 0, 0, 0)
-
-        if (hoy.getTime() >= mora.getTime()) {
-          prioridad = 1 // 🔴 mora (máxima prioridad)
+        return {
+          id: cliente.id,
+          nombre: cliente.nombre,
+          telefono: cliente.telefono,
+          email: cliente.email || null,
+          dni: cliente.dni,
+          prestamo,
+          deudaActual: Number(prestamo?.total_a_pagar || 0),
+          proximoPago: prestamo?.fecha_limite || null,
         }
-      }
-
-      if (prestamo.fecha_limite) {
-        const limite = new Date(prestamo.fecha_limite + 'T00:00:00')
-        limite.setHours(0, 0, 0, 0)
-
-        if (
-          limite.getFullYear() === hoy.getFullYear() &&
-          limite.getMonth() === hoy.getMonth() &&
-          limite.getDate() === hoy.getDate()
-        ) {
-          prioridad = 2 // 🟡 vence hoy
-        }
-      }
-
-      if (prioridad === 4) {
-        prioridad = 3 // 🟢 al día
-      }
-    }
-
-    return {
-      id: cliente.id,
-      nombre: cliente.nombre,
-      telefono: cliente.telefono,
-      email: cliente.email,
-      dni: cliente.dni,
-      prestamo,
-      estadoVisual,
-      prioridad,
-      deudaActual:
-        prestamo && normalizarEstado(prestamo.estado) !== 'pagado'
-          ? Number(prestamo.total_a_pagar || 0)
-          : 0,
-      proximoPago: prestamo?.fecha_limite || null,
-    }
-  })
-
-  // 🔥 ORDEN PRO FINAL
-  return lista.sort((a, b) => {
-    // 1. prioridad
-    if (a.prioridad !== b.prioridad) {
-      return a.prioridad - b.prioridad
-    }
-
-    // 2. por fecha (más urgente primero)
-    const fechaA = a.proximoPago ? new Date(a.proximoPago).getTime() : Infinity
-    const fechaB = b.proximoPago ? new Date(b.proximoPago).getTime() : Infinity
-
-    return fechaA - fechaB
-  })
-}, [clientes, prestamos])
+      })
+      .sort((a, b) => {
+        const fechaA = a.proximoPago ? new Date(a.proximoPago).getTime() : Infinity
+        const fechaB = b.proximoPago ? new Date(b.proximoPago).getTime() : Infinity
+        return fechaA - fechaB
+      })
+  }, [clientes])
 
   const onChangeBusquedaCliente = useCallback((texto: string) => {
     setBusquedaCliente(texto)
@@ -578,6 +492,7 @@ export default function AdminHome() {
   const irNuevoPrestamo = () => router.push('/nuevo-prestamo' as any)
   const irNuevoCliente = () => router.push('/nuevo-cliente' as any)
   const irNuevoEmpleado = () => router.push('/nuevo-empleado' as any)
+  const irClientes = () => router.push('/clientes' as any)
   const irConfiguraciones = () => router.push('/configuraciones' as any)
 
   const procesarPagoPendiente = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
@@ -608,23 +523,9 @@ export default function AdminHome() {
   const cargarPago = (clienteId: string) =>
     router.push({ pathname: '/cargar-pago', params: { cliente_id: clienteId } } as any)
 
-  const BadgeEstado = ({
-    texto,
-    tipo,
-  }: {
-    texto: string
-    tipo: 'aldia' | 'venceHoy' | 'mora' | 'pagado'
-  }) => {
+  const BadgeEstado = ({ texto }: { texto: string }) => {
     return (
-      <View
-        style={[
-          styles.badge,
-          tipo === 'aldia' && styles.badgeVerde,
-          tipo === 'venceHoy' && styles.badgeAmarillo,
-          tipo === 'mora' && styles.badgeRojo,
-          tipo === 'pagado' && styles.badgeGris,
-        ]}
-      >
+      <View style={[styles.badge, styles.badgeVerde]}>
         <Text style={styles.badgeText}>{texto}</Text>
       </View>
     )
@@ -927,10 +828,14 @@ export default function AdminHome() {
           <Text style={styles.sectionTitle}>Clientes</Text>
           <Text style={styles.sectionSub}>Estado actual para cobrar rápido</Text>
         </View>
-
-        <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
-          <Text style={styles.reloadButtonText}>Actualizar</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActionsRow}>
+          <TouchableOpacity style={styles.reloadButton} onPress={irClientes}>
+            <Text style={styles.reloadButtonText}>Ver clientes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
+            <Text style={styles.reloadButtonText}>Actualizar</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -950,7 +855,7 @@ export default function AdminHome() {
           Error al cargar clientes: {clientesError}
         </Text>
       ) : clientesConPrestamo.length === 0 ? (
-        <Text style={styles.emptyText}>No hay clientes cargados todavía.</Text>
+        <Text style={styles.emptyText}>No hay clientes con préstamos activos.</Text>
       ) : clientesFiltrados.length === 0 ? (
         <Text style={styles.emptyText}>No se encontraron clientes.</Text>
       ) : (
@@ -970,8 +875,7 @@ export default function AdminHome() {
                 </View>
 
                 <BadgeEstado
-                  texto={cliente.estadoVisual.texto}
-                  tipo={cliente.estadoVisual.tipo}
+                  texto="Con préstamo"
                 />
               </View>
 
@@ -1426,6 +1330,11 @@ const styles = StyleSheet.create({
     gap: 10,
     flexWrap: 'wrap',
     marginBottom: 8,
+  },
+  headerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 
   reloadButton: {
