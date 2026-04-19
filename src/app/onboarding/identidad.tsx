@@ -19,7 +19,9 @@ export default function IdentityConfirmationScreen() {
         <Text style={styles.infoLabel}>DNI</Text>
         <Text style={styles.infoValue}>{identity.dni}</Text>
         <Text style={styles.infoLabel}>Nombre</Text>
-        <Text style={styles.infoValue}>{identity.nombre}</Text>
+        <Text style={styles.infoValue}>{[identity.nombre, identity.apellido].filter(Boolean).join(' ')}</Text>
+        <Text style={styles.infoLabel}>Teléfono</Text>
+        <Text style={styles.infoValue}>{identity.telefono || 'Sin teléfono cargado'}</Text>
       </View>
 
       {identity.source === 'mock-temporal' ? (
@@ -31,7 +33,7 @@ export default function IdentityConfirmationScreen() {
       <TouchableOpacity
         style={onboardingStyles.buttonPrimary}
         onPress={() => {
-          updateState({ isIdentityConfirmed: true })
+          updateState({ isIdentityConfirmed: true, isCodeValidated: false, verifiedPhone: '' })
           router.push('/onboarding/codigo' as any)
         }}
       >

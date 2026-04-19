@@ -12,7 +12,10 @@ export default function ValidationSuccessScreen() {
   }
 
   return (
-    <OnboardingScaffold title="¡Excelente!" subtitle="Tu identidad fue validada con éxito.">
+    <OnboardingScaffold
+      title="¡Excelente!"
+      subtitle="Tu teléfono fue verificado correctamente. Ahora creá tu contraseña para terminar el alta."
+    >
       <TouchableOpacity
         style={onboardingStyles.buttonPrimary}
         onPress={() => router.push('/onboarding/password' as any)}

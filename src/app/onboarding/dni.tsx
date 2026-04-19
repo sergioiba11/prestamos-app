@@ -35,6 +35,7 @@ export default function OnboardingDniScreen() {
         identity,
         isIdentityConfirmed: false,
         isCodeValidated: false,
+        verifiedPhone: '',
       })
       router.push('/onboarding/identidad' as any)
     } catch {

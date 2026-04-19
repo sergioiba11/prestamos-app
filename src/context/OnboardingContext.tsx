@@ -7,6 +7,7 @@ type OnboardingState = {
   identity: IdentityData | null
   isIdentityConfirmed: boolean
   isCodeValidated: boolean
+  verifiedPhone: string
   biometricsEnabled: boolean | null
 }
 
@@ -24,6 +25,7 @@ const initialState: OnboardingState = {
   identity: null,
   isIdentityConfirmed: false,
   isCodeValidated: false,
+  verifiedPhone: '',
   biometricsEnabled: null,
 }
 
