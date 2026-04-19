@@ -1,6 +1,7 @@
 import { router, Stack } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StatusBar,
@@ -9,6 +10,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import {
+  obtenerClientePorUsuario,
+  obtenerPrestamoActivoConDetalle,
+  type PrestamoDetalle,
+} from '../lib/prestamos'
 import { supabase } from '../lib/supabase'
 
 type Cliente = {
@@ -17,21 +23,24 @@ type Cliente = {
   telefono: string | null
   direccion: string | null
   dni: string | null
+  usuario_id: string | null
 }
 
-type PanelCliente = {
-  cliente_id: string
-  total_a_pagar: number
-  total_pagado: number
-  restante: number
+function formatearMoneda(value: number) {
+  return `$${Number(value || 0).toLocaleString('es-AR')}`
 }
 
-type PagoCliente = {
-  id: string
-  estado: 'pendiente' | 'aprobado' | 'rechazado' | string
-  metodo: string | null
-  monto: number | null
-  created_at: string | null
+function formatearFecha(value?: string | null) {
+  if (!value) return '—'
+  const [yyyy, mm, dd] = value.slice(0, 10).split('-')
+  if (!yyyy || !mm || !dd) return value
+  return `${dd}/${mm}/${yyyy}`
+}
+
+function estadoGeneral(detalle: PrestamoDetalle) {
+  if (detalle.totalPendienteRevision > 0) return 'Pendiente de aprobación'
+  if (detalle.cuotasVencidas > 0) return 'Atrasado'
+  return 'Al día'
 }
 
 function formatCurrency(value: number) {
@@ -39,58 +48,37 @@ function formatCurrency(value: number) {
 }
 
 export default function ClienteHome() {
+  const [loading, setLoading] = useState(true)
   const [cliente, setCliente] = useState<Cliente | null>(null)
-  const [resumen, setResumen] = useState<PanelCliente | null>(null)
-  const [ultimoPago, setUltimoPago] = useState<PagoCliente | null>(null)
+  const [detalle, setDetalle] = useState<PrestamoDetalle | null>(null)
 
   useEffect(() => {
-    cargarDatos()
+    void cargarDatos()
   }, [])
 
   const cargarDatos = async () => {
     try {
+      setLoading(true)
       const { data: authData, error: authError } = await supabase.auth.getUser()
-
       if (authError) throw authError
 
       const userId = authData.user?.id
+      if (!userId) throw new Error('No se encontró la sesión del cliente')
 
-      if (!userId) {
-        throw new Error('No se encontró el usuario logueado')
+      const clienteData = await obtenerClientePorUsuario(userId)
+      if (!clienteData) {
+        setCliente(null)
+        setDetalle(null)
+        return
       }
 
-      const { data: clienteData, error: clienteError } = await supabase
-        .from('clientes')
-        .select('*')
-        .eq('usuario_id', userId)
-        .single()
-
-      if (clienteError) throw clienteError
-
-      setCliente(clienteData)
-
-      const { data: panelData, error: panelError } = await supabase
-        .from('panel_clientes')
-        .select('*')
-        .eq('cliente_id', clienteData.id)
-        .single()
-
-      if (panelError) throw panelError
-
-      setResumen(panelData)
-
-      const { data: pagoData, error: pagoError } = await supabase
-        .from('pagos')
-        .select('id, estado, metodo, monto, created_at')
-        .eq('cliente_id', clienteData.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (pagoError) throw pagoError
-      setUltimoPago((pagoData as PagoCliente) || null)
+      setCliente(clienteData as Cliente)
+      const detallePrestamo = await obtenerPrestamoActivoConDetalle(clienteData.id)
+      setDetalle(detallePrestamo)
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudieron cargar tus datos')
+      Alert.alert('Error', error?.message || 'No se pudo cargar tu panel')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -109,290 +97,199 @@ export default function ClienteHome() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="light-content" backgroundColor="#E10076" />
+      <StatusBar barStyle="light-content" backgroundColor="#020817" />
 
       <View style={styles.screen}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>¡Hola {cliente?.nombre?.split(' ')[0] || 'Rubén'}!</Text>
-
-          <View style={styles.headerActions}>
-            <Text style={styles.headerIcon}>👁️</Text>
-            <Text style={styles.headerIcon}>❔</Text>
+          <View>
+            <Text style={styles.brand}>CrediTodo</Text>
+            <Text style={styles.title}>Hola {cliente?.nombre || 'cliente'}</Text>
           </View>
-        </View>
-
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.balanceCard}>
-            <View>
-              <Text style={styles.balanceTitle}>Dinero en cuenta</Text>
-              <Text style={styles.balanceAmount}>$0⁰⁰</Text>
-            </View>
-
-            <Text style={styles.balanceDetail}>Ver detalle ›</Text>
-          </View>
-
-          <View style={styles.loanCard}>
-            <View style={styles.loanTabs}>
-              <View style={styles.loanTabActive}>
-                <Text style={styles.loanTabTitle}>👛 Línea de crédito</Text>
-                <Text style={styles.loanTabSub}>(Gastos diarios)</Text>
-              </View>
-              <View style={styles.loanTab}>
-                <Text style={styles.loanTabInactive}>💸 Préstamos</Text>
-              </View>
-            </View>
-
-            <Text style={styles.loanQuestion}>¿Necesitás dinero?</Text>
-            <Text style={styles.loanLabel}>Pedí hasta</Text>
-            <Text style={styles.loanAmount}>{formatCurrency(resumen?.restante || 2_000_000)}</Text>
-
-            <TouchableOpacity style={styles.loanButton}>
-              <Text style={styles.loanButtonText}>Solicitar préstamo</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.activityCard}>
-            <Text style={styles.activityTitle}>Tu actividad</Text>
-            <Text style={styles.activityIcon}>☁️</Text>
-            <Text style={styles.activityHeadline}>{estadoUltimoPago}</Text>
-            <Text style={styles.activitySub}>Usá tu billetera y seguí potenciando tu perfil.</Text>
-          </View>
-
-          <TouchableOpacity style={styles.logout} onPress={cerrarSesion}>
-            <Text style={styles.logoutText}>Salir</Text>
+          <TouchableOpacity style={styles.headerButton} onPress={cargarDatos}>
+            <Text style={styles.headerButtonText}>Actualizar</Text>
           </TouchableOpacity>
-        </ScrollView>
-
-        <View style={styles.bottomNav}>
-          <Text style={styles.navItemActive}>Inicio</Text>
-          <Text style={styles.navItem}>Crédito</Text>
-          <View style={styles.qrButton}>
-            <Text style={styles.qrText}>⌘</Text>
-          </View>
-          <Text style={styles.navItem}>Préstamos</Text>
-          <Text style={styles.navItem}>Menú</Text>
         </View>
+
+        {loading ? (
+          <View style={styles.centerLoading}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}>Cargando tu préstamo...</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.body} contentContainerStyle={styles.content}>
+            {!detalle ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Estado del préstamo</Text>
+                <Text style={styles.emptyMain}>No tenés préstamos activos</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Préstamo activo</Text>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.kpiLabel}>Estado general</Text>
+                    <Text style={styles.badge}>{estadoGeneral(detalle)}</Text>
+                  </View>
+                  <View style={styles.grid}>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.kpiLabel}>Total a pagar</Text>
+                      <Text style={styles.kpiValue}>{formatearMoneda(detalle.prestamo.total_a_pagar || 0)}</Text>
+                    </View>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.kpiLabel}>Total pagado</Text>
+                      <Text style={styles.kpiValue}>{formatearMoneda(detalle.totalPagadoAprobado)}</Text>
+                    </View>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.kpiLabel}>Saldo pendiente</Text>
+                      <Text style={styles.kpiValue}>{formatearMoneda(detalle.saldoCalculado)}</Text>
+                    </View>
+                    <View style={styles.metricItem}>
+                      <Text style={styles.kpiLabel}>Pendiente aprobación</Text>
+                      <Text style={styles.kpiValue}>{formatearMoneda(detalle.totalPendienteRevision)}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Próxima cuota</Text>
+                  {detalle.proximaCuota ? (
+                    <>
+                      <Text style={styles.mainLine}>Cuota #{detalle.proximaCuota.numero_cuota}</Text>
+                      <Text style={styles.infoLine}>Vence: {formatearFecha(detalle.proximaCuota.fecha_vencimiento)}</Text>
+                      <Text style={styles.infoLine}>Monto: {formatearMoneda(detalle.proximaCuota.monto_cuota || 0)}</Text>
+                      <Text style={styles.infoLine}>Estado: {detalle.proximaCuota.estado || 'pendiente'}</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.emptyText}>No hay próximas cuotas pendientes.</Text>
+                  )}
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Cuotas</Text>
+                  {detalle.cuotas.slice(0, 8).map((cuota) => (
+                    <View key={cuota.id} style={styles.listRow}>
+                      <Text style={styles.listTitle}>#{cuota.numero_cuota}</Text>
+                      <Text style={styles.listMeta}>{formatearFecha(cuota.fecha_vencimiento)}</Text>
+                      <Text style={styles.listMeta}>{formatearMoneda(cuota.monto_cuota || 0)}</Text>
+                      <Text style={styles.listMeta}>{formatearMoneda(cuota.saldo_pendiente || 0)}</Text>
+                      <Text style={styles.listMeta}>{cuota.estado || 'pendiente'}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Historial de pagos</Text>
+                  {detalle.pagos.length === 0 ? (
+                    <Text style={styles.emptyText}>Todavía no registrás pagos.</Text>
+                  ) : (
+                    detalle.pagos.slice(0, 12).map((pago) => (
+                      <View key={pago.id} style={styles.listRow}>
+                        <Text style={styles.listTitle}>{formatearFecha(pago.created_at)}</Text>
+                        <Text style={styles.listMeta}>{formatearMoneda(pago.monto || 0)}</Text>
+                        <Text style={styles.listMeta}>{pago.metodo || '—'}</Text>
+                        <Text style={styles.listMeta}>{pago.estado || 'pendiente'}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/cliente-detalle',
+                      params: { cliente_id: cliente?.id || '' },
+                    } as any)
+                  }
+                >
+                  <Text style={styles.primaryButtonText}>Consultar préstamo</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity style={styles.secondaryButton} onPress={cerrarSesion}>
+              <Text style={styles.secondaryButtonText}>Salir</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
       </View>
     </>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#EFEFEF',
-  },
+  screen: { flex: 1, backgroundColor: '#020817' },
   header: {
-    backgroundColor: '#E10076',
-    paddingTop: 56,
-    paddingBottom: 26,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 34,
-    borderBottomRightRadius: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 42,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 18,
-  },
-  headerIcon: {
-    fontSize: 24,
-  },
-  content: {
-    padding: 18,
-    paddingBottom: 140,
-    marginTop: -20,
-    gap: 16,
-  },
-  balanceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    padding: 24,
+    paddingTop: 52,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    backgroundColor: '#0B1220',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOpacity: 0.14,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  balanceTitle: {
-    fontSize: 21,
-    color: '#2f2f2f',
-  },
-  balanceAmount: {
-    fontSize: 56,
-    fontWeight: '800',
-    marginTop: 6,
-  },
-  balanceDetail: {
-    color: '#E10076',
-    fontSize: 30,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-  loanCard: {
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    paddingBottom: 24,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  loanTabs: {
-    flexDirection: 'row',
-  },
-  loanTabActive: {
-    flex: 1,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
-    backgroundColor: '#F2F2F2',
-    borderBottomRightRadius: 24,
-  },
-  loanTab: {
-    flex: 1,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
-  },
-  loanTabTitle: {
-    fontSize: 21,
-    color: '#333',
-    fontWeight: '600',
-  },
-  loanTabSub: {
-    fontSize: 12,
-    color: '#ff73b8',
-    marginTop: 6,
-  },
-  loanTabInactive: {
-    fontSize: 21,
-    color: '#E10076',
-    marginTop: 4,
-  },
-  loanQuestion: {
-    marginTop: 26,
-    marginHorizontal: 18,
-    fontSize: 44,
-    color: '#222',
-  },
-  loanLabel: {
-    marginTop: 26,
-    marginHorizontal: 18,
-    fontSize: 24,
-    color: '#333',
-  },
-  loanAmount: {
-    marginHorizontal: 18,
-    marginTop: 4,
-    fontSize: 64,
-    fontWeight: '900',
-    color: '#111',
-  },
-  loanButton: {
-    marginTop: 22,
-    marginHorizontal: 18,
-    borderRadius: 20,
-    paddingVertical: 16,
-    backgroundColor: '#E10076',
     alignItems: 'center',
   },
-  loanButtonText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 32,
+  brand: { color: '#60A5FA', fontWeight: '800', fontSize: 14 },
+  title: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: 2 },
+  headerButton: {
+    backgroundColor: '#1D4ED8',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
-  activityCard: {
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    padding: 22,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  headerButtonText: { color: '#fff', fontWeight: '700' },
+  body: { flex: 1 },
+  content: { padding: 16, gap: 12, paddingBottom: 28 },
+  centerLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { marginTop: 12, color: '#CBD5E1' },
+  card: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 14,
+    padding: 14,
   },
-  activityTitle: {
-    alignSelf: 'flex-start',
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2a2a2a',
-    marginBottom: 22,
+  cardTitle: { color: '#fff', fontSize: 17, fontWeight: '700', marginBottom: 10 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  badge: { color: '#BFDBFE', fontWeight: '700' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  metricItem: {
+    width: '48%',
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#1F2937',
   },
-  activityIcon: {
-    fontSize: 74,
-    opacity: 0.4,
+  kpiLabel: { color: '#94A3B8', fontSize: 12 },
+  kpiValue: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 3 },
+  mainLine: { color: '#fff', fontWeight: '800', fontSize: 18 },
+  infoLine: { color: '#CBD5E1', marginTop: 4 },
+  listRow: {
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#1F2937',
     marginBottom: 8,
   },
-  activityHeadline: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1f1f1f',
-    textAlign: 'center',
-  },
-  activitySub: {
-    fontSize: 16,
-    marginTop: 6,
-    color: '#3c3c3c',
-    textAlign: 'center',
-  },
-  logout: {
-    marginTop: 6,
-    alignSelf: 'center',
-    backgroundColor: '#2E2E2E',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 26,
-  },
-  logoutText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    paddingTop: 10,
-    paddingBottom: 22,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  listTitle: { color: '#fff', fontWeight: '700' },
+  listMeta: { color: '#94A3B8', marginTop: 3, fontSize: 12 },
+  emptyText: { color: '#94A3B8' },
+  emptyMain: { color: '#E2E8F0', fontSize: 16 },
+  primaryButton: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
   },
-  navItem: {
-    fontSize: 14,
-    color: '#8b8b8b',
-  },
-  navItemActive: {
-    fontSize: 14,
-    color: '#E10076',
-    fontWeight: '700',
-  },
-  qrButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
-    backgroundColor: '#E10076',
-    justifyContent: 'center',
+  primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  secondaryButton: {
+    backgroundColor: '#1E293B',
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: -24,
   },
-  qrText: {
-    fontSize: 28,
-    color: '#fff',
-    fontWeight: '900',
-  },
+  secondaryButtonText: { color: '#fff', fontWeight: '700' },
 })
