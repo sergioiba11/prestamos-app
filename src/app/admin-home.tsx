@@ -2,7 +2,6 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -18,21 +17,10 @@ import { supabase } from '../lib/supabase'
 type Prestamo = {
   id: string
   cliente_id: string | null
-  monto: number | null
-  interes: number | null
   total_a_pagar: number | null
-  fecha_inicio: string | null
   fecha_limite: string | null
   fecha_inicio_mora: string | null
   estado: string | null
-  modalidad: 'mensual' | 'diario' | null
-  cuotas: number | null
-  dias_plazo: number | null
-  clientes?: {
-    nombre: string | null
-    telefono: string | null
-    dni: string | null
-  } | null
 }
 
 type Cliente = {
@@ -41,8 +29,6 @@ type Cliente = {
   telefono: string | null
   email?: string | null
   dni: string | null
-  direccion?: string | null
-  usuario_id?: string | null
   usuarios?: {
     email: string | null
   } | null
@@ -55,54 +41,17 @@ type Cliente = {
   }[]
 }
 
-type Empleado = {
-  id: string
-  nombre: string | null
-  email: string | null
-  rol: string | null
-}
-
-type PagoPendiente = {
-  id: string
-  prestamo_id: string | null
-  cliente_id: string | null
-  cuota_id: string | null
-  numero_cuota: number | null
-  monto: number | null
-  metodo: string | null
-  estado: string | null
-  comprobante: string | null
-  comprobante_url: string | null
-  observacion_revision: string | null
-  fecha_pago: string | null
-  created_at: string | null
-  clientes?: {
-    nombre: string | null
-    dni: string | null
-  } | null
-}
-
 type ClienteConPrestamo = {
   id: string
   nombre: string
-  telefono: string | null
-  email: string | null
-  dni: string | null
-  prestamo: NonNullable<Cliente['prestamos']>[number] | undefined
+  prestamoId: string
   deudaActual: number
-  proximoPago: string | null
+  fechaLimite: string | null
+  estadoCobro: 'AL DÍA' | 'ATRASADO'
 }
 
 function formatearMoneda(valor: number) {
   return `$${Number(valor || 0).toLocaleString('es-AR')}`
-}
-
-function formatearFecha(fecha?: string | null) {
-  if (!fecha) return '—'
-  const limpia = fecha.slice(0, 10)
-  const partes = limpia.split('-')
-  if (partes.length !== 3) return limpia
-  return `${partes[2]}/${partes[1]}/${partes[0]}`
 }
 
 function normalizarEstado(estado?: string | null) {
@@ -110,60 +59,21 @@ function normalizarEstado(estado?: string | null) {
   return estado.toLowerCase()
 }
 
-function estiloBadgePago(estado?: string | null) {
-  const normalizado = String(estado || '').toLowerCase()
-  if (normalizado === 'aprobado') return 'aprobado'
-  if (normalizado === 'rechazado') return 'rechazado'
-  return 'pendiente'
-}
-
 export default function AdminHome() {
   const { width } = useWindowDimensions()
 
-  const esDesktop = width >= 1180
+  const esDesktop = width >= 1024
   const esMobile = width < 820
-  const esWeb = Platform.OS === 'web'
 
   const [loading, setLoading] = useState(true)
   const [nombreAdmin, setNombreAdmin] = useState('Administrador')
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
-  const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [clientesError, setClientesError] = useState<string | null>(null)
   const [busquedaCliente, setBusquedaCliente] = useState('')
-  const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
-  const [procesandoPagoId, setProcesandoPagoId] = useState<string | null>(null)
-  const [filtroMetodoPago, setFiltroMetodoPago] = useState<'todos' | 'transferencia' | 'mercado_pago'>('todos')
 
   const cargarClientes = useCallback(async () => {
-    console.log('CARGANDO CLIENTES')
     setClientesError(null)
-
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-    const sessionUser = sessionData?.session?.user || null
-
-    let rol: string | null = null
-    if (sessionUser?.id) {
-      const { data: rolData, error: rolError } = await supabase
-        .from('usuarios')
-        .select('rol')
-        .eq('id', sessionUser.id)
-        .maybeSingle()
-
-      rol = rolData?.rol || null
-
-      console.log('ADMIN HOME DEBUG ROL:', {
-        rolData,
-        rolError,
-      })
-    }
-
-    console.log('ADMIN HOME DEBUG SESION:', {
-      sessionError,
-      userId: sessionUser?.id || null,
-      email: sessionUser?.email || null,
-      rol,
-    })
 
     const { data, error } = await supabase
       .from('clientes')
@@ -172,8 +82,6 @@ export default function AdminHome() {
         nombre,
         dni,
         telefono,
-        direccion,
-        usuario_id,
         usuarios(email),
         prestamos (
           id,
@@ -185,26 +93,18 @@ export default function AdminHome() {
       `)
       .order('created_at', { ascending: false })
 
-    console.log('RESPUESTA SUPABASE CLIENTES (completa):', {
-      data,
-      error,
-      count: Array.isArray(data) ? data.length : 0,
-    })
-
     let clientesData = data
 
     if (error) {
       const puedeSerColumna = (error.message || '').toLowerCase().includes('created_at')
       if (puedeSerColumna) {
-        const { data: dataSinCreatedAt, error: errorSinCreatedAt } = await supabase
+        const fallback = await supabase
           .from('clientes')
           .select(`
             id,
             nombre,
             dni,
             telefono,
-            direccion,
-            usuario_id,
             usuarios(email),
             prestamos (
               id,
@@ -216,22 +116,14 @@ export default function AdminHome() {
           `)
           .order('id', { ascending: false })
 
-        console.log('RESPUESTA SUPABASE CLIENTES fallback (completa):', {
-          data: dataSinCreatedAt,
-          error: errorSinCreatedAt,
-          count: Array.isArray(dataSinCreatedAt) ? dataSinCreatedAt.length : 0,
-        })
-
-        if (errorSinCreatedAt) {
-          console.log('ERROR CLIENTES EXACTO (fallback):', errorSinCreatedAt)
-          setClientesError(errorSinCreatedAt.message || 'Error al leer clientes')
+        if (fallback.error) {
+          setClientesError(fallback.error.message || 'Error al leer clientes')
           setClientes([])
           return
         }
 
-        clientesData = dataSinCreatedAt
+        clientesData = fallback.data
       } else {
-        console.log('ERROR CLIENTES EXACTO:', error)
         setClientesError(error.message || 'Error al leer clientes')
         setClientes([])
         return
@@ -239,8 +131,6 @@ export default function AdminHome() {
     }
 
     const baseClientes = (clientesData as Cliente[]) || []
-    console.log('CANTIDAD CLIENTES RECIBIDOS:', baseClientes.length)
-
     const normalizados = baseClientes.map((cliente) => ({
       ...cliente,
       email: cliente.usuarios?.email || null,
@@ -248,10 +138,6 @@ export default function AdminHome() {
     }))
 
     setClientes(normalizados)
-    console.log('CLIENTES NORMALIZADOS:', {
-      count: normalizados.length,
-      sample: normalizados.slice(0, 3),
-    })
   }, [])
 
   const cargarTodo = useCallback(async () => {
@@ -265,71 +151,23 @@ export default function AdminHome() {
         setNombreAdmin(emailAuth.split('@')[0])
       }
 
-      const [prestamosRes, empleadosRes, pagosPendientesRes] = await Promise.all([
-        supabase
-          .from('prestamos')
-          .select(`
-            id,
-            cliente_id,
-            cuota_id,
-            numero_cuota,
-            monto,
-            interes,
-            total_a_pagar,
-            fecha_inicio,
-            fecha_limite,
-            fecha_inicio_mora,
-            estado,
-            modalidad,
-            cuotas,
-            dias_plazo,
-            clientes (
-              nombre,
-              telefono,
-              dni
-            )
-          `)
-          .order('fecha_inicio', { ascending: false }),
+      const prestamosRes = await supabase
+        .from('prestamos')
+        .select(`
+          id,
+          cliente_id,
+          total_a_pagar,
+          fecha_limite,
+          fecha_inicio_mora,
+          estado
+        `)
+        .order('fecha_limite', { ascending: true })
 
-        supabase
-          .from('usuarios')
-          .select('id, nombre, email, rol')
-          .eq('rol', 'empleado')
-          .order('nombre', { ascending: true }),
+      if (prestamosRes.error) {
+        console.log('ERROR prestamos:', prestamosRes.error)
+      }
 
-        supabase
-          .from('pagos')
-          .select(`
-            id,
-            prestamo_id,
-            cliente_id,
-            cuota_id,
-            numero_cuota,
-            monto,
-            metodo,
-            estado,
-            comprobante,
-            comprobante_url,
-            observacion_revision,
-            fecha_pago,
-            created_at,
-            clientes (
-              nombre,
-              dni
-            )
-          `)
-          .in('metodo', ['transferencia', 'mercado_pago'])
-          .eq('estado', 'pendiente_aprobacion')
-          .order('created_at', { ascending: false }),
-      ])
-
-      if (prestamosRes.error) console.log('ERROR prestamos:', prestamosRes.error)
-      if (empleadosRes.error) console.log('ERROR empleados:', empleadosRes.error)
-      if (pagosPendientesRes.error) console.log('ERROR pagos pendientes:', pagosPendientesRes.error)
-
-      setPrestamos((prestamosRes.data as unknown as Prestamo[]) || [])
-      setEmpleados((empleadosRes.data as Empleado[]) || [])
-      setPagosPendientes((pagosPendientesRes.data as unknown as PagoPendiente[]) || [])
+      setPrestamos((prestamosRes.data as Prestamo[]) || [])
       await cargarClientes()
     } catch (error) {
       console.log('ERROR cargarTodo:', error)
@@ -340,13 +178,11 @@ export default function AdminHome() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('ADMIN HOME useFocusEffect -> cargarTodo')
       void cargarTodo()
     }, [cargarTodo])
   )
 
   useEffect(() => {
-    console.log('ADMIN HOME useEffect mount -> cargarTodo')
     void cargarTodo()
   }, [cargarTodo])
 
@@ -355,573 +191,88 @@ export default function AdminHome() {
     hoy.setHours(0, 0, 0, 0)
 
     let montoCobrarHoy = 0
-    let clientesHoy = 0
     let vencidos = 0
 
     for (const prestamo of prestamos) {
       const estado = normalizarEstado(prestamo.estado)
-      const total = Number(prestamo.total_a_pagar || 0)
-
       if (estado === 'pagado' || estado === 'cancelado') continue
 
       if (prestamo.fecha_limite) {
-        const fechaLimite = new Date(prestamo.fecha_limite + 'T00:00:00')
+        const fechaLimite = new Date(`${prestamo.fecha_limite}T00:00:00`)
         fechaLimite.setHours(0, 0, 0, 0)
 
-        if (
-          fechaLimite.getFullYear() === hoy.getFullYear() &&
-          fechaLimite.getMonth() === hoy.getMonth() &&
-          fechaLimite.getDate() === hoy.getDate()
-        ) {
-          clientesHoy += 1
-          montoCobrarHoy += total
+        if (fechaLimite.getTime() === hoy.getTime()) {
+          montoCobrarHoy += Number(prestamo.total_a_pagar || 0)
         }
       }
 
       if (prestamo.fecha_inicio_mora) {
-        const fechaMora = new Date(prestamo.fecha_inicio_mora + 'T00:00:00')
+        const fechaMora = new Date(`${prestamo.fecha_inicio_mora}T00:00:00`)
         fechaMora.setHours(0, 0, 0, 0)
-
-        if (hoy.getTime() >= fechaMora.getTime()) {
-          vencidos += 1
-        }
+        if (hoy.getTime() >= fechaMora.getTime()) vencidos += 1
       }
     }
 
-    return {
-      montoCobrarHoy,
-      clientesHoy,
-      vencidos,
-    }
+    return { montoCobrarHoy, vencidos }
   }, [prestamos])
 
-  const resumenGeneral = useMemo(() => {
-    let totalCalle = 0
-    let activos = 0
-
-    for (const prestamo of prestamos) {
-      const estado = normalizarEstado(prestamo.estado)
-
-      if (estado !== 'pagado' && estado !== 'cancelado') {
-        activos += 1
-        totalCalle += Number(prestamo.total_a_pagar || 0)
-      }
-    }
-
-    return {
-      totalCalle,
-      activos,
-      clientesActivos: clientes.length,
-      empleadosActivos: empleados.length,
-    }
-  }, [prestamos, clientes, empleados])
-
   const clientesConPrestamo = useMemo<ClienteConPrestamo[]>(() => {
-    const clientesActivos = clientes.filter((cliente) => {
-      const tienePrestamo = cliente.prestamos?.some((p) => p.estado === 'activo')
-      return Boolean(tienePrestamo)
-    })
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
 
-    return clientesActivos
+    return clientes
       .map((cliente) => {
-        const prestamosActivos = (cliente.prestamos || []).filter((p) => p.estado === 'activo')
-        const prestamo = prestamosActivos.sort((a, b) =>
-          String(b.fecha_inicio || '').localeCompare(String(a.fecha_inicio || ''))
-        )[0]
+        const prestamoActivo = (cliente.prestamos || [])
+          .filter((p) => normalizarEstado(p.estado) === 'activo')
+          .sort((a, b) => String(b.fecha_inicio || '').localeCompare(String(a.fecha_inicio || '')))[0]
+
+        if (!prestamoActivo) return null
+
+        const fechaLimite = prestamoActivo.fecha_limite || null
+        const fechaLimiteDate = fechaLimite ? new Date(`${fechaLimite}T00:00:00`) : null
+        const estadoCobro =
+          fechaLimiteDate && fechaLimiteDate.getTime() < hoy.getTime() ? 'ATRASADO' : 'AL DÍA'
 
         return {
           id: cliente.id,
           nombre: cliente.nombre,
-          telefono: cliente.telefono,
-          email: cliente.email || null,
-          dni: cliente.dni,
-          prestamo,
-          deudaActual: Number(prestamo?.total_a_pagar || 0),
-          proximoPago: prestamo?.fecha_limite || null,
+          prestamoId: prestamoActivo.id,
+          deudaActual: Number(prestamoActivo.total_a_pagar || 0),
+          fechaLimite,
+          estadoCobro,
         }
       })
-      .sort((a, b) => {
-        const fechaA = a.proximoPago ? new Date(a.proximoPago).getTime() : Infinity
-        const fechaB = b.proximoPago ? new Date(b.proximoPago).getTime() : Infinity
-        return fechaA - fechaB
-      })
+      .filter(Boolean)
+      .sort((a, b) => Number(b.deudaActual) - Number(a.deudaActual)) as ClienteConPrestamo[]
   }, [clientes])
-
-  const onChangeBusquedaCliente = useCallback((texto: string) => {
-    setBusquedaCliente(texto)
-  }, [])
 
   const clientesFiltrados = useMemo(() => {
     const termino = busquedaCliente.trim().toLowerCase()
     if (!termino) return clientesConPrestamo
 
     return clientesConPrestamo.filter((cliente) => {
-      const nombre = `${cliente.nombre || ''}`.toLowerCase()
-      const email = (cliente.email || '').toLowerCase()
-      const dni = String(cliente.dni || '').toLowerCase()
-      const telefono = String(cliente.telefono || '').toLowerCase()
-
-      return (
-        nombre.includes(termino) ||
-        email.includes(termino) ||
-        dni.includes(termino) ||
-        telefono.includes(termino)
-      )
+      return cliente.nombre.toLowerCase().includes(termino)
     })
   }, [busquedaCliente, clientesConPrestamo])
-
-  useEffect(() => {
-    console.log('BUSQUEDA CLIENTES:', busquedaCliente)
-  }, [busquedaCliente])
-
-  useEffect(() => {
-    console.log('CLIENTES FILTRADOS:', clientesFiltrados)
-  }, [clientesFiltrados])
-
-  useEffect(() => {
-    clientes.forEach((cliente) => {
-      console.log('CLIENTE:', cliente)
-    })
-  }, [clientes])
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
   }
 
-  const irNuevoPrestamo = () => router.push('/nuevo-prestamo' as any)
-  const irNuevoCliente = () => router.push('/nuevo-cliente' as any)
-  const irNuevoEmpleado = () => router.push('/nuevo-empleado' as any)
-  const irClientes = () => router.push('/clientes' as any)
-  const irConfiguraciones = () => router.push('/configuraciones' as any)
-
-  const procesarPagoPendiente = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
-    if (procesandoPagoId) return
-
-    try {
-      setProcesandoPagoId(pagoId)
-      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
-        body: { pago_id: pagoId, accion },
-      })
-
-      if (error) throw error
-      if (data?.error) throw new Error(String(data.error))
-
-      await cargarTodo()
-    } catch (error: any) {
-      console.log('ERROR procesarPagoPendiente:', error)
-      Alert.alert('Error', error?.message || 'No se pudo procesar el pago pendiente')
-    } finally {
-      setProcesandoPagoId(null)
-    }
-  }
-
-  // ✅ FIX: usando cliente_id consistentemente (igual que cargar-pago y nuevo-prestamo)
   const verCliente = (clienteId: string) =>
     router.push({ pathname: '/cliente-detalle', params: { cliente_id: clienteId } } as any)
 
-  const cargarPago = (clienteId: string) =>
-    router.push({ pathname: '/cargar-pago', params: { cliente_id: clienteId } } as any)
-
-  const BadgeEstado = ({ texto }: { texto: string }) => {
-    return (
-      <View style={[styles.badge, styles.badgeVerde]}>
-        <Text style={styles.badgeText}>{texto}</Text>
-      </View>
-    )
-  }
-
-  const Sidebar = () => (
-    <View style={[styles.sidebar, esMobile && styles.sidebarMobile]}>
-      <View style={styles.brandBlock}>
-        <Text style={styles.logoMini}>CréditoPro</Text>
-        <Text style={styles.logoSub}>Administrador</Text>
-      </View>
-
-      <View style={[styles.sidebarMenu, esMobile && styles.sidebarMenuMobile]}>
-        <Pressable style={[styles.sideItem, styles.sideItemActive]}>
-          <Text style={[styles.sideItemText, styles.sideItemTextActive]}>Home</Text>
-        </Pressable>
-
-        <Pressable style={styles.sideItem} onPress={irConfiguraciones}>
-          <Text style={styles.sideItemText}>Configuraciones</Text>
-        </Pressable>
-      </View>
-    </View>
-  )
-
-  const Header = () => (
-    <View style={styles.header}>
-      <View style={styles.headerLeft}>
-        <View style={styles.logoCircle}>
-          <Text style={styles.logoCircleText}>C</Text>
-        </View>
-
-        <View>
-          <Text style={styles.headerTitle}>Hola, {nombreAdmin}</Text>
-          <Text style={styles.headerSub}>Control rápido de cobros, clientes y empleados</Text>
-          <Text style={styles.headerSub}>Tenés {pagosPendientes.length} pagos pendientes</Text>
-        </View>
-      </View>
-
-      <TouchableOpacity style={styles.logoutIconButton} onPress={cerrarSesion}>
-        <Text style={styles.logoutIconText}>↗</Text>
-      </TouchableOpacity>
-    </View>
-  )
-
-  const BloqueHoy = () => (
-    <View style={[styles.hoyCard, esDesktop && styles.hoyCardDesktop]}>
-      <Text style={styles.sectionEyebrow}>HOY</Text>
-
-      <View style={styles.hoyMainRow}>
-        <View style={styles.hoyMainBlock}>
-          <Text style={styles.hoyMainLabel}>A cobrar hoy</Text>
-          <Text style={styles.hoyMainValue}>{formatearMoneda(resumenHoy.montoCobrarHoy)}</Text>
-        </View>
-      </View>
-
-      <View style={[styles.hoyStatsRow, esMobile && styles.hoyStatsColumn]}>
-        <View style={styles.hoyMiniCard}>
-          <Text style={styles.hoyMiniNumber}>{resumenHoy.clientesHoy}</Text>
-          <Text style={styles.hoyMiniLabel}>Clientes hoy</Text>
-        </View>
-
-        <View style={styles.hoyMiniCard}>
-          <Text style={[styles.hoyMiniNumber, { color: '#F87171' }]}>{resumenHoy.vencidos}</Text>
-          <Text style={styles.hoyMiniLabel}>Vencidos</Text>
-        </View>
-        <View style={styles.hoyMiniCard}>
-          <Text style={[styles.hoyMiniNumber, { color: '#F59E0B' }]}>{pagosPendientes.length}</Text>
-          <Text style={styles.hoyMiniLabel}>Pagos pendientes</Text>
-        </View>
-      </View>
-    </View>
-  )
-
-  const AccionesRapidas = () => (
-    <View style={styles.panel}>
-      <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-      <Text style={styles.sectionSub}>Lo más usado para cobrar y cargar movimientos</Text>
-
-      <View style={[styles.actionsGrid, esMobile && styles.actionsGridMobile]}>
-        <TouchableOpacity style={[styles.actionCard, styles.actionPrimary]} onPress={irNuevoPrestamo}>
-          <Text style={styles.actionTitle}>➕ Nuevo préstamo</Text>
-          <Text style={styles.actionSub}>Crear crédito nuevo</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/cargar-pago' as any)}
-        >
-          <Text style={styles.actionTitle}>💵 Cargar pago</Text>
-          <Text style={styles.actionSub}>Registrar cobro</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionCard} onPress={irNuevoCliente}>
-          <Text style={styles.actionTitle}>👤 Nuevo cliente</Text>
-          <Text style={styles.actionSub}>Agregar cliente</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionCard} onPress={irNuevoEmpleado}>
-          <Text style={styles.actionTitle}>🧑‍💼 Nuevo empleado</Text>
-          <Text style={styles.actionSub}>Agregar empleado al sistema</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  )
-
-  const PagosPendientesPanel = () => (
-    <View style={styles.panel}>
-      <View style={styles.panelHeaderTop}>
-        <View>
-          <Text style={styles.sectionTitle}>Pagos pendientes</Text>
-          <Text style={styles.sectionSub}>Transferencias y MP en validación administrativa</Text>
-        </View>
-        <View style={[styles.badge, styles.badgePendiente]}>
-          <Text style={styles.badgeText}>{pagosPendientes.length} pendientes</Text>
-        </View>
-      </View>
-
-      <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn, { marginBottom: 10 }]}>
-        {(['todos', 'transferencia', 'mercado_pago'] as const).map((metodoItem) => (
-          <TouchableOpacity
-            key={metodoItem}
-            style={[
-              styles.clientButton,
-              filtroMetodoPago === metodoItem && styles.clientButtonPrimary,
-            ]}
-            onPress={() => setFiltroMetodoPago(metodoItem)}
-          >
-            <Text
-              style={
-                filtroMetodoPago === metodoItem
-                  ? styles.clientButtonPrimaryText
-                  : styles.clientButtonText
-              }
-            >
-              {metodoItem === 'todos' ? 'Todos' : metodoItem === 'mercado_pago' ? 'MP' : 'Transferencia'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
-          <Text style={styles.reloadButtonText}>Refrescar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {(filtroMetodoPago === 'todos'
-        ? pagosPendientes
-        : pagosPendientes.filter((p) => p.metodo === filtroMetodoPago)
-      ).length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No hay pagos pendientes por aprobar.</Text>
-          <Text style={styles.sectionSub}>Cuando se registren transferencias o MP aparecerán aquí.</Text>
-        </View>
-      ) : (
-        <View style={styles.clientsList}>
-          {(filtroMetodoPago === 'todos'
-            ? pagosPendientes
-            : pagosPendientes.filter((p) => p.metodo === filtroMetodoPago)
-          ).map((pago) => (
-            <View key={pago.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
-              <View style={styles.clientTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>
-                    {pago.clientes?.nombre || 'Cliente sin nombre'}
-                  </Text>
-                  <Text style={styles.clientMetaHighlight}>DNI: {pago.clientes?.dni || '—'}</Text>
-                  <Text style={styles.clientMeta}>Préstamo: {pago.prestamo_id || '—'}</Text>
-                  <Text style={styles.clientMeta}>
-                    Cuota: {pago.numero_cuota ? `#${pago.numero_cuota}` : 'Sin cuota asignada'}
-                  </Text>
-                  <Text style={styles.clientMeta}>
-                    Monto: {formatearMoneda(Number(pago.monto || 0))}
-                  </Text>
-                  <Text style={styles.clientMeta}>
-                    Método: {String(pago.metodo || '').replace('_', ' ')}
-                  </Text>
-                  <View
-                    style={[
-                      styles.badge,
-                      estiloBadgePago(pago.estado) === 'aprobado' && styles.badgeVerde,
-                      estiloBadgePago(pago.estado) === 'rechazado' && styles.badgeRojo,
-                      estiloBadgePago(pago.estado) === 'pendiente' && styles.badgePendiente,
-                      { marginTop: 8 },
-                    ]}
-                  >
-                    <Text style={styles.badgeText}>
-                      Estado: {String(pago.estado || 'pendiente_aprobacion')}
-                    </Text>
-                  </View>
-                  <Text style={styles.clientMetaMuted}>
-                    Fecha: {formatearFecha(pago.created_at || pago.fecha_pago)}
-                  </Text>
-                  {!!(pago.comprobante || pago.comprobante_url) && (
-                    <Text style={styles.clientMetaMuted}>
-                      Comprobante / nota: {pago.comprobante || pago.comprobante_url}
-                    </Text>
-                  )}
-                  {!!pago.observacion_revision && (
-                    <Text style={styles.clientMetaMuted}>Observación: {pago.observacion_revision}</Text>
-                  )}
-                </View>
-              </View>
-
-              <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn]}>
-                <TouchableOpacity
-                  style={[styles.clientButton, styles.clientButtonPrimary]}
-                  onPress={() => procesarPagoPendiente(pago.id, 'aprobar')}
-                  disabled={procesandoPagoId === pago.id}
-                >
-                  <Text style={styles.clientButtonPrimaryText}>✔ Aprobar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.clientButton}
-                  onPress={() => procesarPagoPendiente(pago.id, 'rechazar')}
-                  disabled={procesandoPagoId === pago.id}
-                >
-                  <Text style={styles.clientButtonText}>✖ Rechazar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  )
-
-  const ResumenGeneral = () => (
-    <View style={styles.panel}>
-      <Text style={styles.sectionTitle}>Resumen general</Text>
-      <Text style={styles.sectionSub}>Panorama rápido del negocio</Text>
-
-      <View style={styles.summaryStack}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Total en la calle</Text>
-          <Text style={styles.summaryValue}>{formatearMoneda(resumenGeneral.totalCalle)}</Text>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Préstamos activos</Text>
-          <Text style={styles.summaryValue}>{resumenGeneral.activos}</Text>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Clientes activos</Text>
-          <Text style={styles.summaryValue}>{resumenGeneral.clientesActivos}</Text>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Empleados</Text>
-          <Text style={styles.summaryValue}>{resumenGeneral.empleadosActivos}</Text>
-        </View>
-      </View>
-    </View>
-  )
-
-  const ListaEmpleados = () => (
-    <View style={styles.panel}>
-      <View style={styles.panelHeaderTop}>
-        <View>
-          <Text style={styles.sectionTitle}>Empleados</Text>
-          <Text style={styles.sectionSub}>Usuarios empleados creados desde admin</Text>
-        </View>
-
-        <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
-          <Text style={styles.reloadButtonText}>Actualizar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {empleados.length === 0 ? (
-        <Text style={styles.emptyText}>No hay empleados cargados todavía.</Text>
-      ) : (
-        <View style={styles.clientsList}>
-          {empleados.map((empleado) => (
-            <View key={empleado.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
-              <View style={styles.clientTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>{empleado.nombre || 'Sin nombre'}</Text>
-                  <Text style={styles.clientMeta}>
-                    Email: {empleado.email || 'Sin email'}
-                  </Text>
-                  <Text style={styles.clientMeta}>
-                    Rol: {empleado.rol || 'Sin rol'}
-                  </Text>
-                </View>
-
-                <View style={[styles.badge, styles.badgeAzul]}>
-                  <Text style={styles.badgeText}>Empleado</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  )
-
-  const ListaClientes = () => (
-    <View style={styles.panel}>
-      <View style={styles.panelHeaderTop}>
-        <View>
-          <Text style={styles.sectionTitle}>Clientes</Text>
-          <Text style={styles.sectionSub}>Estado actual para cobrar rápido</Text>
-        </View>
-        <View style={styles.headerActionsRow}>
-          <TouchableOpacity style={styles.reloadButton} onPress={irClientes}>
-            <Text style={styles.reloadButtonText}>Ver clientes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
-            <Text style={styles.reloadButtonText}>Actualizar</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          value={busquedaCliente}
-          onChangeText={onChangeBusquedaCliente}
-          placeholder="Buscar por nombre, DNI o email..."
-          placeholderTextColor="#64748B"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
-
-      {clientesError ? (
-        <Text style={styles.emptyText}>
-          Error al cargar clientes: {clientesError}
-        </Text>
-      ) : clientesConPrestamo.length === 0 ? (
-        <Text style={styles.emptyText}>No hay clientes con préstamos activos.</Text>
-      ) : clientesFiltrados.length === 0 ? (
-        <Text style={styles.emptyText}>No se encontraron clientes.</Text>
-      ) : (
-        <View style={styles.clientsList}>
-          {clientesFiltrados.map((cliente) => (
-            <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
-              <View style={styles.clientTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.clientName}>{cliente.nombre}</Text>
-                  <Text style={styles.clientMetaHighlight}>DNI: {cliente.dni || '—'}</Text>
-                  <Text style={styles.clientMetaHighlight}>
-                    Email: {cliente.email || 'Sin correo'}
-                  </Text>
-                  <Text style={styles.clientMetaMuted}>
-                    Teléfono: {cliente.telefono || 'Sin teléfono'}
-                  </Text>
-                </View>
-
-                <BadgeEstado
-                  texto="Con préstamo"
-                />
-              </View>
-
-              <View style={[styles.clientInfoGrid, esMobile && styles.clientInfoGridMobile]}>
-                <View style={styles.clientInfoBox}>
-                  <Text style={styles.clientInfoLabel}>Deuda actual</Text>
-                  <Text style={styles.clientInfoValue}>
-                    {formatearMoneda(cliente.deudaActual)}
-                  </Text>
-                </View>
-
-                <View style={styles.clientInfoBox}>
-                  <Text style={styles.clientInfoLabel}>Próximo pago</Text>
-                  <Text style={styles.clientInfoValue}>
-                    {formatearFecha(cliente.proximoPago)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={[styles.clientButtonsRow, esMobile && styles.clientButtonsColumn]}>
-                <TouchableOpacity
-                  style={[styles.clientButton, styles.clientButtonPrimary]}
-                  onPress={() => cargarPago(cliente.id)}
-                >
-                  <Text style={styles.clientButtonPrimaryText}>Cargar pago</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.clientButton}
-                  onPress={() => verCliente(cliente.id)}
-                >
-                  <Text style={styles.clientButtonText}>Ver detalle</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  )
+  const irNuevoPrestamo = () => router.push('/nuevo-prestamo' as any)
+  const irNuevoCliente = () => router.push('/nuevo-cliente' as any)
+  const irRegistrarPago = () => router.push('/cargar-pago' as any)
+  const irConfiguraciones = () => router.push('/configuraciones' as any)
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.loadingCard}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color="#6366F1" />
           <Text style={styles.loadingText}>Cargando panel...</Text>
         </View>
       </View>
@@ -931,43 +282,148 @@ export default function AdminHome() {
   return (
     <View style={styles.screen}>
       <View style={[styles.layout, esDesktop ? styles.layoutDesktop : styles.layoutMobile]}>
-        <Sidebar />
+        <View style={[styles.sidebar, esMobile && styles.sidebarMobile]}>
+          <View style={styles.brandBlock}>
+            <Text style={styles.logoMini}>CréditoPro</Text>
+            <Text style={styles.logoSub}>Administrador</Text>
+          </View>
+
+          <View style={[styles.sidebarMenu, esMobile && styles.sidebarMenuMobile]}>
+            <Pressable style={[styles.sideItem, styles.sideItemActive]}>
+              <Text style={[styles.sideItemText, styles.sideItemTextActive]}>Home</Text>
+            </Pressable>
+
+            <Pressable style={styles.sideItem} onPress={irConfiguraciones}>
+              <Text style={styles.sideItemText}>Configuraciones</Text>
+            </Pressable>
+          </View>
+        </View>
 
         <View style={styles.main}>
-          <Header />
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>Hola, {nombreAdmin}</Text>
+              <Text style={styles.headerSub}>Panel de control diario</Text>
+            </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-          >
-            {esDesktop ? (
-              <>
-                <BloqueHoy />
-                <AccionesRapidas />
-                <PagosPendientesPanel />
-                <View style={styles.bottomGridDesktop}>
-                  <View style={styles.bottomLeftDesktop}>
-                    {ListaClientes()}
-                    <ListaEmpleados />
-                  </View>
+            <TouchableOpacity style={styles.logoutIconButton} onPress={cerrarSesion}>
+              <Text style={styles.logoutIconText}>Salir</Text>
+            </TouchableOpacity>
+          </View>
 
-                  <View style={styles.bottomRightDesktop}>
-                    <ResumenGeneral />
-                  </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={[styles.kpiGrid, esMobile && styles.kpiGridMobile]}>
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>A cobrar hoy</Text>
+                <Text style={styles.kpiValue}>{formatearMoneda(resumenHoy.montoCobrarHoy)}</Text>
+              </View>
+
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Clientes activos</Text>
+                <Text style={styles.kpiValue}>{clientesConPrestamo.length}</Text>
+              </View>
+
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Préstamos vencidos</Text>
+                <Text style={[styles.kpiValue, { color: '#FCA5A5' }]}>{resumenHoy.vencidos}</Text>
+              </View>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>Acciones rápidas</Text>
+              <View style={[styles.actionsGrid, esMobile && styles.actionsGridMobile]}>
+                <Pressable
+                  style={({ hovered, pressed }) => [
+                    styles.actionCard,
+                    styles.actionPrimary,
+                    hovered && Platform.OS === 'web' && styles.actionCardHovered,
+                    pressed && styles.actionCardPressed,
+                  ]}
+                  onPress={irNuevoPrestamo}
+                >
+                  <Text style={styles.actionIcon}>💸</Text>
+                  <Text style={styles.actionTitle}>Nuevo préstamo</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ hovered, pressed }) => [
+                    styles.actionCard,
+                    hovered && Platform.OS === 'web' && styles.actionCardHovered,
+                    pressed && styles.actionCardPressed,
+                  ]}
+                  onPress={irRegistrarPago}
+                >
+                  <Text style={styles.actionIcon}>✅</Text>
+                  <Text style={styles.actionTitle}>Registrar pago</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ hovered, pressed }) => [
+                    styles.actionCard,
+                    hovered && Platform.OS === 'web' && styles.actionCardHovered,
+                    pressed && styles.actionCardPressed,
+                  ]}
+                  onPress={irNuevoCliente}
+                >
+                  <Text style={styles.actionIcon}>👤</Text>
+                  <Text style={styles.actionTitle}>Nuevo cliente</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
+                <TouchableOpacity style={styles.reloadButton} onPress={cargarTodo}>
+                  <Text style={styles.reloadButtonText}>Actualizar</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={busquedaCliente}
+                  onChangeText={setBusquedaCliente}
+                  placeholder="Buscar cliente..."
+                  placeholderTextColor="#64748B"
+                />
+              </View>
+
+              {clientesError ? (
+                <Text style={styles.emptyText}>Error al cargar clientes: {clientesError}</Text>
+              ) : clientesFiltrados.length === 0 ? (
+                <Text style={styles.emptyText}>No hay clientes con préstamos activos.</Text>
+              ) : (
+                <View style={styles.clientsList}>
+                  {clientesFiltrados.map((cliente) => (
+                    <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
+                      <View style={styles.clientTop}>
+                        <View>
+                          <Text style={styles.clientName}>{cliente.nombre}</Text>
+                          <Text style={styles.clientDebt}>Monto restante: {formatearMoneda(cliente.deudaActual)}</Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            cliente.estadoCobro === 'AL DÍA' ? styles.badgeOk : styles.badgeLate,
+                          ]}
+                        >
+                          <Text style={styles.statusText}>{cliente.estadoCobro}</Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[styles.clientButton, styles.clientButtonPrimary]}
+                        onPress={() => verCliente(cliente.id)}
+                      >
+                        <Text style={styles.clientButtonPrimaryText}>Ver más</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
-              </>
-            ) : (
-              <>
-                <BloqueHoy />
-                <AccionesRapidas />
-                <PagosPendientesPanel />
-                <ResumenGeneral />
-                <ListaEmpleados />
-                {ListaClientes()}
-              </>
-            )}
-
-            {esWeb && <View style={{ height: 10 }} />}
+              )}
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -980,18 +436,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#020817',
   },
-
-  layout: {
-    flex: 1,
-  },
-
-  layoutDesktop: {
-    flexDirection: 'row',
-  },
-
-  layoutMobile: {
-    flexDirection: 'column',
-  },
+  layout: { flex: 1 },
+  layoutDesktop: { flexDirection: 'row' },
+  layoutMobile: { flexDirection: 'column' },
 
   sidebar: {
     width: 220,
@@ -1002,43 +449,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 18,
   },
-
   sidebarMobile: {
     width: '100%',
     borderRightWidth: 0,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
-    paddingTop: 14,
-    paddingBottom: 14,
+    paddingVertical: 14,
   },
-
-  brandBlock: {
-    marginBottom: 8,
-  },
-
+  brandBlock: { marginBottom: 8 },
   logoMini: {
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '800',
   },
-
   logoSub: {
     color: '#94A3B8',
     marginTop: 4,
     fontSize: 12,
   },
-
   sidebarMenu: {
     marginTop: 24,
     gap: 10,
   },
-
   sidebarMenuMobile: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 14,
   },
-
   sideItem: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -1047,296 +484,152 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
-
   sideItemActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
+    backgroundColor: '#4F46E5',
+    borderColor: '#6366F1',
   },
-
   sideItemText: {
     color: '#CBD5E1',
     fontWeight: '700',
     fontSize: 14,
   },
-
-  sideItemTextActive: {
-    color: '#FFFFFF',
-  },
+  sideItemTextActive: { color: '#FFFFFF' },
 
   main: {
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-
   scrollContent: {
     paddingBottom: 28,
+    gap: 16,
   },
 
   header: {
-    minHeight: 64,
+    backgroundColor: '#020817',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    marginBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
     gap: 12,
   },
-
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-
-  logoCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#1D4ED8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  logoCircleText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 18,
-  },
-
   headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
+    color: '#F8FAFC',
+    fontSize: 26,
     fontWeight: '800',
   },
-
   headerSub: {
+    marginTop: 4,
     color: '#94A3B8',
-    marginTop: 2,
     fontSize: 13,
   },
-
   logoutIconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
     backgroundColor: '#111827',
     borderWidth: 1,
-    borderColor: '#1F2937',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: '#374151',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-
   logoutIconText: {
-    color: '#F87171',
-    fontSize: 18,
-    fontWeight: '900',
+    color: '#E2E8F0',
+    fontWeight: '700',
   },
 
-  topGridDesktop: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'stretch',
-    marginBottom: 16,
-  },
-
-  topLeftDesktop: {
-    flex: 1.3,
-  },
-
-  topRightDesktop: {
-    flex: 1,
-  },
-
-  bottomGridDesktop: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'flex-start',
-  },
-
-  bottomLeftDesktop: {
-    flex: 1.4,
-  },
-
-  bottomRightDesktop: {
-    flex: 0.8,
-  },
-
-  hoyCard: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
-
-  hoyCardDesktop: {
-    minHeight: 220,
-    justifyContent: 'space-between',
-  },
-
-  sectionEyebrow: {
-    color: '#60A5FA',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-
-  hoyMainRow: {
-    marginBottom: 18,
-  },
-
-  hoyMainBlock: {
-    backgroundColor: '#0B1220',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    padding: 18,
-  },
-
-  hoyMainLabel: {
-    color: '#94A3B8',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-
-  hoyMainValue: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '900',
-  },
-
-  hoyStatsRow: {
+  kpiGrid: {
     flexDirection: 'row',
     gap: 12,
-    flexWrap: 'wrap',
   },
-
-  hoyStatsColumn: {
+  kpiGridMobile: {
     flexDirection: 'column',
   },
-
-  hoyMiniCard: {
+  kpiCard: {
     flex: 1,
-    minWidth: 160,
-    backgroundColor: '#0B1220',
-    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
-    padding: 16,
+    padding: 18,
+    shadowColor: '#020617',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-
-  hoyMiniNumber: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '900',
-  },
-
-  hoyMiniLabel: {
+  kpiLabel: {
     color: '#94A3B8',
     fontSize: 13,
-    marginTop: 6,
+    marginBottom: 8,
+  },
+  kpiValue: {
+    color: '#F8FAFC',
+    fontSize: 26,
+    fontWeight: '800',
   },
 
   panel: {
     backgroundColor: '#0F172A',
-    borderRadius: 22,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
     padding: 16,
-    marginBottom: 16,
   },
-
   sectionTitle: {
     color: '#FFFFFF',
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: '800',
-  },
-
-  sectionSub: {
-    color: '#64748B',
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: 14,
   },
 
   actionsGrid: {
     flexDirection: 'row',
     gap: 12,
-    flexWrap: 'wrap',
+    marginTop: 14,
   },
-
   actionsGridMobile: {
     flexDirection: 'column',
   },
-
   actionCard: {
     flex: 1,
-    minWidth: 180,
-    backgroundColor: '#0B1220',
+    backgroundColor: '#111827',
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 18,
-    padding: 18,
-  },
-
-  actionPrimary: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#3B82F6',
-  },
-
-  actionTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-
-  actionSub: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    marginTop: 8,
-  },
-
-  summaryStack: {
-    gap: 12,
-  },
-
-  summaryRow: {
-    backgroundColor: '#0B1220',
-    borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#1F2937',
     borderRadius: 16,
-    padding: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  actionPrimary: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#6366F1',
+  },
+  actionCardHovered: {
+    transform: [{ translateY: -2 }],
+    borderColor: '#818CF8',
+  },
+  actionCardPressed: {
+    opacity: 0.9,
+  },
+  actionIcon: {
+    fontSize: 26,
+    marginBottom: 10,
+  },
+  actionTitle: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '700',
   },
 
-  summaryLabel: {
-    color: '#94A3B8',
-    fontSize: 13,
-    marginBottom: 6,
-  },
-
-  summaryValue: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-
-  panelHeaderTop: {
+  panelHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 10,
     flexWrap: 'wrap',
-    marginBottom: 8,
   },
-  headerActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
   reloadButton: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -1345,201 +638,97 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
-
   reloadButtonText: {
     color: '#E2E8F0',
     fontWeight: '700',
     fontSize: 13,
   },
 
-  clientsList: {
-    marginTop: 6,
-  },
-
   searchContainer: {
-    marginTop: 6,
+    marginTop: 12,
     marginBottom: 12,
   },
-
   searchInput: {
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 12,
     color: '#E2E8F0',
-    paddingVertical: 10,
+    paddingVertical: 11,
     paddingHorizontal: 12,
     fontSize: 14,
   },
 
+  clientsList: { gap: 12 },
   clientCard: {
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
-    marginBottom: 12,
   },
-
   clientCardMobile: {
-    padding: 16,
+    padding: 15,
   },
-
   clientTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 12,
   },
-
   clientName: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 17,
     fontWeight: '800',
   },
-
-  clientMeta: {
+  clientDebt: {
     color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  clientMetaHighlight: {
-    color: '#E2E8F0',
     fontSize: 13,
-    fontWeight: '700',
     marginTop: 6,
   },
-
-  clientMetaMuted: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 6,
-  },
-
-  clientInfoGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-
-  clientInfoGridMobile: {
-    flexDirection: 'column',
-  },
-
-  clientInfoBox: {
-    flex: 1,
-    backgroundColor: '#111827',
-    borderRadius: 14,
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: 12,
   },
-
-  clientInfoLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginBottom: 6,
+  badgeOk: {
+    backgroundColor: '#052E16',
+    borderColor: '#22C55E',
   },
-
-  clientInfoValue: {
+  badgeLate: {
+    backgroundColor: '#7F1D1D',
+    borderColor: '#EF4444',
+  },
+  statusText: {
     color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '800',
-    fontSize: 16,
-  },
-
-  clientButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  clientButtonsColumn: {
-    flexDirection: 'column',
   },
 
   clientButton: {
-    flex: 1,
     backgroundColor: '#111827',
     borderWidth: 1,
     borderColor: '#374151',
     borderRadius: 14,
     paddingVertical: 12,
-    paddingHorizontal: 14,
     alignItems: 'center',
   },
-
   clientButtonPrimary: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
+    backgroundColor: '#4F46E5',
+    borderColor: '#6366F1',
   },
-
-  clientButtonText: {
-    color: '#E2E8F0',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-
   clientButtonPrimaryText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 14,
   },
 
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  badgeVerde: {
-    backgroundColor: '#14532D',
-    borderColor: '#22C55E',
-  },
-
-  badgeAmarillo: {
-    backgroundColor: '#713F12',
-    borderColor: '#F59E0B',
-  },
-  badgePendiente: {
-    backgroundColor: '#7C2D12',
-    borderColor: '#FB923C',
-  },
-
-  badgeRojo: {
-    backgroundColor: '#7F1D1D',
-    borderColor: '#EF4444',
-  },
-
-  badgeGris: {
-    backgroundColor: '#334155',
-    borderColor: '#64748B',
-  },
-
-  badgeAzul: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#60A5FA',
-  },
-
   emptyText: {
     color: '#94A3B8',
     fontSize: 14,
     marginTop: 8,
-  },
-  emptyState: {
-    backgroundColor: '#0B1220',
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
   },
 
   loadingContainer: {
@@ -1549,7 +738,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
-
   loadingCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
@@ -1559,7 +747,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
     alignItems: 'center',
   },
-
   loadingText: {
     color: '#CBD5E1',
     marginTop: 12,
