@@ -9,33 +9,8 @@ import {
   Text,
   View,
 } from 'react-native'
+import { goByRole } from '../lib/auth-routing'
 import { supabase } from '../lib/supabase'
-
-async function goByRole(userId: string) {
-  const { data: userData, error } = await supabase
-    .from('usuarios')
-    .select('rol')
-    .eq('id', userId)
-    .single()
-
-  if (error) {
-    router.replace('/login' as any)
-    return
-  }
-
-  const rol = userData?.rol
-
-if (rol === 'admin') {
-  router.replace('/admin-home' as any)
-  return
-}
-  if (rol === 'empleado') {
-    router.replace('/empleado-home' as any)
-    return
-  }
-
-  router.replace('/cliente-home' as any)
-}
 
 export default function Index() {
   const fadeAnim = useRef(new Animated.Value(0)).current
