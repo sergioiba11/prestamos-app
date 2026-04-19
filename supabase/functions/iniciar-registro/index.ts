@@ -15,29 +15,31 @@ type ClienteRow = {
 }
 
 function normalizeDni(value: unknown): string {
-  return String(value ?? '').replace(/[.\s-]/g, '').replace(/\D/g, '')
+  return String(value ?? '').replace(/\D/g, '')
 }
 
-async function findClienteByDni(adminClient: ReturnType<typeof createClient>, dni: string) {
-  const exact = await adminClient
-    .from('clientes')
-    .select('id,dni,nombre,telefono,usuario_id')
-    .eq('dni', dni)
-    .maybeSingle<ClienteRow>()
-
-  if (!exact.error && exact.data) {
-    return exact.data
-  }
-
-  const fallback = await adminClient
+async function fetchClienteByNormalizedDni(
+  supabase: ReturnType<typeof createClient>,
+  cleanDni: string
+): Promise<ClienteRow | null> {
+  const { data, error } = await supabase
     .from('clientes')
     .select('id,dni,nombre,telefono,usuario_id')
     .not('dni', 'is', null)
-    .limit(5000)
 
-  if (fallback.error || !fallback.data?.length) return null
+  if (error) {
+    throw new Error(error.message)
+  }
 
-  return fallback.data.find((row) => normalizeDni(row.dni) === dni) ?? null
+  const rows = (data || []) as ClienteRow[]
+  return rows.find((row) => normalizeDni(row.dni) === cleanDni) || null
+}
+
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
 }
 
 Deno.serve(async (req) => {
@@ -46,44 +48,35 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ ok: false, error: 'Método no permitido' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ ok: false, error: 'Método no permitido' }, 405)
   }
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!supabaseUrl || !serviceRole) {
-      return new Response(JSON.stringify({ ok: false, error: 'Configuración incompleta de Supabase' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (!supabaseUrl || !serviceRoleKey) {
+      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.' }, 500)
     }
 
     const body = await req.json().catch(() => ({}))
-    const dni = normalizeDni(body?.dni)
+    const cleanDni = normalizeDni(body?.dni)
 
-    if (dni.length < 7 || dni.length > 8) {
-      return new Response(JSON.stringify({ ok: false, error: 'DNI inválido' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (cleanDni.length < 7 || cleanDni.length > 8) {
+      return jsonResponse({ ok: false, error: 'DNI inválido' }, 400)
     }
 
-    const adminClient = createClient(supabaseUrl, serviceRole, {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    let cliente = await findClienteByDni(adminClient, dni)
+    let cliente = await fetchClienteByNormalizedDni(supabase, cleanDni)
 
     if (!cliente) {
-      const { data: created, error: insertError } = await adminClient
+      const { data: created, error: createError } = await supabase
         .from('clientes')
         .insert({
-          dni,
+          dni: cleanDni,
           nombre: 'Cliente',
           telefono: null,
           usuario_id: null,
@@ -91,58 +84,41 @@ Deno.serve(async (req) => {
         .select('id,dni,nombre,telefono,usuario_id')
         .maybeSingle<ClienteRow>()
 
-      if (insertError || !created) {
-        const retryCliente = await findClienteByDni(adminClient, dni)
+      if (createError || !created) {
+        console.error('[iniciar-registro] error creating cliente:', createError)
 
-        if (!retryCliente) {
-          return new Response(
-            JSON.stringify({ ok: false, error: 'No pudimos iniciar el registro del cliente.' }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          )
+        // Evita duplicados por carrera: si otro proceso lo creó, lo buscamos de nuevo.
+        const retry = await fetchClienteByNormalizedDni(supabase, cleanDni)
+        if (!retry) {
+          throw new Error(createError?.message || 'No se pudo crear el cliente para ese DNI.')
         }
-
-        cliente = retryCliente
+        cliente = retry
       } else {
         cliente = created
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            status: 'new',
-            cliente,
-          }),
-          {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        )
+        return jsonResponse({
+          ok: true,
+          status: 'new',
+          cliente,
+        })
       }
     }
 
-    if (cliente.usuario_id) {
-      return new Response(JSON.stringify({ ok: true, status: 'active' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const status = cliente.usuario_id ? 'active' : 'existing'
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        status: 'existing',
-        cliente,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
-  } catch {
-    return new Response(JSON.stringify({ ok: false, error: 'No pudimos iniciar el registro.' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return jsonResponse({
+      ok: true,
+      status,
+      cliente,
     })
+  } catch (error: any) {
+    console.error('[iniciar-registro] fatal error:', error)
+
+    return jsonResponse(
+      {
+        ok: false,
+        error: error?.message || 'No pudimos iniciar el registro.',
+      },
+      500
+    )
   }
 })
