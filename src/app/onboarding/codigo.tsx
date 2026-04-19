@@ -149,7 +149,7 @@ export default function VerificationCodeScreen() {
   }
 
   return (
-    <OnboardingScaffold title="Verificación por SMS" subtitle={`Enviamos un código ${destination}.`}>
+    <OnboardingScaffold title="Validá tu número" subtitle={`Te enviamos un código por SMS ${destination}.`}>
       <TextInput
         style={onboardingStyles.input}
         placeholder="+5491122334455"

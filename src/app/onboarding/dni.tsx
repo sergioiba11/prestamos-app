@@ -32,17 +32,21 @@ export default function OnboardingDniScreen() {
       if (result.status === 'active') {
         setStatus('')
         setActiveDni(true)
-        setError('Este DNI ya tiene una cuenta activa.')
+        setError('Este DNI ya tiene una cuenta activa')
         return
+      }
+
+      if (!result.cliente) {
+        throw new Error('No pudimos iniciar el registro')
       }
 
       updateState({
         dni: cleanDni,
-        identity: result.identity,
+        identity: result.cliente,
         registrationStatus: result.status,
         isIdentityConfirmed: true,
         isCodeValidated: false,
-        verifiedPhone: result.identity.telefono || '',
+        verifiedPhone: result.cliente.telefono || '',
       })
 
       setStatus('Continuá con la verificación')
@@ -78,35 +82,23 @@ export default function OnboardingDniScreen() {
         <View style={{ gap: 10 }}>
           <Link href={'/login' as any} asChild>
             <TouchableOpacity style={onboardingStyles.buttonSecondary}>
-              <Text style={onboardingStyles.buttonSecondaryText}>Iniciá sesión</Text>
+              <Text style={onboardingStyles.buttonSecondaryText}>Iniciar sesión</Text>
             </TouchableOpacity>
           </Link>
 
           <Link href={'/login' as any} asChild>
             <TouchableOpacity style={onboardingStyles.buttonSecondary}>
-              <Text style={onboardingStyles.buttonSecondaryText}>Recuperá tu cuenta</Text>
+              <Text style={onboardingStyles.buttonSecondaryText}>Recuperar contraseña</Text>
             </TouchableOpacity>
           </Link>
         </View>
       ) : null}
 
-      <TouchableOpacity
-        style={onboardingStyles.buttonPrimary}
-        onPress={handleContinue}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={onboardingStyles.buttonPrimaryText}>Continuar</Text>
-        )}
+      <TouchableOpacity style={onboardingStyles.buttonPrimary} onPress={handleContinue} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={onboardingStyles.buttonPrimaryText}>Continuar</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={onboardingStyles.buttonSecondary}
-        onPress={() => router.back()}
-        disabled={loading}
-      >
+      <TouchableOpacity style={onboardingStyles.buttonSecondary} onPress={() => router.back()} disabled={loading}>
         <Text style={onboardingStyles.buttonSecondaryText}>Volver</Text>
       </TouchableOpacity>
     </OnboardingScaffold>

@@ -10,25 +10,18 @@ type ClienteRow = {
   id: string
   dni: string | null
   nombre: string | null
-  apellido: string | null
   telefono: string | null
   usuario_id: string | null
-  usuarios?: { id?: string | null; email?: string | null } | Array<{ id?: string | null; email?: string | null }> | null
 }
 
 function normalizeDni(value: unknown): string {
   return String(value ?? '').replace(/[.\s-]/g, '').replace(/\D/g, '')
 }
 
-function pickUsuario(row: ClienteRow) {
-  if (!row.usuarios) return null
-  return Array.isArray(row.usuarios) ? row.usuarios[0] ?? null : row.usuarios
-}
-
 async function findClienteByDni(adminClient: ReturnType<typeof createClient>, dni: string) {
   const exact = await adminClient
     .from('clientes')
-    .select('id,dni,nombre,apellido,telefono,usuario_id,usuarios(id,email)')
+    .select('id,dni,nombre,telefono,usuario_id')
     .eq('dni', dni)
     .maybeSingle<ClienteRow>()
 
@@ -38,7 +31,7 @@ async function findClienteByDni(adminClient: ReturnType<typeof createClient>, dn
 
   const fallback = await adminClient
     .from('clientes')
-    .select('id,dni,nombre,apellido,telefono,usuario_id,usuarios(id,email)')
+    .select('id,dni,nombre,telefono,usuario_id')
     .not('dni', 'is', null)
     .limit(5000)
 
@@ -86,55 +79,67 @@ Deno.serve(async (req) => {
 
     let cliente = await findClienteByDni(adminClient, dni)
 
-    let wasCreated = false
-
     if (!cliente) {
       const { data: created, error: insertError } = await adminClient
         .from('clientes')
         .insert({
           dni,
-          nombre: `Cliente ${dni}`,
+          nombre: 'Cliente',
+          telefono: null,
+          usuario_id: null,
         })
-        .select('id,dni,nombre,apellido,telefono,usuario_id,usuarios(id,email)')
-        .single<ClienteRow>()
+        .select('id,dni,nombre,telefono,usuario_id')
+        .maybeSingle<ClienteRow>()
 
       if (insertError || !created) {
+        const retryCliente = await findClienteByDni(adminClient, dni)
+
+        if (!retryCliente) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'No pudimos iniciar el registro del cliente.' }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          )
+        }
+
+        cliente = retryCliente
+      } else {
+        cliente = created
         return new Response(
-          JSON.stringify({ ok: false, error: 'No pudimos iniciar el registro del cliente.' }),
+          JSON.stringify({
+            ok: true,
+            status: 'new',
+            cliente,
+          }),
           {
-            status: 500,
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           }
         )
       }
-
-      cliente = created
-      wasCreated = true
     }
 
-    const usuario = pickUsuario(cliente)
-    const status = cliente.usuario_id ? 'active' : wasCreated ? 'new' : 'pending'
+    if (cliente.usuario_id) {
+      return new Response(JSON.stringify({ ok: true, status: 'active' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     return new Response(
       JSON.stringify({
         ok: true,
-        status,
-        identity: {
-          dni,
-          nombre: cliente.nombre || `Cliente ${dni}`,
-          apellido: cliente.apellido,
-          telefono: cliente.telefono,
-          email: usuario?.email || null,
-          clienteId: cliente.id,
-          usuarioId: cliente.usuario_id,
-        },
+        status: 'existing',
+        cliente,
       }),
       {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
-  } catch (error) {
+  } catch {
     return new Response(JSON.stringify({ ok: false, error: 'No pudimos iniciar el registro.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
