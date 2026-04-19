@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { IdentityData } from '../lib/onboarding'
+import { IdentityData, RegistrationStatus } from '../lib/onboarding'
 
 type OnboardingState = {
   dni: string
@@ -8,6 +8,7 @@ type OnboardingState = {
   isIdentityConfirmed: boolean
   isCodeValidated: boolean
   verifiedPhone: string
+  registrationStatus: RegistrationStatus | null
   biometricsEnabled: boolean | null
 }
 
@@ -26,6 +27,7 @@ const initialState: OnboardingState = {
   isIdentityConfirmed: false,
   isCodeValidated: false,
   verifiedPhone: '',
+  registrationStatus: null,
   biometricsEnabled: null,
 }
 
