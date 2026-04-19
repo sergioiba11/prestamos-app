@@ -94,7 +94,7 @@ export default function VerificationCodeScreen() {
       })
       setPhone(sentPhone)
       setSecondsLeft(RESEND_COOLDOWN)
-      setStatus('Te enviamos un código de 4 dígitos')
+      setStatus('Te enviamos un código por SMS')
     } catch (err: any) {
       setError(err?.message || 'No pudimos enviar el código por SMS.')
     } finally {
@@ -133,7 +133,7 @@ export default function VerificationCodeScreen() {
       })
 
       Alert.alert('Listo', 'Tu teléfono fue verificado correctamente')
-      router.push('/onboarding/exito' as any)
+      router.push('/onboarding/password' as any)
     } catch (err: any) {
       const message = err?.message || 'No se pudo validar el código.'
       if (message.toLowerCase().includes('expirado')) {
@@ -149,7 +149,7 @@ export default function VerificationCodeScreen() {
   }
 
   return (
-    <OnboardingScaffold title="Verificación por SMS" subtitle={`Enviamos un código ${destination}.`}>
+    <OnboardingScaffold title="Validá tu número" subtitle={`Te enviamos un código por SMS ${destination}.`}>
       <TextInput
         style={onboardingStyles.input}
         placeholder="+5491122334455"

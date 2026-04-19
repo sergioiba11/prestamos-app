@@ -56,7 +56,7 @@ export default function WelcomeScreen() {
           <Text style={styles.title}>Tu crédito más cerca</Text>
 
           <Text style={styles.subtitle}>
-            Ingresá o activá tu cuenta para continuar
+            Ingresá o creá tu cuenta para continuar
           </Text>
 
           <TouchableOpacity
@@ -64,7 +64,7 @@ export default function WelcomeScreen() {
             onPress={() => router.push('/register' as any)}
           >
             <Text style={styles.primaryButtonText}>
-              Activar cuenta
+              Crear cuenta
             </Text>
           </TouchableOpacity>
 
