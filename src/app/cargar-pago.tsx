@@ -55,7 +55,7 @@ type Cuota = {
   estado: string | null
 }
 
-type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mercado_pago'
+type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
 
 type MercadoPagoEstado = {
@@ -113,7 +113,7 @@ type CrearPagoMpResponse = {
 }
 
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
-  return metodo
+  return metodo === 'mp' ? 'mercado_pago' : metodo
 }
 
 function limpiarNumero(texto: string, maxEnteros = 9) {
@@ -257,6 +257,7 @@ export default function CargarPago() {
   const [cuotas, setCuotas] = useState<Cuota[]>([])
 
   const [busqueda, setBusqueda] = useState('')
+  const [busquedaDebounced, setBusquedaDebounced] = useState('')
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<Prestamo | null>(null)
   const [cuotaSeleccionada, setCuotaSeleccionada] = useState<Cuota | null>(null)
@@ -286,6 +287,14 @@ export default function CargarPago() {
       void cargarEstadoMercadoPago()
     }, [metodo])
   )
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setBusquedaDebounced(busqueda.trim().toLowerCase())
+    }, 300)
+
+    return () => clearTimeout(timeout)
+  }, [busqueda])
 
   useEffect(() => {
     if (clienteSeleccionado?.id) {
@@ -341,7 +350,7 @@ export default function CargarPago() {
         mpUserId: data?.mp_user_id ? String(data.mp_user_id) : null,
       })
 
-      if (!connected && metodo === 'mercado_pago') {
+      if (!connected && metodo === 'mp') {
         setMetodo('efectivo')
       }
     } catch (error) {
@@ -356,7 +365,17 @@ export default function CargarPago() {
 
       const { data, error } = await supabase
         .from('clientes')
-        .select('id, nombre, telefono, dni')
+        .select(`
+          id,
+          nombre,
+          telefono,
+          dni,
+          usuario_id,
+          usuarios:usuario_id (
+            email,
+            nombre
+          )
+        `)
         .order('nombre', { ascending: true })
 
       if (error) {
@@ -364,7 +383,10 @@ export default function CargarPago() {
         return
       }
 
-      const lista = (data || []) as Cliente[]
+      const lista = ((data || []) as any[]).map((cliente) => ({
+        ...cliente,
+        email: cliente.usuarios?.email || null,
+      })) as Cliente[]
       setClientes(lista)
 
       if (clienteIdParam) {
@@ -461,17 +483,17 @@ export default function CargarPago() {
   }
 
   const clientesFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase()
+    const texto = busquedaDebounced
     if (!texto) return clientes
 
     return clientes.filter((cliente) => {
       return (
         cliente.nombre?.toLowerCase().includes(texto) ||
-        cliente.telefono?.toLowerCase().includes(texto) ||
-        cliente.dni?.toLowerCase().includes(texto)
+        cliente.dni?.toLowerCase().includes(texto) ||
+        cliente.email?.toLowerCase().includes(texto)
       )
     })
-  }, [clientes, busqueda])
+  }, [clientes, busquedaDebounced])
 
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
   const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
@@ -643,7 +665,7 @@ export default function CargarPago() {
       return
     }
 
-    if (metodo === 'mercado_pago' && !mpDisponible) {
+    if (metodo === 'mp' && !mpDisponible) {
       Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
       return
     }
@@ -655,7 +677,7 @@ export default function CargarPago() {
       console.log('ACCESS TOKEN REGISTRAR PAGO (últimos 10):', accessToken.slice(-10))
 
       let mpData: CrearPagoMpResponse | null = null
-      if (metodo === 'mercado_pago') {
+      if (metodo === 'mp') {
         mpData = await crearPagoMercadoPago(accessToken)
         if (!mpData?.preference_id || !mpData?.init_point) {
           throw new Error('Mercado Pago no devolvió preference_id/init_point')
@@ -672,7 +694,7 @@ export default function CargarPago() {
         metodo: normalizarMetodoPago(metodo),
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
-          metodo === 'mercado_pago' ? mpData?.preference_id || null : null,
+          metodo === 'mp' ? mpData?.preference_id || null : null,
         aplicar_a_multiples: true,
       }
 
@@ -689,7 +711,7 @@ export default function CargarPago() {
       }
 
       if (json?.pendiente) {
-        if (metodo === 'mercado_pago' && mpData?.preference_id && mpData?.init_point) {
+        if (metodo === 'mp' && mpData?.preference_id && mpData?.init_point) {
           setMpCheckout({
             preferenceId: mpData.preference_id,
             initPoint: mpData.init_point,
@@ -763,6 +785,7 @@ export default function CargarPago() {
   return (
     <>
       <ScrollView
+      keyboardShouldPersistTaps="always"
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -781,7 +804,7 @@ export default function CargarPago() {
           <TextInput
             value={busqueda}
             onChangeText={setBusqueda}
-            placeholder="Nombre, teléfono o DNI"
+            placeholder="Nombre, DNI o email"
             placeholderTextColor="#64748B"
             style={styles.input}
           />
@@ -812,9 +835,8 @@ export default function CargarPago() {
           <View style={styles.infoCard}>
             <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
             <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
-            <Text style={styles.infoMeta}>
-              Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}
-            </Text>
+            <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email || 'Sin email'}</Text>
+            <Text style={styles.infoMeta}>Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}</Text>
           </View>
 
           <TouchableOpacity style={styles.changeButton} onPress={limpiarTodo}>
@@ -865,45 +887,17 @@ export default function CargarPago() {
 
           {prestamoSeleccionado && (
             <>
-              <Text style={styles.label}>Elegí la cuota</Text>
+              <Text style={styles.label}>Cuota actual</Text>
 
-              {cuotas.length === 0 ? (
+              {!cuotaSeleccionada ? (
                 <Text style={styles.emptyText}>Este préstamo no tiene cuotas pendientes.</Text>
               ) : (
-                <View style={styles.listBox}>
-                  {cuotas.map((cuota) => {
-                    const seleccionada = cuotaSeleccionada?.id === cuota.id
-
-                    return (
-                      <TouchableOpacity
-                        key={cuota.id}
-                        style={[
-                          styles.selectCard,
-                          seleccionada && styles.selectCardActive,
-                        ]}
-                        onPress={() => {
-                          setCuotaSeleccionada(cuota)
-                          setMonto('')
-                        }}
-                      >
-                        <Text style={styles.selectName}>
-                          Cuota #{cuota.numero_cuota}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Vence: {formatearFecha(cuota.fecha_vencimiento)}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Monto cuota: {formatearMoneda(Number(cuota.monto_cuota || 0))}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Saldo pendiente: {formatearMoneda(Number(cuota.saldo_pendiente || 0))}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Estado: {cuota.estado || 'pendiente'}
-                        </Text>
-                      </TouchableOpacity>
-                    )
-                  })}
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoName}>Cuota #{cuotaSeleccionada.numero_cuota}</Text>
+                  <Text style={styles.infoMeta}>Vence: {formatearFecha(cuotaSeleccionada.fecha_vencimiento)}</Text>
+                  <Text style={styles.infoMeta}>Monto cuota: {formatearMoneda(Number(cuotaSeleccionada.monto_cuota || 0))}</Text>
+                  <Text style={styles.infoMeta}>Saldo pendiente: {formatearMoneda(Number(cuotaSeleccionada.saldo_pendiente || 0))}</Text>
+                  <Text style={styles.infoMeta}>Estado: {cuotaSeleccionada.estado || 'pendiente'}</Text>
                 </View>
               )}
             </>
@@ -923,7 +917,7 @@ export default function CargarPago() {
                 editable={metodo !== 'transferencia'}
               />
 
-              {(metodo === 'transferencia' || metodo === 'mercado_pago') && (
+              {(metodo === 'transferencia' || metodo === 'mp') && (
                 <>
                   <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
                   <Text style={styles.helperText}>
@@ -987,7 +981,7 @@ export default function CargarPago() {
                 <TouchableOpacity
                   style={[
                     styles.methodButton,
-                    metodo === 'mercado_pago' && styles.methodButtonActive,
+                    metodo === 'mp' && styles.methodButtonActive,
                     !mpDisponible && styles.methodButtonDisabled,
                   ]}
                   onPress={() => {
@@ -995,14 +989,14 @@ export default function CargarPago() {
                       Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
                       return
                     }
-                    setMetodo('mercado_pago')
+                    setMetodo('mp')
                   }}
                   activeOpacity={mpDisponible ? 0.8 : 1}
                 >
                   <Text
                     style={[
                       styles.methodButtonText,
-                      metodo === 'mercado_pago' && styles.methodButtonTextActive,
+                      metodo === 'mp' && styles.methodButtonTextActive,
                     ]}
                   >
                     MP
@@ -1029,7 +1023,7 @@ export default function CargarPago() {
                 </>
               )}
 
-              {metodo === 'mercado_pago' && (
+              {metodo === 'mp' && (
                 <Text style={styles.helperText}>
                   Se generará automáticamente un QR al registrar el pago.
                 </Text>
