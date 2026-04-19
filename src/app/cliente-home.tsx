@@ -43,6 +43,10 @@ function estadoGeneral(detalle: PrestamoDetalle) {
   return 'Al día'
 }
 
+function formatCurrency(value: number) {
+  return `$${Number(value || 0).toLocaleString('es-AR')}`
+}
+
 export default function ClienteHome() {
   const [loading, setLoading] = useState(true)
   const [cliente, setCliente] = useState<Cliente | null>(null)
@@ -82,6 +86,13 @@ export default function ClienteHome() {
     await supabase.auth.signOut()
     router.replace('/login' as any)
   }
+
+  const estadoUltimoPago = useMemo(() => {
+    if (ultimoPago?.estado === 'pendiente') return 'Pago pendiente de aprobación'
+    if (ultimoPago?.estado === 'aprobado') return 'Pago aprobado'
+    if (ultimoPago?.estado === 'rechazado') return 'Pago rechazado'
+    return 'No hay movimientos recientes'
+  }, [ultimoPago])
 
   return (
     <>
