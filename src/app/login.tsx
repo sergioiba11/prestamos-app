@@ -461,4 +461,11 @@ const styles = StyleSheet.create({
     color: '#16A34A',
     fontSize: 13,
   },
+  biometricButton: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#EFF6FF',
+  },
+  biometricButtonText: {
+    color: '#1D4ED8',
+  },
 })
