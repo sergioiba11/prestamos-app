@@ -126,7 +126,7 @@ export default function LoginScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity style={onboardingStyles.buttonSecondary} onPress={() => router.push('/onboarding/dni' as any)}>
-        <Text style={onboardingStyles.buttonSecondaryText}>Crear cuenta</Text>
+        <Text style={onboardingStyles.buttonSecondaryText}>Activar cuenta</Text>
       </TouchableOpacity>
     </OnboardingScaffold>
   )

@@ -12,18 +12,12 @@ export type IdentityData = {
   source: IdentitySource
 }
 
-const mockByDni: Record<string, IdentityData> = {
-  '30111222': {
-    dni: '30111222',
-    nombre: 'Martina Pérez (mock temporal)',
-    telefono: '+5491155512233',
-    email: 'martina.mock@creditodo.local',
-    source: 'mock-temporal',
-  },
+export function normalizeDni(value: string | null | undefined): string {
+  return String(value || '').replace(/[.\s-]/g, '').replace(/\D/g, '')
 }
 
 export async function lookupIdentityByDni(dni: string): Promise<IdentityData | null> {
-  const cleanDni = dni.replace(/\D/g, '')
+  const cleanDni = normalizeDni(dni)
 
   const { data, error } = await supabase
     .from('clientes')
@@ -45,7 +39,32 @@ export async function lookupIdentityByDni(dni: string): Promise<IdentityData | n
     }
   }
 
-  return mockByDni[cleanDni] || null
+  const { data: fallbackRows, error: fallbackError } = await supabase
+    .from('clientes')
+    .select('id,nombre,telefono,dni,usuario_id,usuarios(id,email)')
+    .not('dni', 'is', null)
+    .limit(5000)
+
+  if (fallbackError || !fallbackRows?.length) {
+    return null
+  }
+
+  const matched = fallbackRows.find((row) => normalizeDni(row.dni) === cleanDni)
+  if (!matched) {
+    return null
+  }
+
+  const usuario = Array.isArray(matched.usuarios) ? matched.usuarios[0] : matched.usuarios
+
+  return {
+    dni: matched.dni,
+    nombre: matched.nombre,
+    telefono: matched.telefono,
+    email: usuario?.email || null,
+    clienteId: matched.id,
+    usuarioId: matched.usuario_id,
+    source: 'supabase',
+  }
 }
 
 export async function registerUserFromOnboarding(params: {
@@ -54,7 +73,7 @@ export async function registerUserFromOnboarding(params: {
   password: string
   email?: string
 }) {
-  const dni = params.dni.replace(/\D/g, '')
+  const dni = normalizeDni(params.dni)
   const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
 
   const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -104,7 +123,7 @@ export async function signInWithEmailOrDni(params: {
   let email = params.identifier.trim().toLowerCase()
 
   if (params.mode === 'dni') {
-    const dni = params.identifier.replace(/\D/g, '')
+    const dni = normalizeDni(params.identifier)
 
     const { data, error } = await supabase
       .from('clientes')

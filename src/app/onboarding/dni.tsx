@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Text, TextInput, TouchableOpacity } from 'react-native'
 import { OnboardingScaffold, onboardingStyles } from '../../components/onboarding/OnboardingScaffold'
 import { useOnboarding } from '../../context/OnboardingContext'
-import { lookupIdentityByDni } from '../../lib/onboarding'
+import { lookupIdentityByDni, normalizeDni } from '../../lib/onboarding'
 
 export default function OnboardingDniScreen() {
   const { updateState } = useOnboarding()
@@ -12,7 +12,7 @@ export default function OnboardingDniScreen() {
   const [loading, setLoading] = useState(false)
 
   const handleContinue = async () => {
-    const cleanDni = dni.replace(/\D/g, '')
+    const cleanDni = normalizeDni(dni)
 
     if (cleanDni.length < 7 || cleanDni.length > 8) {
       setError('Ingresá un DNI válido de 7 u 8 dígitos.')
@@ -26,7 +26,7 @@ export default function OnboardingDniScreen() {
       const identity = await lookupIdentityByDni(cleanDni)
 
       if (!identity) {
-        setError('No encontramos un cliente con ese DNI.')
+        setError('Tu DNI todavía no fue habilitado. Contactate con la sucursal para activar tu cuenta.')
         return
       }
 
@@ -38,7 +38,7 @@ export default function OnboardingDniScreen() {
       })
       router.push('/onboarding/identidad' as any)
     } catch {
-      setError('No pudimos validar el DNI. Intentá de nuevo.')
+      setError('No pudimos validar tu DNI ahora. Intentá nuevamente en unos minutos.')
     } finally {
       setLoading(false)
     }
@@ -46,8 +46,8 @@ export default function OnboardingDniScreen() {
 
   return (
     <OnboardingScaffold
-      title="Ingresá tu DNI"
-      subtitle="Vamos a buscar tus datos para empezar el onboarding"
+      title="Activar cuenta"
+      subtitle="Ingresá tu DNI para validar que ya estás registrado por la sucursal."
     >
       <TextInput
         style={onboardingStyles.input}
@@ -58,7 +58,7 @@ export default function OnboardingDniScreen() {
           setDni(value)
           if (error) setError('')
         }}
-        maxLength={8}
+        maxLength={14}
       />
 
       {error ? <Text style={onboardingStyles.errorText}>{error}</Text> : null}
@@ -69,8 +69,16 @@ export default function OnboardingDniScreen() {
         disabled={loading}
       >
         <Text style={onboardingStyles.buttonPrimaryText}>
-          {loading ? 'Validando...' : 'Continuar'}
+          {loading ? 'Validando...' : 'Activar cuenta'}
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={onboardingStyles.buttonSecondary}
+        onPress={() => router.back()}
+        disabled={loading}
+      >
+        <Text style={onboardingStyles.buttonSecondaryText}>Volver</Text>
       </TouchableOpacity>
     </OnboardingScaffold>
   )
