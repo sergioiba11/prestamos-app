@@ -1,7 +1,21 @@
+import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { OnboardingScaffold, onboardingStyles } from '../components/onboarding/OnboardingScaffold'
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native'
 import { authTheme } from '../constants/auth-theme'
 import {
   authenticateWithBiometrics,
@@ -14,12 +28,10 @@ import { goByRole } from '../lib/auth-routing'
 import { signInWithEmailOrDni } from '../lib/onboarding'
 import { supabase } from '../lib/supabase'
 
-type Mode = 'email' | 'dni'
-
 export default function LoginScreen() {
-  const [mode, setMode] = useState<Mode>('email')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
@@ -68,8 +80,8 @@ export default function LoginScreen() {
 
     const accepted = await new Promise<boolean>((resolve) => {
       Alert.alert(
-        'Ingreso rápido',
-        '¿Querés activar ingreso con biometría para próximos accesos?',
+        'Ingreso rápido con biometría',
+        '¿Querés activar huella o rostro para tus próximos ingresos?',
         [
           { text: 'Ahora no', style: 'cancel', onPress: () => resolve(false) },
           { text: 'Activar', onPress: () => resolve(true) },
@@ -92,18 +104,19 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!identifier || !password) {
-      setError('Completá los datos para ingresar.')
+      setError('Completá DNI o email y contraseña para ingresar.')
       return
     }
 
     setLoading(true)
     setError('')
+    setSuccess('')
 
     try {
       const user = await signInWithEmailOrDni({
         identifier,
         password,
-        mode,
+        mode: 'auto',
       })
 
       await askEnableBiometricAfterLogin(user.id)
@@ -111,7 +124,7 @@ export default function LoginScreen() {
     } catch (err: any) {
       const message = err?.message || 'No se pudo iniciar sesión.'
       if (message.toLowerCase().includes('usuario no encontrado')) {
-        setError('Usuario no encontrado.')
+        setError('No encontramos tu usuario. Revisá tus datos.')
       } else {
         setError(message)
       }
@@ -154,14 +167,11 @@ export default function LoginScreen() {
         return
       }
 
+      setError('Tu sesión expiró. Ingresá nuevamente con tu método habitual')
       if (biometricState.enabled) {
-        setError('Tu sesión expiró. Ingresá nuevamente con tu método habitual')
-      } else {
-        setError('Tu sesión expiró. Ingresá nuevamente')
+        await disableBiometric()
+        setCanLoginWithBiometric(false)
       }
-
-      await disableBiometric()
-      setCanLoginWithBiometric(false)
     } catch (err: any) {
       setError(err?.message || 'No se pudo usar biometría en este momento')
     } finally {
@@ -170,20 +180,15 @@ export default function LoginScreen() {
   }
 
   const handleForgotPassword = async () => {
-    if (mode === 'dni') {
-      setError('Para recuperar contraseña ingresá con Email.')
+    const raw = identifier.trim()
+
+    if (!raw.includes('@')) {
+      setError('Para recuperar contraseña, ingresá primero tu email en el campo DNI o Email.')
       return
     }
 
     try {
-      const email = identifier.trim().toLowerCase()
-
-      if (!email) {
-        setError('Ingresá tu email para recuperar contraseña.')
-        return
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      const { error } = await supabase.auth.resetPasswordForEmail(raw.toLowerCase())
       if (error) throw error
       setSuccess('Te enviamos un correo para restablecer tu contraseña.')
       setError('')
@@ -194,106 +199,266 @@ export default function LoginScreen() {
   }
 
   return (
-    <OnboardingScaffold title="Iniciar sesión" subtitle="Entrá con email o DNI.">
-      <View style={styles.modeSwitch}>
-        {(['email', 'dni'] as Mode[]).map((item) => (
-          <TouchableOpacity
-            key={item}
-            style={[styles.modeBtn, mode === item && styles.modeBtnActive]}
-            onPress={() => {
-              setMode(item)
-              setIdentifier('')
-              setError('')
-              setSuccess('')
-            }}
-          >
-            <Text style={[styles.modeText, mode === item && styles.modeTextActive]}>
-              {item === 'email' ? 'Email' : 'DNI'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <LinearGradient colors={['#0A1F44', '#123B82', '#1D6FE8']} style={styles.headerGradient}>
+        <Image source={require('../../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
+      </LinearGradient>
 
-      <TextInput
-        style={onboardingStyles.input}
-        placeholder={mode === 'email' ? 'Email' : 'DNI'}
-        keyboardType={mode === 'email' ? 'email-address' : 'number-pad'}
-        autoCapitalize="none"
-        value={identifier}
-        onChangeText={setIdentifier}
-      />
-      <TextInput
-        style={onboardingStyles.input}
-        placeholder="Contraseña"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+      <KeyboardAvoidingView
+        style={styles.keyboardWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.card}>
+            <Text style={styles.title}>Iniciar sesión</Text>
+            <Text style={styles.subtitle}>Entrá con tu email o DNI para continuar.</Text>
 
-      <TouchableOpacity onPress={handleForgotPassword}>
-        <Text style={styles.link}>¿Olvidaste contraseña?</Text>
-      </TouchableOpacity>
+            <View style={styles.inputWrap}>
+              <Ionicons name="person-outline" size={20} color="#6B7A99" />
+              <TextInput
+                style={styles.input}
+                placeholder="DNI o Email"
+                placeholderTextColor="#93A0BA"
+                autoCapitalize="none"
+                value={identifier}
+                onChangeText={(value) => {
+                  setIdentifier(value)
+                  if (error) setError('')
+                }}
+              />
+            </View>
 
-      {error ? <Text style={onboardingStyles.errorText}>{error}</Text> : null}
-      {success ? <Text style={styles.successText}>{success}</Text> : null}
+            <View style={styles.inputWrap}>
+              <Ionicons name="lock-closed-outline" size={20} color="#6B7A99" />
+              <TextInput
+                style={styles.input}
+                placeholder="Contraseña"
+                placeholderTextColor="#93A0BA"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value)
+                  if (error) setError('')
+                }}
+              />
+              <TouchableOpacity onPress={() => setShowPassword((prev) => !prev)}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#6B7A99"
+                />
+              </TouchableOpacity>
+            </View>
 
-      {canLoginWithBiometric ? (
-        <TouchableOpacity
-          style={[onboardingStyles.buttonSecondary, styles.biometricButton]}
-          onPress={handleBiometricLogin}
-          disabled={biometricLoading}
-        >
-          {biometricLoading ? (
-            <ActivityIndicator color={authTheme.primary} />
-          ) : (
-            <Text style={[onboardingStyles.buttonSecondaryText, styles.biometricButtonText]}>
-              Ingresar con biometría
-            </Text>
-          )}
-        </TouchableOpacity>
-      ) : null}
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.inlineLinkWrap}>
+              <Text style={styles.inlineLink}>¿Olvidaste tu contraseña?</Text>
+            </TouchableOpacity>
 
-      <TouchableOpacity style={onboardingStyles.buttonPrimary} onPress={handleLogin} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={onboardingStyles.buttonPrimaryText}>Ingresar</Text>}
-      </TouchableOpacity>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {success ? <Text style={styles.successText}>{success}</Text> : null}
 
-      <TouchableOpacity style={onboardingStyles.buttonSecondary} onPress={() => router.push('/onboarding/dni' as any)}>
-        <Text style={onboardingStyles.buttonSecondaryText}>Activar cuenta</Text>
-      </TouchableOpacity>
-    </OnboardingScaffold>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Ingresar</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.ghostLinkWrap} onPress={() => router.push('/onboarding/dni' as any)}>
+              <Text style={styles.ghostLinkText}>¿No sos vos? Recuperar usuario</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.createAccountButton} onPress={() => router.push('/register' as any)}>
+              <Text style={styles.createAccountText}>Crear cuenta</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>Ingreso rápido</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {canLoginWithBiometric ? (
+            <TouchableOpacity
+              style={styles.biometricButton}
+              onPress={handleBiometricLogin}
+              disabled={biometricLoading}
+            >
+              {biometricLoading ? (
+                <ActivityIndicator color={authTheme.primary} />
+              ) : (
+                <>
+                  <Ionicons name="finger-print-outline" size={22} color={authTheme.primary} />
+                  <Text style={styles.biometricButtonText}>Ingresar con biometría</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  modeSwitch: {
-    flexDirection: 'row',
-    backgroundColor: '#EAF2FC',
-    borderRadius: 12,
-    padding: 4,
-    gap: 6,
-  },
-  modeBtn: {
+  safeArea: {
     flex: 1,
-    borderRadius: 10,
+    backgroundColor: '#EAF3FF',
+  },
+  headerGradient: {
+    paddingTop: Platform.OS === 'web' ? 26 : 12,
+    paddingBottom: 28,
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
-  modeBtnActive: {
+  logo: {
+    width: 178,
+    height: 54,
+  },
+  keyboardWrap: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    gap: 16,
+  },
+  card: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    padding: 20,
+    shadowColor: '#1A2B4C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 7,
+    gap: 12,
+    maxWidth: 560,
+    width: '100%',
+    alignSelf: 'center',
   },
-  modeText: {
-    color: authTheme.textMuted,
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#0A1F44',
+  },
+  subtitle: {
+    color: '#5F6F8F',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  inputWrap: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D8E6FA',
+    backgroundColor: '#F8FBFF',
+    minHeight: 56,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  input: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 16,
+  },
+  inlineLinkWrap: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+  },
+  inlineLink: {
+    color: '#1D4ED8',
+    fontSize: 13,
     fontWeight: '600',
   },
-  modeTextActive: {
-    color: authTheme.primary,
+  primaryButton: {
+    marginTop: 4,
+    minHeight: 54,
+    borderRadius: 15,
+    backgroundColor: '#1D4ED8',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  link: {
-    color: authTheme.primary,
-    textAlign: 'right',
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  ghostLinkWrap: {
+    alignItems: 'center',
+  },
+  ghostLinkText: {
+    color: '#4B5C7A',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  createAccountButton: {
+    minHeight: 52,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#ECF5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createAccountText: {
+    color: '#1D4ED8',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+    maxWidth: 560,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#C9DAF4',
+  },
+  dividerText: {
+    color: '#5F6F8F',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  biometricButton: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 560,
+    minHeight: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    shadowColor: '#1D4ED8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  biometricButtonText: {
+    color: '#1D4ED8',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
   },
   successText: {
-    color: authTheme.success,
+    color: '#16A34A',
     fontSize: 13,
   },
   biometricButton: {
