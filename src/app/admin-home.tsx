@@ -14,29 +14,32 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
+import { AdminClientsTable } from '../components/admin/AdminClientsTable'
+import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
-import { ClientePrestamoActivo, fetchAdminPanelData } from '../lib/admin-dashboard'
+import { AdminStatCard } from '../components/admin/AdminStatCard'
+import { fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
 }
 
-function fecha(v?: string) {
-  if (!v || v === '—') return '—'
-  const [yy, mm, dd] = v.split('-')
-  return yy && mm && dd ? `${dd}/${mm}/${yy}` : v
+function formatDate(value: string) {
+  if (!value) return '—'
+  const d = new Date(value)
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function AdminHome() {
   const { width } = useWindowDimensions()
-  const mobile = width < 980
+  const isMobile = width < 1024
 
   const [loading, setLoading] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [adminName, setAdminName] = useState('Administrador')
-  const [adminRole, setAdminRole] = useState('admin')
-  const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [filtro, setFiltro] = useState('')
+  const [adminRole, setAdminRole] = useState('Administrador')
+  const [search, setSearch] = useState('')
 
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
@@ -44,8 +47,8 @@ export default function AdminHome() {
     prestamosVencidos: 0,
     pagosPendientes: 0,
   })
-
-  const [activosCards, setActivosCards] = useState<ClientePrestamoActivo[]>([])
+  const [activeClients, setActiveClients] = useState<any[]>([])
+  const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
 
   const loadData = useCallback(async () => {
     try {
@@ -56,21 +59,22 @@ export default function AdminHome() {
       } = await supabase.auth.getUser()
 
       if (user?.id) {
-        const { data: usuarioData } = await supabase
+        const { data: userRow } = await supabase
           .from('usuarios')
           .select('nombre, rol')
           .eq('id', user.id)
           .maybeSingle()
 
-        setAdminName(usuarioData?.nombre || user.email?.split('@')[0] || 'Administrador')
-        setAdminRole(usuarioData?.rol || 'admin')
+        setAdminName(userRow?.nombre || user.email?.split('@')[0] || 'Administrador')
+        setAdminRole(userRow?.rol || 'Administrador')
       }
 
-      const dashboard = await fetchAdminPanelData()
-      setKpis(dashboard.kpis)
-      setActivosCards(dashboard.activosCards)
+      const data = await fetchAdminPanelData()
+      setKpis(data.kpis)
+      setActiveClients(data.activosCards)
+      setPendingPayments(data.pagosPendientesList)
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'No pudimos cargar el panel admin')
+      Alert.alert('Error', err?.message || 'No se pudo cargar el panel admin.')
     } finally {
       setLoading(false)
     }
@@ -83,13 +87,12 @@ export default function AdminHome() {
   )
 
   const onNavigate = (key: AdminNavKey) => {
-    setShowMobileMenu(false)
-
+    setMenuOpen(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
-    if (key === 'prestamos') return router.push('/nuevo-prestamo' as any)
-    if (key === 'pagos') return router.push('/cargar-pago' as any)
+    if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
+    if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
-    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'usuarios') return router.push('/nuevo-empleado' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
@@ -98,19 +101,24 @@ export default function AdminHome() {
     router.replace('/login' as any)
   }
 
-  const filtrados = useMemo(() => {
-    const t = filtro.trim().toLowerCase()
-    if (!t) return activosCards
-    return activosCards.filter(
-      (item) =>
-        item.nombre.toLowerCase().includes(t) || item.dni.toLowerCase().includes(t) || item.telefono.toLowerCase().includes(t)
-    )
-  }, [activosCards, filtro])
+  const filteredClients = useMemo(() => {
+    const t = search.trim().toLowerCase()
+    if (!t) return activeClients
+
+    return activeClients.filter((row) => {
+      return (
+        row.nombre.toLowerCase().includes(t) ||
+        row.dni.toLowerCase().includes(t) ||
+        row.email.toLowerCase().includes(t) ||
+        row.telefono.toLowerCase().includes(t)
+      )
+    })
+  }, [activeClients, search])
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3B82F6" />
+        <ActivityIndicator color="#3B82F6" size="large" />
         <Text style={styles.loadingText}>Cargando panel admin...</Text>
       </View>
     )
@@ -118,88 +126,109 @@ export default function AdminHome() {
 
   return (
     <View style={styles.page}>
-      {!mobile ? (
-        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      {!isMobile ? (
+        <AdminSidebar
+          active="inicio"
+          adminName={adminName}
+          adminRole={adminRole}
+          onNavigate={onNavigate}
+          onLogout={onLogout}
+        />
       ) : (
         <View style={styles.mobileTopBar}>
-          <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
+          <TouchableOpacity onPress={() => setMenuOpen(true)}>
             <Ionicons name="menu" size={24} color="#E2E8F0" />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Panel admin</Text>
-          <View style={{ width: 24 }} />
+          <Text style={styles.mobileTitle}>CrediTodo Admin</Text>
+          <TouchableOpacity>
+            <Ionicons name="notifications-outline" size={22} color="#E2E8F0" />
+          </TouchableOpacity>
         </View>
       )}
 
-      <View style={styles.main}>
-        <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
-          <View style={styles.headerRow}>
+      <View style={styles.mainWrap}>
+        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
+          <View style={styles.headerBlock}>
             <View>
-              <Text style={styles.heading}>Inicio</Text>
-              <Text style={styles.subheading}>Resumen operativo de CrediTodo</Text>
+              <Text style={styles.headerEyebrow}>Panel de administración</Text>
+              <Text style={styles.headerTitle}>¡Bienvenido, {adminName}!</Text>
+              <Text style={styles.headerSubtitle}>Gestioná tus préstamos de forma rápida y segura.</Text>
             </View>
-            <TouchableOpacity style={styles.historyBtn} onPress={() => router.push('/historial-prestamos' as any)}>
-              <Text style={styles.historyBtnText}>Ver historial de préstamos</Text>
-            </TouchableOpacity>
+
+            <View style={styles.headerRight}>
+              <View style={styles.dateBadge}>
+                <Ionicons name="calendar-outline" size={16} color="#93C5FD" />
+                <Text style={styles.dateBadgeText}>{formatDate(new Date().toISOString())}</Text>
+              </View>
+              <TouchableOpacity style={styles.bellBtn}>
+                <Ionicons name="notifications-outline" size={18} color="#DBEAFE" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.kpiGrid}>
-            <KpiCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" />
-            <KpiCard label="Clientes activos" value={String(kpis.clientesActivos)} icon="people-outline" />
-            <KpiCard label="Préstamos vencidos" value={String(kpis.prestamosVencidos)} icon="warning-outline" />
-            <KpiCard label="Pagos pendientes" value={String(kpis.pagosPendientes)} icon="cash-outline" />
+            <AdminStatCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+            <AdminStatCard label="Clientes activos" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+            <AdminStatCard label="Préstamos vencidos" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+            <AdminStatCard label="Pagos pendientes" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
           </View>
 
-          <View style={styles.section}>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-            <View style={styles.actionsWrap}>
-              <ActionButton label="Nuevo préstamo" onPress={() => router.push('/nuevo-prestamo' as any)} />
-              <ActionButton label="Registrar pago" onPress={() => router.push('/cargar-pago' as any)} />
-              <ActionButton label="Nuevo cliente" onPress={() => router.push('/nuevo-cliente' as any)} />
-              <ActionButton label="Ver clientes" onPress={() => router.push('/clientes' as any)} />
+            <View style={styles.actionsGrid}>
+              <AdminQuickAction label="Nuevo préstamo" icon="wallet-outline" onPress={() => router.push('/nuevo-prestamo' as any)} />
+              <AdminQuickAction label="Registrar pago" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
+              <AdminQuickAction label="Nuevo cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
+              <AdminQuickAction label="Ver clientes" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
             </View>
           </View>
 
-          <View style={styles.section}>
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
+            {pendingPayments.length === 0 ? (
+              <Text style={styles.emptyText}>No hay pagos pendientes por ahora.</Text>
+            ) : (
+              pendingPayments.map((p) => (
+                <View key={p.id} style={styles.pendingRow}>
+                  <View>
+                    <Text style={styles.pendingClient}>{p.cliente}</Text>
+                    <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
+                  </View>
+                  <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Buscar por nombre, DNI o teléfono"
+              placeholder="Buscar por nombre, DNI, email o teléfono"
               placeholderTextColor="#64748B"
-              value={filtro}
-              onChangeText={setFiltro}
+              value={search}
+              onChangeText={setSearch}
             />
 
-            {filtrados.length === 0 ? (
-              <Text style={styles.empty}>No encontramos préstamos activos para mostrar.</Text>
+            {filteredClients.length === 0 ? (
+              <Text style={styles.emptyText}>No hay clientes con préstamo activo para mostrar.</Text>
             ) : (
-              <View style={styles.cardsGrid}>
-                {filtrados.map((item) => (
-                  <View key={item.prestamoId} style={styles.card}>
-                    <Text style={styles.cardTitle}>{item.nombre}</Text>
-                    <Text style={styles.cardMeta}>DNI: {item.dni}</Text>
-                    <Text style={styles.cardMeta}>Teléfono: {item.telefono}</Text>
-                    <Text style={styles.cardMeta}>Monto: {money(item.monto)}</Text>
-                    <Text style={styles.cardMeta}>Estado: {item.estado}</Text>
-                    <Text style={styles.cardMeta}>Próxima fecha: {fecha(item.proximaFecha)}</Text>
-                    <TouchableOpacity
-                      style={styles.cardButton}
-                      onPress={() =>
-                        router.push({ pathname: '/cliente-detalle', params: { cliente_id: item.clienteId } } as any)
-                      }
-                    >
-                      <Text style={styles.cardButtonText}>Ver cliente</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
+              <AdminClientsTable
+                rows={filteredClients}
+                onView={(clienteId) =>
+                  router.push({ pathname: '/cliente-detalle', params: { cliente_id: clienteId } } as any)
+                }
+              />
             )}
           </View>
+
+          <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
         </ScrollView>
       </View>
 
-      <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrap}>
-          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
+          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
           <AdminSidebar
             active="inicio"
             adminName={adminName}
@@ -207,7 +236,7 @@ export default function AdminHome() {
             onNavigate={onNavigate}
             onLogout={onLogout}
             mobile
-            onCloseMobile={() => setShowMobileMenu(false)}
+            onCloseMobile={() => setMenuOpen(false)}
           />
         </View>
       </Modal>
@@ -236,8 +265,11 @@ function ActionButton({ label, onPress }: { label: string; onPress: () => void }
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#020817', flexDirection: 'row' },
-  main: { flex: 1 },
+  page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
+  mainWrap: { flex: 1 },
+  content: { padding: 18, gap: 14, paddingBottom: 30 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
+  loadingText: { color: '#94A3B8', marginTop: 10 },
   mobileTopBar: {
     position: 'absolute',
     top: 0,
@@ -248,60 +280,74 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
-    backgroundColor: '#0B1220',
+    backgroundColor: '#0A1120',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  content: { padding: 16, paddingTop: 20, gap: 14, paddingBottom: 30 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
-  heading: { color: '#fff', fontSize: 28, fontWeight: '800' },
-  subheading: { color: '#94A3B8', marginTop: 4 },
-  historyBtn: {
-    backgroundColor: '#1D4ED8',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  historyBtnText: { color: '#fff', fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  kpiCard: {
-    minWidth: 190,
-    flex: 1,
+  headerBlock: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
-    backgroundColor: '#0F172A',
-    padding: 14,
+    backgroundColor: '#0B1220',
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
   },
-  kpiIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#1E3A8A',
+  headerEyebrow: { color: '#60A5FA', fontSize: 12, fontWeight: '700' },
+  headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
+  headerSubtitle: { color: '#94A3B8', marginTop: 4 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
+  bellBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0F172A',
   },
-  kpiLabel: { color: '#94A3B8', fontSize: 12 },
-  kpiValue: { color: '#fff', fontWeight: '800', fontSize: 22, marginTop: 4 },
-  section: {
+  kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  sectionCard: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1220',
     padding: 14,
   },
-  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
-  actionsWrap: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  actionBtn: {
+  sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
+  actionsGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  pendingRow: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
     borderRadius: 10,
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    padding: 10,
+    backgroundColor: '#0F172A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
   },
-  actionText: { color: '#fff', fontWeight: '700' },
+  pendingClient: { color: '#fff', fontWeight: '700' },
+  pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
+  pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
   searchInput: {
     borderRadius: 10,
     borderWidth: 1,
@@ -312,29 +358,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 12,
   },
-  cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  card: {
-    minWidth: 240,
-    flex: 1,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    backgroundColor: '#111827',
-    padding: 12,
-  },
-  cardTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cardMeta: { color: '#94A3B8', marginTop: 4, fontSize: 12 },
-  cardButton: {
-    marginTop: 10,
-    borderRadius: 8,
-    backgroundColor: '#1D4ED8',
-    paddingVertical: 9,
-    alignItems: 'center',
-  },
-  cardButtonText: { color: '#fff', fontWeight: '700' },
-  empty: { color: '#94A3B8' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#020817' },
-  loadingText: { color: '#CBD5E1', marginTop: 10 },
+  emptyText: { color: '#94A3B8' },
+  footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
   modalWrap: { flex: 1, flexDirection: 'row' },
-  overlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
