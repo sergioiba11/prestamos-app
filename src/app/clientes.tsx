@@ -1,11 +1,12 @@
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
@@ -16,8 +17,10 @@ type ClienteListado = {
   nombre: string
   dni: string | null
   telefono: string | null
+  usuario_id: string | null
   usuarios?: {
     email: string | null
+    nombre?: string | null
   } | null
   prestamos?: {
     id: string
@@ -35,6 +38,8 @@ export default function ClientesScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [clientes, setClientes] = useState<ClienteListado[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+  const [busquedaDebounced, setBusquedaDebounced] = useState('')
 
   const cargarClientes = useCallback(async (esRefresh = false) => {
     if (esRefresh) setRefreshing(true)
@@ -49,7 +54,11 @@ export default function ClientesScreen() {
         nombre,
         dni,
         telefono,
-        usuarios(email),
+        usuario_id,
+        usuarios:usuario_id (
+          email,
+          nombre
+        ),
         prestamos (
           id,
           estado,
@@ -75,18 +84,41 @@ export default function ClientesScreen() {
     }, [cargarClientes])
   )
 
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setBusquedaDebounced(busqueda.trim().toLowerCase())
+    }, 300)
+
+    return () => clearTimeout(timeout)
+  }, [busqueda])
+
   const clientesUI = useMemo(() => {
-    return clientes.map((cliente) => {
+    const base = clientes.map((cliente) => {
       const tienePrestamo = cliente.prestamos?.some((p) => p.estado === 'activo')
       const prestamoActivo = (cliente.prestamos || []).find((p) => p.estado === 'activo')
+      const email = cliente.usuarios?.email || 'Sin email'
 
       return {
         ...cliente,
+        email,
         tienePrestamo: Boolean(tienePrestamo),
         deudaActiva: Number(prestamoActivo?.total_a_pagar || 0),
       }
     })
-  }, [clientes])
+
+    if (!busquedaDebounced) return base
+
+    return base.filter((cliente) => {
+      const nombre = cliente.nombre?.toLowerCase() || ''
+      const dni = cliente.dni?.toLowerCase() || ''
+      const email = (cliente.email || '').toLowerCase()
+      return (
+        nombre.includes(busquedaDebounced) ||
+        dni.includes(busquedaDebounced) ||
+        email.includes(busquedaDebounced)
+      )
+    })
+  }, [clientes, busquedaDebounced])
 
   if (loading) {
     return (
@@ -108,8 +140,24 @@ export default function ClientesScreen() {
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
+      <View style={styles.searchContainer}>
+        <Text style={styles.searchLabel}>Buscar por nombre, DNI o email</Text>
+        <TextInput
+          style={styles.searchInput}
+          value={busqueda}
+          onChangeText={setBusqueda}
+          placeholder="Ej: María / 30123456 / correo@dominio.com"
+          placeholderTextColor="#64748B"
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          blurOnSubmit={false}
+        />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="always"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -124,7 +172,7 @@ export default function ClientesScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.nombre}>{cliente.nombre}</Text>
                 <Text style={styles.meta}>DNI: {cliente.dni || '—'}</Text>
-                <Text style={styles.meta}>Email: {cliente.usuarios?.email || 'Sin correo'}</Text>
+                <Text style={styles.meta}>Email: {cliente.email}</Text>
                 <Text style={styles.metaMuted}>Teléfono: {cliente.telefono || 'Sin teléfono'}</Text>
               </View>
 
@@ -183,6 +231,24 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     fontWeight: '700',
     fontSize: 13,
+  },
+  searchContainer: {
+    marginBottom: 12,
+  },
+  searchLabel: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  searchInput: {
+    backgroundColor: '#0B1220',
+    borderColor: '#1E293B',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#E2E8F0',
+    fontSize: 14,
   },
   content: {
     paddingBottom: 28,

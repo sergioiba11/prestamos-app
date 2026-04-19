@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -27,6 +28,7 @@ type Cliente = {
   id: string
   nombre: string
   telefono: string | null
+  usuario_id?: string | null
   email?: string | null
   dni: string | null
   usuarios?: {
@@ -44,10 +46,23 @@ type Cliente = {
 type ClienteConPrestamo = {
   id: string
   nombre: string
+  dni: string | null
+  email: string
   prestamoId: string
   deudaActual: number
   fechaLimite: string | null
   estadoCobro: 'AL DÍA' | 'ATRASADO'
+}
+
+type PagoPendiente = {
+  id: string
+  monto: number | null
+  metodo: string | null
+  estado: string | null
+  created_at: string | null
+  cliente: {
+    nombre: string | null
+  } | null
 }
 
 function formatearMoneda(valor: number) {
@@ -71,6 +86,9 @@ export default function AdminHome() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [clientesError, setClientesError] = useState<string | null>(null)
   const [busquedaCliente, setBusquedaCliente] = useState('')
+  const [busquedaDebounced, setBusquedaDebounced] = useState('')
+  const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
+  const [aprobandoPagoId, setAprobandoPagoId] = useState<string | null>(null)
 
   const cargarClientes = useCallback(async () => {
     setClientesError(null)
@@ -82,7 +100,8 @@ export default function AdminHome() {
         nombre,
         dni,
         telefono,
-        usuarios(email),
+        usuario_id,
+        usuarios:usuario_id (email),
         prestamos (
           id,
           estado,
@@ -105,7 +124,8 @@ export default function AdminHome() {
             nombre,
             dni,
             telefono,
-            usuarios(email),
+            usuario_id,
+            usuarios:usuario_id (email),
             prestamos (
               id,
               estado,
@@ -140,6 +160,33 @@ export default function AdminHome() {
     setClientes(normalizados)
   }, [])
 
+
+  const cargarPagosPendientes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('pagos')
+      .select(`
+        id,
+        monto,
+        metodo,
+        estado,
+        created_at,
+        cliente:cliente_id (
+          nombre
+        )
+      `)
+      .in('estado', ['pendiente', 'pendiente_aprobacion'])
+      .order('created_at', { ascending: false })
+      .limit(8)
+
+    if (error) {
+      console.log('ERROR pagos pendientes:', error)
+      setPagosPendientes([])
+      return
+    }
+
+    setPagosPendientes((data as PagoPendiente[]) || [])
+  }, [])
+
   const cargarTodo = useCallback(async () => {
     try {
       setLoading(true)
@@ -168,13 +215,13 @@ export default function AdminHome() {
       }
 
       setPrestamos((prestamosRes.data as Prestamo[]) || [])
-      await cargarClientes()
+      await Promise.all([cargarClientes(), cargarPagosPendientes()])
     } catch (error) {
       console.log('ERROR cargarTodo:', error)
     } finally {
       setLoading(false)
     }
-  }, [cargarClientes])
+  }, [cargarClientes, cargarPagosPendientes])
 
   useFocusEffect(
     useCallback(() => {
@@ -185,6 +232,14 @@ export default function AdminHome() {
   useEffect(() => {
     void cargarTodo()
   }, [cargarTodo])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setBusquedaDebounced(busquedaCliente.trim().toLowerCase())
+    }, 300)
+
+    return () => clearTimeout(timeout)
+  }, [busquedaCliente])
 
   const resumenHoy = useMemo(() => {
     const hoy = new Date()
@@ -236,6 +291,8 @@ export default function AdminHome() {
         return {
           id: cliente.id,
           nombre: cliente.nombre,
+          dni: cliente.dni || null,
+          email: cliente.email || cliente.usuarios?.email || 'Sin email',
           prestamoId: prestamoActivo.id,
           deudaActual: Number(prestamoActivo.total_a_pagar || 0),
           fechaLimite,
@@ -247,13 +304,42 @@ export default function AdminHome() {
   }, [clientes])
 
   const clientesFiltrados = useMemo(() => {
-    const termino = busquedaCliente.trim().toLowerCase()
+    const termino = busquedaDebounced
     if (!termino) return clientesConPrestamo
 
     return clientesConPrestamo.filter((cliente) => {
-      return cliente.nombre.toLowerCase().includes(termino)
+      return (
+        cliente.nombre.toLowerCase().includes(termino) ||
+        (cliente.dni || '').toLowerCase().includes(termino) ||
+        (cliente.email || '').toLowerCase().includes(termino)
+      )
     })
-  }, [busquedaCliente, clientesConPrestamo])
+  }, [busquedaDebounced, clientesConPrestamo])
+
+
+  const aprobarPagoPendiente = async (pagoId: string) => {
+    if (aprobandoPagoId) return
+
+    try {
+      setAprobandoPagoId(pagoId)
+      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
+        body: { pago_id: pagoId, accion: 'aprobar' },
+      })
+
+      if (error || data?.error) {
+        Alert.alert('No se pudo aprobar', error?.message || data?.error || 'Intentá nuevamente')
+        return
+      }
+
+      await cargarPagosPendientes()
+      await cargarTodo()
+      Alert.alert('Pago aprobado', 'El pago fue acreditado correctamente.')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo aprobar el pago')
+    } finally {
+      setAprobandoPagoId(null)
+    }
+  }
 
   const cerrarSesion = async () => {
     await supabase.auth.signOut()
@@ -311,7 +397,7 @@ export default function AdminHome() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="always">
             <View style={[styles.kpiGrid, esMobile && styles.kpiGridMobile]}>
               <View style={styles.kpiCard}>
                 <Text style={styles.kpiLabel}>A cobrar hoy</Text>
@@ -371,6 +457,43 @@ export default function AdminHome() {
               </View>
             </View>
 
+
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <Text style={styles.sectionTitle}>Pagos pendientes</Text>
+                <Text style={styles.pendingCount}>{pagosPendientes.length}</Text>
+              </View>
+
+              {pagosPendientes.length === 0 ? (
+                <Text style={styles.emptyText}>No hay pagos pendientes para aprobar.</Text>
+              ) : (
+                <View style={[styles.clientsList, !esMobile && styles.clientsGrid]}>
+                  {pagosPendientes.map((pago) => (
+                    <View key={pago.id} style={styles.clientCard}>
+                      <View style={styles.clientTop}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.clientName}>{pago.cliente?.nombre || 'Cliente'}</Text>
+                          <Text style={styles.clientDebt}>Método: {pago.metodo || '—'} · Monto: {formatearMoneda(Number(pago.monto || 0))}</Text>
+                        </View>
+                        <View style={[styles.statusBadge, styles.badgePending]}>
+                          <Text style={styles.statusText}>PENDIENTE</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.clientButton, styles.clientButtonPrimary]}
+                        onPress={() => aprobarPagoPendiente(pago.id)}
+                        disabled={aprobandoPagoId === pago.id}
+                      >
+                        <Text style={styles.clientButtonPrimaryText}>
+                          {aprobandoPagoId === pago.id ? 'Aprobando...' : 'Aprobar pago'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
             <View style={styles.panel}>
               <View style={styles.panelHeader}>
                 <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
@@ -384,8 +507,9 @@ export default function AdminHome() {
                   style={styles.searchInput}
                   value={busquedaCliente}
                   onChangeText={setBusquedaCliente}
-                  placeholder="Buscar cliente..."
+                  placeholder="Buscar por nombre, DNI o email"
                   placeholderTextColor="#64748B"
+                  blurOnSubmit={false}
                 />
               </View>
 
@@ -394,13 +518,14 @@ export default function AdminHome() {
               ) : clientesFiltrados.length === 0 ? (
                 <Text style={styles.emptyText}>No hay clientes con préstamos activos.</Text>
               ) : (
-                <View style={styles.clientsList}>
+                <View style={[styles.clientsList, !esMobile && styles.clientsGrid]}>
                   {clientesFiltrados.map((cliente) => (
-                    <View key={cliente.id} style={[styles.clientCard, esMobile && styles.clientCardMobile]}>
+                    <View key={cliente.id} style={[styles.clientCard, !esMobile && styles.clientCardDesktop, esMobile && styles.clientCardMobile]}>
                       <View style={styles.clientTop}>
                         <View>
                           <Text style={styles.clientName}>{cliente.nombre}</Text>
-                          <Text style={styles.clientDebt}>Monto restante: {formatearMoneda(cliente.deudaActual)}</Text>
+                          <Text style={styles.clientDebt}>DNI: {cliente.dni || '—'} · {cliente.email}</Text>
+                          <Text style={styles.clientDebt}>Saldo restante: {formatearMoneda(cliente.deudaActual)}</Text>
                         </View>
 
                         <View
@@ -659,8 +784,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  pendingCount: {
+    color: '#FCD34D',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+
   clientsList: { gap: 12 },
+  clientsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
   clientCard: {
+    width: '100%',
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
@@ -669,6 +805,9 @@ const styles = StyleSheet.create({
   },
   clientCardMobile: {
     padding: 15,
+  },
+  clientCardDesktop: {
+    width: '49%',
   },
   clientTop: {
     flexDirection: 'row',
@@ -696,6 +835,10 @@ const styles = StyleSheet.create({
   badgeOk: {
     backgroundColor: '#052E16',
     borderColor: '#22C55E',
+  },
+  badgePending: {
+    backgroundColor: '#78350F',
+    borderColor: '#F59E0B',
   },
   badgeLate: {
     backgroundColor: '#7F1D1D',
