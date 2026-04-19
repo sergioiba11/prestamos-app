@@ -1,7 +1,8 @@
 import { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
-export type IdentitySource = 'supabase' | 'mock-temporal'
+export type IdentitySource = 'supabase' | 'edge-start-registration'
+export type RegistrationStatus = 'new' | 'existing' | 'active'
 
 export type IdentityData = {
   dni: string
@@ -12,6 +13,11 @@ export type IdentityData = {
   clienteId?: string | null
   usuarioId?: string | null
   source: IdentitySource
+}
+
+export type RegistrationLookupResult = {
+  status: RegistrationStatus
+  cliente: IdentityData | null
 }
 
 const AR_PHONE_REGEX = /^\+549\d{10}$/
@@ -27,25 +33,12 @@ export function normalizePhoneAR(value: string | null | undefined): string {
 
   let digits = raw.replace(/\D/g, '')
 
-  if (digits.startsWith('00')) {
-    digits = digits.slice(2)
-  }
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  if (digits.startsWith('54')) digits = digits.slice(2)
+  if (digits.startsWith('9') && digits.length === 11) digits = digits.slice(1)
+  if (digits.startsWith('0')) digits = digits.slice(1)
 
-  if (digits.startsWith('54')) {
-    digits = digits.slice(2)
-  }
-
-  if (digits.startsWith('9') && digits.length === 11) {
-    digits = digits.slice(1)
-  }
-
-  if (digits.startsWith('0')) {
-    digits = digits.slice(1)
-  }
-
-  if (digits.length !== 10) {
-    return ''
-  }
+  if (digits.length !== 10) return ''
 
   return `+549${digits}`
 }
@@ -56,88 +49,77 @@ export function isValidPhoneAR(value: string | null | undefined): boolean {
 
 export function maskPhone(value: string | null | undefined): string {
   const normalized = normalizePhoneAR(value)
-
-  if (!normalized) {
-    return 'tu número registrado'
-  }
-
+  if (!normalized) return 'tu número registrado'
   return `${normalized.slice(0, 5)} ${normalized.slice(5, 8)} ${normalized.slice(8, 12)} ${normalized.slice(12)}`
 }
 
-export async function lookupIdentityByDni(dni: string): Promise<IdentityData | null> {
+export async function startRegistrationByDni(dni: string): Promise<RegistrationLookupResult> {
   const cleanDni = normalizeDni(dni)
 
-  const { data, error } = await supabase
-    .from('clientes')
-    .select('id,nombre,apellido,telefono,dni,usuario_id,usuarios(id,email)')
-    .eq('dni', cleanDni)
-    .maybeSingle()
-
-  if (!error && data) {
-    const usuario = Array.isArray(data.usuarios) ? data.usuarios[0] : data.usuarios
-
-    return {
-      dni: data.dni,
-      nombre: data.nombre,
-      apellido: data.apellido,
-      telefono: data.telefono,
-      email: usuario?.email || null,
-      clienteId: data.id,
-      usuarioId: data.usuario_id,
-      source: 'supabase',
-    }
+  if (cleanDni.length < 7 || cleanDni.length > 8) {
+    throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
   }
 
-  const { data: fallbackRows, error: fallbackError } = await supabase
-    .from('clientes')
-    .select('id,nombre,apellido,telefono,dni,usuario_id,usuarios(id,email)')
-    .not('dni', 'is', null)
-    .limit(5000)
+  const { data, error } = await supabase.functions.invoke('iniciar-registro', {
+    body: { dni: cleanDni },
+  })
 
-  if (fallbackError || !fallbackRows?.length) {
-    return null
+  if (error) {
+    throw new Error('No pudimos iniciar el registro. Intentá nuevamente.')
   }
 
-  const matched = fallbackRows.find((row) => normalizeDni(row.dni) === cleanDni)
-  if (!matched) {
-    return null
+  const payload = data as
+    | {
+        ok?: boolean
+        status?: RegistrationStatus
+        cliente?: {
+          id?: string | null
+          dni?: string | null
+          nombre?: string | null
+          telefono?: string | null
+          usuario_id?: string | null
+          email?: string | null
+        } | null
+        error?: string
+      }
+    | null
+
+  if (!payload?.ok || !payload.status) {
+    throw new Error(payload?.error || 'No pudimos iniciar el registro.')
   }
 
-  const usuario = Array.isArray(matched.usuarios) ? matched.usuarios[0] : matched.usuarios
+  if (payload.status === 'active') {
+    return { status: 'active', cliente: null }
+  }
 
   return {
-    dni: matched.dni,
-    nombre: matched.nombre,
-    apellido: matched.apellido,
-    telefono: matched.telefono,
-    email: usuario?.email || null,
-    clienteId: matched.id,
-    usuarioId: matched.usuario_id,
-    source: 'supabase',
+    status: payload.status,
+    cliente: {
+      clienteId: payload.cliente?.id || null,
+      dni: payload.cliente?.dni || cleanDni,
+      nombre: payload.cliente?.nombre || 'Cliente',
+      telefono: payload.cliente?.telefono || null,
+      usuarioId: payload.cliente?.usuario_id || null,
+      email: payload.cliente?.email || null,
+      source: 'edge-start-registration',
+    },
   }
 }
 
 export async function sendPhoneOtp(phone: string) {
   const normalizedPhone = normalizePhoneAR(phone)
-
-  if (!normalizedPhone) {
-    throw new Error('Ingresá un teléfono válido en formato Argentina (+549...).')
-  }
+  if (!normalizedPhone) throw new Error('Ingresá un teléfono válido en formato Argentina (+549...).')
 
   const { error } = await supabase.auth.signInWithOtp({
     phone: normalizedPhone,
-    options: {
-      shouldCreateUser: true,
-    },
+    options: { shouldCreateUser: true },
   })
 
   if (error) {
     const message = error.message.toLowerCase()
-
     if (message.includes('sms') || message.includes('phone')) {
       throw new Error('No pudimos enviar el SMS. Revisá el número e intentá nuevamente.')
     }
-
     throw new Error(error.message)
   }
 
@@ -148,13 +130,8 @@ export async function verifyPhoneOtp(params: { phone: string; token: string }): 
   const normalizedPhone = normalizePhoneAR(params.phone)
   const token = params.token.trim()
 
-  if (!normalizedPhone) {
-    throw new Error('Ingresá un teléfono válido para verificar.')
-  }
-
-  if (!/^\d{4}$/.test(token)) {
-    throw new Error('Ingresá el código completo de 4 dígitos.')
-  }
+  if (!normalizedPhone) throw new Error('Ingresá un teléfono válido para verificar.')
+  if (!/^\d{4}$/.test(token)) throw new Error('Ingresá el código completo de 4 dígitos.')
 
   const { data, error } = await supabase.auth.verifyOtp({
     phone: normalizedPhone,
@@ -164,29 +141,18 @@ export async function verifyPhoneOtp(params: { phone: string; token: string }): 
 
   if (error) {
     const message = error.message.toLowerCase()
-
-    if (message.includes('expired')) {
-      throw new Error('Código expirado')
-    }
-
-    if (message.includes('token') || message.includes('invalid')) {
-      throw new Error('Código incorrecto')
-    }
-
+    if (message.includes('expired')) throw new Error('Código expirado')
+    if (message.includes('token') || message.includes('invalid')) throw new Error('Código incorrecto')
     throw new Error(error.message)
   }
 
-  if (!data.session) {
-    throw new Error('No se pudo confirmar la sesión luego de verificar el código.')
-  }
-
+  if (!data.session) throw new Error('No se pudo confirmar la sesión luego de verificar el código.')
   return data.session
 }
 
 export async function registerUserFromOnboarding(params: {
   dni: string
   nombre: string
-  apellido?: string
   password: string
   email?: string
   phone: string
@@ -194,24 +160,9 @@ export async function registerUserFromOnboarding(params: {
   const dni = normalizeDni(params.dni)
   const normalizedPhone = normalizePhoneAR(params.phone)
   const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
-  const displayName = [params.nombre?.trim(), params.apellido?.trim()].filter(Boolean).join(' ').trim()
+  const displayName = params.nombre?.trim() || 'Cliente'
 
-  if (!normalizedPhone) {
-    throw new Error('El teléfono verificado no es válido.')
-  }
-
-  const {
-    data: { user: authUser },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !authUser) {
-    throw new Error('Tu sesión de verificación expiró. Solicitá un nuevo código.')
-  }
-
-  if (!authUser.phone_confirmed_at) {
-    throw new Error('Primero verificá tu teléfono por SMS para continuar.')
-  }
+  if (!normalizedPhone) throw new Error('El teléfono verificado no es válido.')
 
   const { data: clienteByDni, error: clienteError } = await supabase
     .from('clientes')
@@ -220,11 +171,55 @@ export async function registerUserFromOnboarding(params: {
     .maybeSingle()
 
   if (clienteError || !clienteByDni) {
-    throw new Error('No encontramos un cliente habilitado para el DNI ingresado.')
+    throw new Error('No encontramos un registro para el DNI ingresado.')
   }
 
-  if (clienteByDni.usuario_id && clienteByDni.usuario_id !== authUser.id) {
-    throw new Error('Este DNI ya tiene una cuenta activa. Ingresá con tus credenciales.')
+  if (clienteByDni.usuario_id) {
+    throw new Error('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu cuenta.')
+  }
+
+  const {
+    data: { user: currentUser },
+  } = await supabase.auth.getUser()
+
+  let authUserId = currentUser?.id || null
+
+  if (!authUserId) {
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password: params.password,
+      phone: normalizedPhone,
+      options: {
+        data: {
+          dni,
+          role: 'cliente',
+          full_name: displayName,
+        },
+      },
+    })
+
+    if (signUpError || !signUpData.user) {
+      throw new Error(signUpError?.message || 'No se pudo crear la cuenta de autenticación.')
+    }
+
+    authUserId = signUpData.user.id
+  } else {
+    const { error: updateAuthError } = await supabase.auth.updateUser({
+      email,
+      password: params.password,
+      data: {
+        dni,
+        role: 'cliente',
+        full_name: displayName,
+      },
+    })
+
+    if (updateAuthError) {
+      if (updateAuthError.message.toLowerCase().includes('already')) {
+        throw new Error('El email ingresado ya está registrado.')
+      }
+      throw updateAuthError
+    }
   }
 
   const { data: samePhoneClients, error: phoneError } = await supabase
@@ -232,51 +227,25 @@ export async function registerUserFromOnboarding(params: {
     .select('id, dni')
     .eq('telefono', normalizedPhone)
 
-  if (phoneError) {
-    throw new Error('No pudimos validar el teléfono en este momento.')
-  }
+  if (phoneError) throw new Error('No pudimos validar el teléfono en este momento.')
 
   const isPhoneUsedByAnotherDni = (samePhoneClients || []).some((row) => normalizeDni(row.dni) !== dni)
+  if (isPhoneUsedByAnotherDni) throw new Error('El teléfono ya está asociado a otro cliente.')
 
-  if (isPhoneUsedByAnotherDni) {
-    throw new Error('El teléfono ya está asociado a otro cliente.')
-  }
-
-  const { error: updateAuthError } = await supabase.auth.updateUser({
-    email,
-    password: params.password,
-    data: {
-      dni,
-      role: 'cliente',
-      full_name: displayName || params.nombre,
-    },
-  })
-
-  if (updateAuthError) {
-    if (updateAuthError.message.toLowerCase().includes('already')) {
-      throw new Error('El email ingresado ya está registrado.')
-    }
-
-    throw updateAuthError
-  }
-
-  const { error: usuarioError } = await supabase.from('usuarios').upsert({
-    id: authUser.id,
-    nombre: displayName || params.nombre,
-    email,
-    rol: 'cliente',
-  })
+  const { error: usuarioError } = await supabase
+    .from('usuarios')
+    .upsert({ id: authUserId, nombre: displayName, email, rol: 'cliente' })
 
   if (usuarioError) throw usuarioError
 
   const { error: clienteUpdateError } = await supabase
     .from('clientes')
-    .update({ usuario_id: authUser.id, telefono: normalizedPhone })
+    .update({ usuario_id: authUserId, telefono: normalizedPhone })
     .eq('id', clienteByDni.id)
 
   if (clienteUpdateError) throw clienteUpdateError
 
-  return { userId: authUser.id, email }
+  return { userId: authUserId, email }
 }
 
 export async function signInWithEmailOrDni(params: {
@@ -314,24 +283,16 @@ export async function signInWithEmailOrDni(params: {
     email = usuario.email
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password: params.password,
-  })
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: params.password })
 
   if (error) {
     const normalized = error.message.toLowerCase()
-
     if (normalized.includes('invalid login credentials')) {
       throw new Error('Credenciales incorrectas. Revisá los datos ingresados.')
     }
-
     throw new Error(error.message)
   }
 
-  if (!data.user) {
-    throw new Error('Usuario no encontrado.')
-  }
-
+  if (!data.user) throw new Error('Usuario no encontrado.')
   return data.user
 }
