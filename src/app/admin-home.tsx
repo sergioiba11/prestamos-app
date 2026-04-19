@@ -311,6 +311,14 @@ export default function AdminHome() {
   )
 }
 
+function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
+      <Text style={styles.actionText}>{label}</Text>
+    </TouchableOpacity>
+  )
+}
+
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
