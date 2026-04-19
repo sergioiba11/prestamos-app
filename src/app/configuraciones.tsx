@@ -4,9 +4,17 @@ import * as Linking from 'expo-linking'
 import { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
+import {
+  authenticateWithBiometrics,
+  disableBiometric,
+  enableBiometricForUser,
+  getBiometricAvailability,
+  getBiometricState,
+} from '../lib/biometrics'
 import { supabase } from '../lib/supabase'
 
 type EstadoMp = 'loading' | 'connected' | 'disconnected'
+type BiometricStatus = 'loading' | 'enabled' | 'disabled' | 'unsupported' | 'not_enrolled'
 
 type MercadoPagoConfig = {
   connected: boolean
@@ -25,6 +33,37 @@ export default function Configuraciones() {
   const [isConnectingMp, setIsConnectingMp] = useState(false)
   const [isDisconnectingMp, setIsDisconnectingMp] = useState(false)
   const [mpConfig, setMpConfig] = useState<MercadoPagoConfig | null>(null)
+  const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>('loading')
+  const [updatingBiometric, setUpdatingBiometric] = useState(false)
+
+  const loadBiometricStatus = useCallback(async () => {
+    if (!session?.user?.id) {
+      setBiometricStatus('disabled')
+      return
+    }
+
+    const [availability, state] = await Promise.all([
+      getBiometricAvailability(),
+      getBiometricState(),
+    ])
+
+    if (!availability.supported) {
+      setBiometricStatus('unsupported')
+      return
+    }
+
+    if (!availability.enrolled) {
+      setBiometricStatus('not_enrolled')
+      return
+    }
+
+    if (state.enabled && state.userId === session.user.id) {
+      setBiometricStatus('enabled')
+      return
+    }
+
+    setBiometricStatus('disabled')
+  }, [session?.user?.id])
 
   const cargarEstadoMercadoPago = useCallback(async () => {
     if (!session?.user?.id) {
@@ -62,17 +101,59 @@ export default function Configuraciones() {
   useFocusEffect(
     useCallback(() => {
       void cargarEstadoMercadoPago()
-    }, [cargarEstadoMercadoPago])
+      void loadBiometricStatus()
+    }, [cargarEstadoMercadoPago, loadBiometricStatus])
   )
 
-  const handleConnectMercadoPago = useCallback(async () => {
-    console.log('[MP] Iniciando conexión')
+  const handleEnableBiometrics = useCallback(async () => {
+    if (!session?.user?.id || updatingBiometric) return
 
+    setUpdatingBiometric(true)
+    try {
+      const availability = await getBiometricAvailability()
+
+      if (!availability.supported) {
+        Alert.alert('Biometría', 'Tu dispositivo no soporta biometría')
+        setBiometricStatus('unsupported')
+        return
+      }
+
+      if (!availability.enrolled) {
+        Alert.alert('Biometría', 'No tenés biometría configurada en este dispositivo')
+        setBiometricStatus('not_enrolled')
+        return
+      }
+
+      const authResult = await authenticateWithBiometrics()
+      if (!authResult.success) {
+        Alert.alert('Biometría', 'No se pudo verificar tu identidad biométrica')
+        return
+      }
+
+      await enableBiometricForUser(session.user.id)
+      setBiometricStatus('enabled')
+      Alert.alert('Listo', 'Biometría activada correctamente')
+    } finally {
+      setUpdatingBiometric(false)
+    }
+  }, [session?.user?.id, updatingBiometric])
+
+  const handleDisableBiometrics = useCallback(async () => {
+    if (updatingBiometric) return
+
+    setUpdatingBiometric(true)
+    try {
+      await disableBiometric()
+      setBiometricStatus('disabled')
+      Alert.alert('Listo', 'Ingreso con biometría desactivado')
+    } finally {
+      setUpdatingBiometric(false)
+    }
+  }, [updatingBiometric])
+
+  const handleConnectMercadoPago = useCallback(async () => {
     const clientId = String(MP_CLIENT_ID || '').trim()
     const redirectUri = String(MP_REDIRECT_URI || '').trim()
-
-    console.log('[MP] Client ID presente:', Boolean(clientId))
-    console.log('[MP] Redirect URI:', redirectUri || '(vacío)')
 
     if (!clientId || !redirectUri) {
       Alert.alert(
@@ -90,15 +171,9 @@ export default function Configuraciones() {
     })
 
     const oauthUrl = `https://auth.mercadopago.com.ar/authorization?${params.toString()}`
-
-    console.log('[MP] OAuth URL:', oauthUrl)
-    console.log('[MP] Plataforma:', Platform.OS)
-
     setIsConnectingMp(true)
 
     try {
-      console.log('[MP] Abriendo OAuth...')
-
       if (Platform.OS === 'web') {
         if (typeof window === 'undefined') {
           throw new Error('No se encontró window en entorno web.')
@@ -110,15 +185,12 @@ export default function Configuraciones() {
 
       await Linking.openURL(oauthUrl)
     } catch (error) {
-      console.log('[MP] Error conectando MP:', error)
-
       const message = error instanceof Error ? error.message : String(error)
       Alert.alert('Error', message || 'No se pudo abrir la conexión con Mercado Pago.')
     } finally {
       setIsConnectingMp(false)
     }
   }, [])
-
 
   const handleDisconnectMercadoPago = useCallback(async () => {
     if (!session?.user?.id || isDisconnectingMp) return
@@ -178,6 +250,15 @@ export default function Configuraciones() {
 
   const botonTexto = estadoMp === 'connected' ? 'Reconectar Mercado Pago' : 'Conectar Mercado Pago'
   const badgeConectado = estadoMp === 'connected'
+
+  const biometricMessage =
+    biometricStatus === 'enabled'
+      ? 'Ingreso rápido activo en este dispositivo.'
+      : biometricStatus === 'unsupported'
+        ? 'Tu dispositivo no soporta biometría.'
+        : biometricStatus === 'not_enrolled'
+          ? 'No tenés biometría configurada en este dispositivo.'
+          : 'Podés activar huella o rostro para ingreso rápido.'
 
   return (
     <View style={styles.screen}>
@@ -242,7 +323,44 @@ export default function Configuraciones() {
           </View>
         </View>
 
-        {/* 🔐 SEGURIDAD (DESTACADO) */}
+        <View style={[styles.card, styles.cardActive]}>
+          <Text style={styles.cardTitleActive}>Ingreso con biometría</Text>
+          <Text style={styles.cardTextActive}>{biometricMessage}</Text>
+
+          <View style={styles.buttonRow}>
+            {biometricStatus === 'enabled' ? (
+              <TouchableOpacity
+                style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]}
+                onPress={handleDisableBiometrics}
+                disabled={updatingBiometric}
+              >
+                {updatingBiometric ? (
+                  <ActivityIndicator size="small" color="#FECACA" />
+                ) : (
+                  <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.connectButton,
+                  (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric)
+                    ? styles.connectButtonDisabled
+                    : null,
+                ]}
+                onPress={handleEnableBiometrics}
+                disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}
+              >
+                {updatingBiometric ? (
+                  <ActivityIndicator size="small" color="#082F49" />
+                ) : (
+                  <Text style={styles.connectButtonText}>Activar biometría</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         <TouchableOpacity
           style={[styles.card, styles.cardActive]}
           onPress={() => router.push('/cambiar-password')}
@@ -251,7 +369,6 @@ export default function Configuraciones() {
           <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
         </TouchableOpacity>
 
-        {/* 🔒 RESTO (DESACTIVADO) */}
         <View style={[styles.card, styles.cardDisabled]}>
           <Text style={styles.cardTitleDisabled}>Cobros y mora</Text>
           <Text style={styles.cardTextDisabled}>
@@ -290,7 +407,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#020817',
     padding: 16,
   },
-
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -298,13 +414,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 12,
   },
-
   title: {
     color: '#FFFFFF',
     fontSize: 28,
     fontWeight: '800',
   },
-
   backButton: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -313,35 +427,29 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
-
   backButtonText: {
     color: '#E2E8F0',
     fontWeight: '800',
   },
-
   content: {
     paddingBottom: 24,
   },
-
   card: {
     borderRadius: 18,
     padding: 16,
     marginBottom: 14,
   },
-
   mpCard: {
     backgroundColor: '#082F49',
     borderWidth: 1,
     borderColor: '#0EA5E9',
   },
-
   buttonRow: {
     marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-
   connectButton: {
     backgroundColor: '#0EA5E9',
     borderRadius: 10,
@@ -352,17 +460,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   connectButtonDisabled: {
     opacity: 0.7,
   },
-
   connectButtonText: {
     color: '#082F49',
     fontWeight: '900',
   },
-
-
   statusRow: {
     marginTop: 8,
     flexDirection: 'row',
@@ -370,37 +474,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-
   statusBadge: {
     borderRadius: 999,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderWidth: 1,
   },
-
   statusBadgeConnected: {
     backgroundColor: '#052E16',
     borderColor: '#166534',
   },
-
   statusBadgeDisconnected: {
     backgroundColor: '#3F1D2E',
     borderColor: '#9D174D',
   },
-
   statusBadgeText: {
     fontSize: 12,
     fontWeight: '800',
   },
-
   statusBadgeTextConnected: {
     color: '#86EFAC',
   },
-
   statusBadgeTextDisconnected: {
     color: '#F9A8D4',
   },
-
   mpInfoBox: {
     marginTop: 12,
     borderWidth: 1,
@@ -410,12 +507,10 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
-
   mpInfoText: {
     color: '#BAE6FD',
     fontSize: 13,
   },
-
   disconnectButton: {
     backgroundColor: '#7F1D1D',
     borderWidth: 1,
@@ -427,12 +522,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   disconnectButtonText: {
     color: '#FEE2E2',
     fontWeight: '900',
   },
-
   cardActive: {
     backgroundColor: '#111827',
     borderWidth: 1.5,
@@ -442,33 +535,28 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-
   cardTitleActive: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
     marginBottom: 6,
   },
-
   cardTextActive: {
     color: '#CBD5E1',
     fontSize: 14,
   },
-
   cardDisabled: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
     opacity: 0.5,
   },
-
   cardTitleDisabled: {
     color: '#64748B',
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 8,
   },
-
   cardTextDisabled: {
     color: '#475569',
     fontSize: 14,

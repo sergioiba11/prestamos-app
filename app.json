@@ -19,10 +19,10 @@
       },
       "predictiveBackGestureEnabled": false
     },
-   "web": {
-  "output": "single",
-  "favicon": "./assets/images/favicon.png"
-},
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
     "plugins": [
       "expo-router",
       [
@@ -35,7 +35,15 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-local-authentication",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Permití que CreditoTodo use Face ID para ingreso rápido."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

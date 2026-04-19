@@ -282,12 +282,18 @@ export async function registerUserFromOnboarding(params: {
 export async function signInWithEmailOrDni(params: {
   identifier: string
   password: string
-  mode: 'email' | 'dni'
+  mode?: 'email' | 'dni' | 'auto'
 }) {
-  let email = params.identifier.trim().toLowerCase()
+  const rawIdentifier = params.identifier.trim()
+  const normalizedMode = params.mode || 'auto'
+  let email = rawIdentifier.toLowerCase()
 
-  if (params.mode === 'dni') {
-    const dni = normalizeDni(params.identifier)
+  const shouldTryDni =
+    normalizedMode === 'dni' ||
+    (normalizedMode === 'auto' && !rawIdentifier.includes('@') && /^\d{7,8}$/.test(normalizeDni(rawIdentifier)))
+
+  if (shouldTryDni) {
+    const dni = normalizeDni(rawIdentifier)
 
     const { data, error } = await supabase
       .from('clientes')
