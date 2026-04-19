@@ -1,8 +1,15 @@
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native'
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { OnboardingScaffold, onboardingStyles } from '../components/onboarding/OnboardingScaffold'
 import { authTheme } from '../constants/auth-theme'
+import {
+  authenticateWithBiometrics,
+  disableBiometric,
+  enableBiometricForUser,
+  getBiometricAvailability,
+  getBiometricState,
+} from '../lib/biometrics'
 import { goByRole } from '../lib/auth-routing'
 import { signInWithEmailOrDni } from '../lib/onboarding'
 import { supabase } from '../lib/supabase'
@@ -16,14 +23,72 @@ export default function LoginScreen() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [biometricLoading, setBiometricLoading] = useState(false)
+  const [canLoginWithBiometric, setCanLoginWithBiometric] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user?.id) {
-        void goByRole(data.session.user.id)
+    let mounted = true
+
+    const bootstrap = async () => {
+      const [{ data: sessionData }, availability, biometricState] = await Promise.all([
+        supabase.auth.getSession(),
+        getBiometricAvailability(),
+        getBiometricState(),
+      ])
+
+      if (!mounted) return
+
+      if (sessionData.session?.user?.id) {
+        await goByRole(sessionData.session.user.id)
+        return
       }
-    })
+
+      setCanLoginWithBiometric(
+        availability.available && biometricState.enabled && Boolean(biometricState.userId)
+      )
+    }
+
+    void bootstrap()
+
+    return () => {
+      mounted = false
+    }
   }, [])
+
+  const askEnableBiometricAfterLogin = async (userId: string) => {
+    const biometricState = await getBiometricState()
+    if (biometricState.enabled && biometricState.userId === userId) {
+      return
+    }
+
+    const availability = await getBiometricAvailability()
+    if (!availability.supported || !availability.enrolled) {
+      return
+    }
+
+    const accepted = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        'Ingreso rápido',
+        '¿Querés activar ingreso con biometría para próximos accesos?',
+        [
+          { text: 'Ahora no', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Activar', onPress: () => resolve(true) },
+        ]
+      )
+    })
+
+    if (!accepted) return
+
+    const auth = await authenticateWithBiometrics()
+    if (!auth.success) {
+      setError('No se pudo verificar tu identidad biométrica')
+      return
+    }
+
+    await enableBiometricForUser(userId)
+    setSuccess('Biometría activada correctamente')
+    setCanLoginWithBiometric(true)
+  }
 
   const handleLogin = async () => {
     if (!identifier || !password) {
@@ -40,6 +105,8 @@ export default function LoginScreen() {
         password,
         mode,
       })
+
+      await askEnableBiometricAfterLogin(user.id)
       await goByRole(user.id)
     } catch (err: any) {
       const message = err?.message || 'No se pudo iniciar sesión.'
@@ -50,6 +117,55 @@ export default function LoginScreen() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleBiometricLogin = async () => {
+    setBiometricLoading(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const availability = await getBiometricAvailability()
+
+      if (!availability.supported) {
+        setError('Tu dispositivo no soporta biometría')
+        return
+      }
+
+      if (!availability.enrolled) {
+        setError('No tenés biometría configurada en este dispositivo')
+        return
+      }
+
+      const authResult = await authenticateWithBiometrics()
+      if (!authResult.success) {
+        setError('No se pudo verificar tu identidad biométrica')
+        return
+      }
+
+      const [{ data: sessionData }, biometricState] = await Promise.all([
+        supabase.auth.getSession(),
+        getBiometricState(),
+      ])
+
+      if (sessionData.session?.user?.id) {
+        await goByRole(sessionData.session.user.id)
+        return
+      }
+
+      if (biometricState.enabled) {
+        setError('Tu sesión expiró. Ingresá nuevamente con tu método habitual')
+      } else {
+        setError('Tu sesión expiró. Ingresá nuevamente')
+      }
+
+      await disableBiometric()
+      setCanLoginWithBiometric(false)
+    } catch (err: any) {
+      setError(err?.message || 'No se pudo usar biometría en este momento')
+    } finally {
+      setBiometricLoading(false)
     }
   }
 
@@ -121,6 +237,22 @@ export default function LoginScreen() {
       {error ? <Text style={onboardingStyles.errorText}>{error}</Text> : null}
       {success ? <Text style={styles.successText}>{success}</Text> : null}
 
+      {canLoginWithBiometric ? (
+        <TouchableOpacity
+          style={[onboardingStyles.buttonSecondary, styles.biometricButton]}
+          onPress={handleBiometricLogin}
+          disabled={biometricLoading}
+        >
+          {biometricLoading ? (
+            <ActivityIndicator color={authTheme.primary} />
+          ) : (
+            <Text style={[onboardingStyles.buttonSecondaryText, styles.biometricButtonText]}>
+              Ingresar con biometría
+            </Text>
+          )}
+        </TouchableOpacity>
+      ) : null}
+
       <TouchableOpacity style={onboardingStyles.buttonPrimary} onPress={handleLogin} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={onboardingStyles.buttonPrimaryText}>Ingresar</Text>}
       </TouchableOpacity>
@@ -163,5 +295,12 @@ const styles = StyleSheet.create({
   successText: {
     color: authTheme.success,
     fontSize: 13,
+  },
+  biometricButton: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#EFF6FF',
+  },
+  biometricButtonText: {
+    color: '#1D4ED8',
   },
 })
