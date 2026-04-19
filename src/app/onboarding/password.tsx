@@ -22,7 +22,7 @@ export default function CreatePasswordScreen() {
     [hasMinLength, hasNumber, password, repeatPassword]
   )
 
-  if (!state.isCodeValidated || !state.identity) {
+  if (!state.isCodeValidated || !state.identity || !state.verifiedPhone) {
     router.replace('/onboarding/dni' as any)
     return null
   }
@@ -40,8 +40,10 @@ export default function CreatePasswordScreen() {
       await registerUserFromOnboarding({
         dni: state.identity.dni,
         nombre: state.identity.nombre,
+        apellido: state.identity.apellido || '',
         password,
         email,
+        phone: state.verifiedPhone,
       })
 
       router.push('/onboarding/biometria' as any)
