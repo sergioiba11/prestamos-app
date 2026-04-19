@@ -261,6 +261,7 @@ export default function CargarPago() {
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<Prestamo | null>(null)
   const [cuotaSeleccionada, setCuotaSeleccionada] = useState<Cuota | null>(null)
+  const [mostrarTodasCuotas, setMostrarTodasCuotas] = useState(false)
 
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
@@ -528,6 +529,7 @@ export default function CargarPago() {
     setPrestamoSeleccionado(null)
     setCuotas([])
     setCuotaSeleccionada(null)
+    setMostrarTodasCuotas(false)
     setBusqueda('')
     setMonto('')
     setMetodo('efectivo')
@@ -799,7 +801,7 @@ export default function CargarPago() {
 
       {!clienteSeleccionado ? (
         <>
-          <Text style={styles.label}>Buscar cliente</Text>
+          <Text style={styles.label}>Paso 1 · Seleccioná cliente</Text>
 
           <TextInput
             value={busqueda}
@@ -831,7 +833,7 @@ export default function CargarPago() {
         </>
       ) : (
         <>
-          <Text style={styles.label}>Cliente seleccionado</Text>
+          <Text style={styles.label}>Paso 1 · Cliente seleccionado</Text>
           <View style={styles.infoCard}>
             <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
             <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
@@ -843,7 +845,7 @@ export default function CargarPago() {
             <Text style={styles.changeButtonText}>Cambiar cliente</Text>
           </TouchableOpacity>
 
-          <Text style={styles.label}>Elegí el préstamo</Text>
+          <Text style={styles.label}>Paso 2 · Seleccioná préstamo</Text>
 
           {prestamos.length === 0 ? (
             <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
@@ -887,7 +889,47 @@ export default function CargarPago() {
 
           {prestamoSeleccionado && (
             <>
-              <Text style={styles.label}>Cuota actual</Text>
+              <Text style={styles.label}>Paso 3 · Seleccioná una cuota</Text>
+
+              {cuotas.length > 0 && (
+                <View style={styles.listBox}>
+                  {(mostrarTodasCuotas ? cuotas : cuotas.slice(0, 6)).map((cuota) => {
+                    const selected = cuotaSeleccionada?.id === cuota.id
+                    return (
+                      <TouchableOpacity
+                        key={cuota.id}
+                        style={[styles.selectCard, selected && styles.selectCardActive]}
+                        onPress={() => setCuotaSeleccionada(cuota)}
+                      >
+                        <Text style={styles.selectName}>Cuota #{cuota.numero_cuota}</Text>
+                        <Text style={styles.selectMeta}>
+                          Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Saldo pendiente: {formatearMoneda(Number(cuota.saldo_pendiente || 0))}
+                        </Text>
+                        <Text style={styles.selectMeta}>Estado: {cuota.estado || 'pendiente'}</Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+
+                  {cuotas.length > 6 && (
+                    <TouchableOpacity
+                      style={styles.changeButton}
+                      onPress={() => setMostrarTodasCuotas((prev) => !prev)}
+                    >
+                      <Text style={styles.changeButtonText}>
+                        {mostrarTodasCuotas ? 'Ver menos cuotas' : `Ver ${cuotas.length - 6} cuotas más`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              <Text style={styles.label}>Paso 4 · Resumen de cuota</Text>
 
               {!cuotaSeleccionada ? (
                 <Text style={styles.emptyText}>Este préstamo no tiene cuotas pendientes.</Text>
@@ -905,43 +947,7 @@ export default function CargarPago() {
 
           {cuotaSeleccionada && (
             <>
-              <Text style={styles.label}>Monto recibido</Text>
-
-              <TextInput
-                value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
-                onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
-                placeholder="$0"
-                placeholderTextColor="#64748B"
-                keyboardType="decimal-pad"
-                style={[styles.input, metodo === 'transferencia' && styles.inputDisabled]}
-                editable={metodo !== 'transferencia'}
-              />
-
-              {(metodo === 'transferencia' || metodo === 'mp') && (
-                <>
-                  <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
-                  <Text style={styles.helperText}>
-                    Se registrará para revisión y recién se acreditará al aprobarse.
-                  </Text>
-                  {metodo === 'transferencia' && (
-                    <Text style={styles.helperText}>
-                      En transferencia el monto se completa automáticamente con el saldo de la cuota.
-                    </Text>
-                  )}
-                </>
-              )}
-              {metodo === 'efectivo' && (
-                <Text style={styles.helperText}>
-                  El pago en efectivo se acredita al instante.
-                </Text>
-              )}
-
-              <Text style={styles.helperText}>
-                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
-                {formatearMoneda(deudaActual)}
-              </Text>
-
-              <Text style={styles.label}>Método de pago</Text>
+              <Text style={styles.label}>Paso 5 · Método de pago</Text>
 
               <View style={styles.methodsRow}>
                 <TouchableOpacity
@@ -1004,6 +1010,42 @@ export default function CargarPago() {
                 </TouchableOpacity>
               </View>
 
+              <Text style={styles.label}>Paso 6 · Monto</Text>
+
+              <TextInput
+                value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
+                onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
+                placeholder="$0"
+                placeholderTextColor="#64748B"
+                keyboardType="decimal-pad"
+                style={[styles.input, metodo === 'transferencia' && styles.inputDisabled]}
+                editable={metodo !== 'transferencia'}
+              />
+
+              {(metodo === 'transferencia' || metodo === 'mp') && (
+                <>
+                  <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
+                  <Text style={styles.helperText}>
+                    Se registrará para revisión y recién se acreditará al aprobarse.
+                  </Text>
+                  {metodo === 'transferencia' && (
+                    <Text style={styles.helperText}>
+                      En transferencia el monto se completa automáticamente con el saldo de la cuota.
+                    </Text>
+                  )}
+                </>
+              )}
+              {metodo === 'efectivo' && (
+                <Text style={styles.helperText}>
+                  El pago en efectivo se acredita al instante.
+                </Text>
+              )}
+
+              <Text style={styles.helperText}>
+                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
+                {formatearMoneda(deudaActual)}
+              </Text>
+
               {!mpDisponible ? (
                 <Text style={styles.mpDisabledHelper}>
                   Primero conectá Mercado Pago en Configuraciones
@@ -1028,6 +1070,8 @@ export default function CargarPago() {
                   Se generará automáticamente un QR al registrar el pago.
                 </Text>
               )}
+
+              <Text style={styles.label}>Paso 7 · Resumen final</Text>
 
               <View style={styles.resumeCard}>
                 <View style={styles.resumeRow}>
@@ -1054,6 +1098,8 @@ export default function CargarPago() {
                   </Text>
                 </View>
               </View>
+
+              <Text style={styles.label}>Paso 8 · Confirmación</Text>
 
               <TouchableOpacity
                 style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
