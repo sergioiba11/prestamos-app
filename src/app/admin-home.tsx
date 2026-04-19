@@ -1,8 +1,11 @@
+import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,176 +14,63 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
+import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { ClientePrestamoActivo, fetchAdminPanelData } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
-
-type PrestamoActivo = {
-  id: string
-  cliente_id: string
-  estado: string | null
-  total_a_pagar: number | null
-  saldo_pendiente: number | null
-}
-
-type ClienteRow = {
-  id: string
-  nombre: string
-  dni: string | null
-  telefono: string | null
-  usuarios?: { email: string | null } | null
-}
-
-type Cuota = {
-  prestamo_id: string
-  cliente_id: string
-  numero_cuota: number
-  fecha_vencimiento: string | null
-  saldo_pendiente: number | null
-  estado: string | null
-}
-
-type PagoPendiente = {
-  id: string
-  cliente_id: string
-  prestamo_id: string
-  monto: number | null
-  metodo: string | null
-  estado: string | null
-  created_at: string | null
-}
-
-type ClienteActivoCard = {
-  clienteId: string
-  nombre: string
-  email: string
-  dni: string
-  prestamoId: string
-  saldoPendiente: number
-  estado: string
-  proximaCuota: string
-}
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
 }
 
-function fecha(v?: string | null) {
-  if (!v) return '—'
-  const [yy, mm, dd] = v.slice(0, 10).split('-')
+function fecha(v?: string) {
+  if (!v || v === '—') return '—'
+  const [yy, mm, dd] = v.split('-')
   return yy && mm && dd ? `${dd}/${mm}/${yy}` : v
-}
-
-function lower(v?: string | null) {
-  return String(v || '').toLowerCase()
 }
 
 export default function AdminHome() {
   const { width } = useWindowDimensions()
-  const desktop = width >= 980
+  const mobile = width < 980
 
   const [loading, setLoading] = useState(true)
-  const [nombreAdmin, setNombreAdmin] = useState('Admin')
-  const [clientesActivos, setClientesActivos] = useState<ClienteActivoCard[]>([])
-  const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([])
-  const [aprobandoPagoId, setAprobandoPagoId] = useState<string | null>(null)
+  const [adminName, setAdminName] = useState('Administrador')
+  const [adminRole, setAdminRole] = useState('admin')
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [filtro, setFiltro] = useState('')
 
-  const [kpi, setKpi] = useState({
+  const [kpis, setKpis] = useState({
     cobrarHoy: 0,
-    activos: 0,
-    vencidos: 0,
-    pendientes: 0,
+    clientesActivos: 0,
+    prestamosVencidos: 0,
+    pagosPendientes: 0,
   })
 
-  const cargarTodo = useCallback(async () => {
+  const [activosCards, setActivosCards] = useState<ClientePrestamoActivo[]>([])
+
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
 
-      const { data: authData } = await supabase.auth.getUser()
-      if (authData?.user?.email) setNombreAdmin(authData.user.email.split('@')[0])
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-      const [clientesRes, prestamosRes, cuotasRes, pagosRes] = await Promise.all([
-        supabase
-          .from('clientes')
-          .select('id, nombre, dni, telefono, usuarios:usuario_id (email)')
-          .order('nombre', { ascending: true }),
-        supabase
-          .from('prestamos')
-          .select('id, cliente_id, estado, total_a_pagar, saldo_pendiente')
-          .in('estado', ['activo', 'pendiente', 'en_mora']),
-        supabase
-          .from('cuotas')
-          .select('prestamo_id, cliente_id, numero_cuota, fecha_vencimiento, saldo_pendiente, estado')
-          .in('estado', ['pendiente', 'parcial', 'vencida']),
-        supabase
-          .from('pagos')
-          .select('id, cliente_id, prestamo_id, monto, metodo, estado, created_at')
-          .in('estado', ['pendiente', 'pendiente_aprobacion'])
-          .order('created_at', { ascending: false }),
-      ])
+      if (user?.id) {
+        const { data: usuarioData } = await supabase
+          .from('usuarios')
+          .select('nombre, rol')
+          .eq('id', user.id)
+          .maybeSingle()
 
-      if (clientesRes.error) throw clientesRes.error
-      if (prestamosRes.error) throw prestamosRes.error
-      if (cuotasRes.error) throw cuotasRes.error
-      if (pagosRes.error) throw pagosRes.error
-
-      const clientes = (clientesRes.data || []) as ClienteRow[]
-      const prestamos = (prestamosRes.data || []) as PrestamoActivo[]
-      const cuotas = (cuotasRes.data || []) as Cuota[]
-      const pendientes = (pagosRes.data || []) as PagoPendiente[]
-
-      const hoy = new Date()
-      hoy.setHours(0, 0, 0, 0)
-      const hoyKey = hoy.toISOString().slice(0, 10)
-
-      let cobrarHoy = 0
-      let vencidos = 0
-
-      const cuotaPorPrestamo = new Map<string, Cuota[]>()
-      for (const cuota of cuotas) {
-        const list = cuotaPorPrestamo.get(cuota.prestamo_id) || []
-        list.push(cuota)
-        cuotaPorPrestamo.set(cuota.prestamo_id, list)
-
-        if ((cuota.fecha_vencimiento || '').slice(0, 10) === hoyKey) {
-          cobrarHoy += Number(cuota.saldo_pendiente || 0)
-        }
-
-        if (cuota.fecha_vencimiento) {
-          const vto = new Date(`${cuota.fecha_vencimiento}T00:00:00`)
-          if (vto.getTime() < hoy.getTime()) vencidos += 1
-        }
+        setAdminName(usuarioData?.nombre || user.email?.split('@')[0] || 'Administrador')
+        setAdminRole(usuarioData?.rol || 'admin')
       }
 
-      const byCliente = new Map(clientes.map((c) => [c.id, c]))
-      const cards: ClienteActivoCard[] = prestamos.map((prestamo) => {
-        const c = byCliente.get(prestamo.cliente_id)
-        const cuotasPrestamo = (cuotaPorPrestamo.get(prestamo.id) || []).sort((a, b) => a.numero_cuota - b.numero_cuota)
-        const prox = cuotasPrestamo[0]
-
-        return {
-          clienteId: prestamo.cliente_id,
-          nombre: c?.nombre || 'Cliente',
-          email: c?.usuarios?.email || 'Sin email',
-          dni: c?.dni || '—',
-          prestamoId: prestamo.id,
-          saldoPendiente: Number(prestamo.saldo_pendiente || prestamo.total_a_pagar || 0),
-          estado: lower(prestamo.estado) || 'activo',
-          proximaCuota: prox
-            ? `#${prox.numero_cuota} · ${fecha(prox.fecha_vencimiento)} · ${money(Number(prox.saldo_pendiente || 0))}`
-            : 'Sin cuotas pendientes',
-        }
-      })
-
-      setClientesActivos(cards)
-      setPagosPendientes(pendientes)
-      setKpi({
-        cobrarHoy,
-        activos: prestamos.length,
-        vencidos,
-        pendientes: pendientes.length,
-      })
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo cargar el panel admin')
+      const dashboard = await fetchAdminPanelData()
+      setKpis(dashboard.kpis)
+      setActivosCards(dashboard.activosCards)
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No pudimos cargar el panel admin')
     } finally {
       setLoading(false)
     }
@@ -188,42 +78,34 @@ export default function AdminHome() {
 
   useFocusEffect(
     useCallback(() => {
-      void cargarTodo()
-    }, [cargarTodo])
+      void loadData()
+    }, [loadData])
   )
 
-  const listaFiltrada = useMemo(() => {
-    const t = filtro.trim().toLowerCase()
-    if (!t) return clientesActivos
-    return clientesActivos.filter((c) => c.nombre.toLowerCase().includes(t) || c.dni.toLowerCase().includes(t) || c.email.toLowerCase().includes(t))
-  }, [clientesActivos, filtro])
+  const onNavigate = (key: AdminNavKey) => {
+    setShowMobileMenu(false)
 
-  const gestionarPago = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
-    if (aprobandoPagoId) return
-    try {
-      setAprobandoPagoId(pagoId)
-      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
-        body: { pago_id: pagoId, accion },
-      })
-
-      if (error || data?.error) {
-        Alert.alert('Error', error?.message || data?.error || `No se pudo ${accion} el pago`)
-        return
-      }
-
-      await cargarTodo()
-      Alert.alert('OK', accion === 'aprobar' ? 'Pago aprobado y acreditado.' : 'Pago rechazado.')
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo actualizar el pago')
-    } finally {
-      setAprobandoPagoId(null)
-    }
+    if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'prestamos') return router.push('/nuevo-prestamo' as any)
+    if (key === 'pagos') return router.push('/cargar-pago' as any)
+    if (key === 'clientes') return router.push('/clientes' as any)
+    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'config') return router.push('/configuraciones' as any)
   }
 
-  const cerrarSesion = async () => {
+  const onLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
   }
+
+  const filtrados = useMemo(() => {
+    const t = filtro.trim().toLowerCase()
+    if (!t) return activosCards
+    return activosCards.filter(
+      (item) =>
+        item.nombre.toLowerCase().includes(t) || item.dni.toLowerCase().includes(t) || item.telefono.toLowerCase().includes(t)
+    )
+  }, [activosCards, filtro])
 
   if (loading) {
     return (
@@ -235,145 +117,224 @@ export default function AdminHome() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.topBar}>
-        <View>
-          <Text style={styles.brand}>CrediTodo</Text>
-          <Text style={styles.title}>Panel admin · {nombreAdmin}</Text>
+    <View style={styles.page}>
+      {!mobile ? (
+        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      ) : (
+        <View style={styles.mobileTopBar}>
+          <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
+            <Ionicons name="menu" size={24} color="#E2E8F0" />
+          </TouchableOpacity>
+          <Text style={styles.mobileTitle}>Panel admin</Text>
+          <View style={{ width: 24 }} />
         </View>
-        <TouchableOpacity style={styles.secondaryBtn} onPress={cerrarSesion}>
-          <Text style={styles.secondaryText}>Salir</Text>
-        </TouchableOpacity>
+      )}
+
+      <View style={styles.main}>
+        <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.heading}>Inicio</Text>
+              <Text style={styles.subheading}>Resumen operativo de CrediTodo</Text>
+            </View>
+            <TouchableOpacity style={styles.historyBtn} onPress={() => router.push('/historial-prestamos' as any)}>
+              <Text style={styles.historyBtnText}>Ver historial de préstamos</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.kpiGrid}>
+            <KpiCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" />
+            <KpiCard label="Clientes activos" value={String(kpis.clientesActivos)} icon="people-outline" />
+            <KpiCard label="Préstamos vencidos" value={String(kpis.prestamosVencidos)} icon="warning-outline" />
+            <KpiCard label="Pagos pendientes" value={String(kpis.pagosPendientes)} icon="cash-outline" />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Acciones rápidas</Text>
+            <View style={styles.actionsWrap}>
+              <ActionButton label="Nuevo préstamo" onPress={() => router.push('/nuevo-prestamo' as any)} />
+              <ActionButton label="Registrar pago" onPress={() => router.push('/cargar-pago' as any)} />
+              <ActionButton label="Nuevo cliente" onPress={() => router.push('/nuevo-cliente' as any)} />
+              <ActionButton label="Ver clientes" onPress={() => router.push('/clientes' as any)} />
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Buscar por nombre, DNI o teléfono"
+              placeholderTextColor="#64748B"
+              value={filtro}
+              onChangeText={setFiltro}
+            />
+
+            {filtrados.length === 0 ? (
+              <Text style={styles.empty}>No encontramos préstamos activos para mostrar.</Text>
+            ) : (
+              <View style={styles.cardsGrid}>
+                {filtrados.map((item) => (
+                  <View key={item.prestamoId} style={styles.card}>
+                    <Text style={styles.cardTitle}>{item.nombre}</Text>
+                    <Text style={styles.cardMeta}>DNI: {item.dni}</Text>
+                    <Text style={styles.cardMeta}>Teléfono: {item.telefono}</Text>
+                    <Text style={styles.cardMeta}>Monto: {money(item.monto)}</Text>
+                    <Text style={styles.cardMeta}>Estado: {item.estado}</Text>
+                    <Text style={styles.cardMeta}>Próxima fecha: {fecha(item.proximaFecha)}</Text>
+                    <TouchableOpacity
+                      style={styles.cardButton}
+                      onPress={() =>
+                        router.push({ pathname: '/cliente-detalle', params: { cliente_id: item.clienteId } } as any)
+                      }
+                    >
+                      <Text style={styles.cardButtonText}>Ver cliente</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.kpiGrid, desktop && styles.kpiGridDesktop]}>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>A cobrar hoy</Text><Text style={styles.kpiValue}>{money(kpi.cobrarHoy)}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Clientes activos</Text><Text style={styles.kpiValue}>{kpi.activos}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Préstamos vencidos</Text><Text style={styles.kpiValue}>{kpi.vencidos}</Text></View>
-          <View style={styles.kpiCard}><Text style={styles.kpiLabel}>Pagos pendientes</Text><Text style={styles.kpiValue}>{kpi.pendientes}</Text></View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-          <View style={[styles.actionsRow, desktop && styles.actionsRowDesktop]}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/nuevo-prestamo' as any)}><Text style={styles.primaryText}>Nuevo préstamo</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/cargar-pago' as any)}><Text style={styles.primaryText}>Registrar pago</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/nuevo-cliente' as any)}><Text style={styles.primaryText}>Nuevo cliente</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/clientes' as any)}><Text style={styles.primaryText}>Ver clientes</Text></TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
-          {pagosPendientes.length === 0 ? <Text style={styles.empty}>Sin pagos pendientes.</Text> : pagosPendientes.map((p) => (
-            <View key={p.id} style={styles.card}>
-              <Text style={styles.cardTitle}>Pago {p.metodo || '—'} · {money(Number(p.monto || 0))}</Text>
-              <Text style={styles.cardMeta}>Cliente: {p.cliente_id} · Fecha: {fecha(p.created_at)}</Text>
-              <View style={styles.rowBtns}>
-                <TouchableOpacity style={styles.successBtn} onPress={() => gestionarPago(p.id, 'aprobar')} disabled={aprobandoPagoId === p.id}>
-                  <Text style={styles.buttonText}>{aprobandoPagoId === p.id ? 'Procesando...' : 'Aprobar'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.dangerBtn} onPress={() => gestionarPago(p.id, 'rechazar')} disabled={aprobandoPagoId === p.id}>
-                  <Text style={styles.buttonText}>Rechazar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
-          <TextInput
-            style={styles.search}
-            placeholder="Buscar por nombre, DNI o email"
-            placeholderTextColor="#64748B"
-            value={filtro}
-            onChangeText={setFiltro}
+      <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
+          <AdminSidebar
+            active="inicio"
+            adminName={adminName}
+            adminRole={adminRole}
+            onNavigate={onNavigate}
+            onLogout={onLogout}
+            mobile
+            onCloseMobile={() => setShowMobileMenu(false)}
           />
-
-          {listaFiltrada.length === 0 ? <Text style={styles.empty}>No hay clientes activos.</Text> : (
-            <View style={[styles.clientGrid, desktop && styles.clientGridDesktop]}>
-              {listaFiltrada.map((item) => (
-                <View key={`${item.clienteId}-${item.prestamoId}`} style={styles.card}>
-                  <Text style={styles.cardTitle}>{item.nombre}</Text>
-                  <Text style={styles.cardMeta}>DNI: {item.dni}</Text>
-                  <Text style={styles.cardMeta}>Email: {item.email}</Text>
-                  <Text style={styles.cardMeta}>Estado préstamo: {item.estado}</Text>
-                  <Text style={styles.cardMeta}>Saldo: {money(item.saldoPendiente)}</Text>
-                  <Text style={styles.cardMeta}>Próxima cuota: {item.proximaCuota}</Text>
-                  <TouchableOpacity
-                    style={styles.primaryBtn}
-                    onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: item.clienteId } } as any)}
-                  >
-                    <Text style={styles.primaryText}>Ver detalle</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
         </View>
-      </ScrollView>
+      </Modal>
     </View>
   )
 }
 
+function KpiCard({ label, value, icon }: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }) {
+  return (
+    <View style={styles.kpiCard}>
+      <View style={styles.kpiIcon}>
+        <Ionicons name={icon} size={16} color="#93C5FD" />
+      </View>
+      <Text style={styles.kpiLabel}>{label}</Text>
+      <Text style={styles.kpiValue}>{value}</Text>
+    </View>
+  )
+}
+
+function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
+      <Text style={styles.actionText}>{label}</Text>
+    </TouchableOpacity>
+  )
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020817' },
-  topBar: {
-    paddingTop: 50,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
+  page: { flex: 1, backgroundColor: '#020817', flexDirection: 'row' },
+  main: { flex: 1 },
+  mobileTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    height: 56,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
     backgroundColor: '#0B1220',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  brand: { color: '#60A5FA', fontWeight: '800', fontSize: 13 },
-  title: { color: '#fff', fontWeight: '700', fontSize: 18, marginTop: 3 },
-  content: { padding: 14, gap: 12, paddingBottom: 30 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
-  loadingText: { color: '#CBD5E1', marginTop: 10 },
-  kpiGrid: { gap: 10 },
-  kpiGridDesktop: { flexDirection: 'row', flexWrap: 'wrap' },
+  mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
+  content: { padding: 16, paddingTop: 20, gap: 14, paddingBottom: 30 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  heading: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  subheading: { color: '#94A3B8', marginTop: 4 },
+  historyBtn: {
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  historyBtnText: { color: '#fff', fontWeight: '700' },
+  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   kpiCard: {
-    backgroundColor: '#0F172A',
+    minWidth: 190,
+    flex: 1,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 12,
-    padding: 12,
-    minWidth: 160,
-    flex: 1,
+    backgroundColor: '#0F172A',
+    padding: 14,
+  },
+  kpiIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#1E3A8A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   kpiLabel: { color: '#94A3B8', fontSize: 12 },
-  kpiValue: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 5 },
-  section: { backgroundColor: '#0F172A', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#1E293B' },
-  sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
-  actionsRow: { gap: 8 },
-  actionsRowDesktop: { flexDirection: 'row', flexWrap: 'wrap' },
-  primaryBtn: { backgroundColor: '#1D4ED8', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
-  primaryText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
-  secondaryBtn: { backgroundColor: '#1E293B', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  secondaryText: { color: '#fff', fontWeight: '700' },
-  card: { backgroundColor: '#111827', borderRadius: 10, borderWidth: 1, borderColor: '#1F2937', padding: 10, marginBottom: 8 },
-  cardTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  cardMeta: { color: '#94A3B8', fontSize: 12, marginTop: 3 },
-  rowBtns: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  successBtn: { backgroundColor: '#166534', paddingVertical: 9, borderRadius: 8, flex: 1, alignItems: 'center' },
-  dangerBtn: { backgroundColor: '#991B1B', paddingVertical: 9, borderRadius: 8, flex: 1, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '700' },
-  search: {
-    backgroundColor: '#020817',
+  kpiValue: { color: '#fff', fontWeight: '800', fontSize: 22, marginTop: 4 },
+  section: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    padding: 14,
+  },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  actionsWrap: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  actionBtn: {
+    borderRadius: 10,
+    backgroundColor: '#1E40AF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  actionText: { color: '#fff', fontWeight: '700' },
+  searchInput: {
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    backgroundColor: '#020817',
+    paddingHorizontal: 12,
     paddingVertical: 10,
     color: '#fff',
+    marginBottom: 12,
   },
+  cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  card: {
+    minWidth: 240,
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#111827',
+    padding: 12,
+  },
+  cardTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  cardMeta: { color: '#94A3B8', marginTop: 4, fontSize: 12 },
+  cardButton: {
+    marginTop: 10,
+    borderRadius: 8,
+    backgroundColor: '#1D4ED8',
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  cardButtonText: { color: '#fff', fontWeight: '700' },
   empty: { color: '#94A3B8' },
-  clientGrid: { gap: 8, marginTop: 10 },
-  clientGridDesktop: { flexDirection: 'row', flexWrap: 'wrap' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#020817' },
+  loadingText: { color: '#CBD5E1', marginTop: 10 },
+  modalWrap: { flex: 1, flexDirection: 'row' },
+  overlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
