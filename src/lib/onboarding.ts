@@ -1,7 +1,8 @@
 import { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
-export type IdentitySource = 'supabase' | 'mock-temporal'
+export type IdentitySource = 'supabase' | 'edge-start-registration'
+export type RegistrationStatus = 'new' | 'pending' | 'active'
 
 export type IdentityData = {
   dni: string
@@ -12,6 +13,11 @@ export type IdentityData = {
   clienteId?: string | null
   usuarioId?: string | null
   source: IdentitySource
+}
+
+export type RegistrationLookupResult = {
+  status: RegistrationStatus
+  identity: IdentityData
 }
 
 const AR_PHONE_REGEX = /^\+549\d{10}$/
@@ -64,56 +70,46 @@ export function maskPhone(value: string | null | undefined): string {
   return `${normalized.slice(0, 5)} ${normalized.slice(5, 8)} ${normalized.slice(8, 12)} ${normalized.slice(12)}`
 }
 
-export async function lookupIdentityByDni(dni: string): Promise<IdentityData | null> {
+export async function startRegistrationByDni(dni: string): Promise<RegistrationLookupResult> {
   const cleanDni = normalizeDni(dni)
 
-  const { data, error } = await supabase
-    .from('clientes')
-    .select('id,nombre,apellido,telefono,dni,usuario_id,usuarios(id,email)')
-    .eq('dni', cleanDni)
-    .maybeSingle()
-
-  if (!error && data) {
-    const usuario = Array.isArray(data.usuarios) ? data.usuarios[0] : data.usuarios
-
-    return {
-      dni: data.dni,
-      nombre: data.nombre,
-      apellido: data.apellido,
-      telefono: data.telefono,
-      email: usuario?.email || null,
-      clienteId: data.id,
-      usuarioId: data.usuario_id,
-      source: 'supabase',
-    }
+  if (cleanDni.length < 7 || cleanDni.length > 8) {
+    throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
   }
 
-  const { data: fallbackRows, error: fallbackError } = await supabase
-    .from('clientes')
-    .select('id,nombre,apellido,telefono,dni,usuario_id,usuarios(id,email)')
-    .not('dni', 'is', null)
-    .limit(5000)
+  const { data, error } = await supabase.functions.invoke('iniciar-registro', {
+    body: { dni: cleanDni },
+  })
 
-  if (fallbackError || !fallbackRows?.length) {
-    return null
+  if (error) {
+    throw new Error('No pudimos iniciar el registro. Intentá nuevamente.')
   }
 
-  const matched = fallbackRows.find((row) => normalizeDni(row.dni) === cleanDni)
-  if (!matched) {
-    return null
-  }
+  const payload = data as
+    | {
+        ok?: boolean
+        status?: RegistrationStatus
+        identity?: Partial<IdentityData>
+        error?: string
+      }
+    | null
 
-  const usuario = Array.isArray(matched.usuarios) ? matched.usuarios[0] : matched.usuarios
+  if (!payload?.ok || !payload.identity || !payload.status) {
+    throw new Error(payload?.error || 'No pudimos iniciar el registro.')
+  }
 
   return {
-    dni: matched.dni,
-    nombre: matched.nombre,
-    apellido: matched.apellido,
-    telefono: matched.telefono,
-    email: usuario?.email || null,
-    clienteId: matched.id,
-    usuarioId: matched.usuario_id,
-    source: 'supabase',
+    status: payload.status,
+    identity: {
+      dni: cleanDni,
+      nombre: payload.identity.nombre || 'Cliente',
+      apellido: payload.identity.apellido || null,
+      telefono: payload.identity.telefono || null,
+      email: payload.identity.email || null,
+      clienteId: payload.identity.clienteId || null,
+      usuarioId: payload.identity.usuarioId || null,
+      source: 'edge-start-registration',
+    },
   }
 }
 
@@ -220,11 +216,11 @@ export async function registerUserFromOnboarding(params: {
     .maybeSingle()
 
   if (clienteError || !clienteByDni) {
-    throw new Error('No encontramos un cliente habilitado para el DNI ingresado.')
+    throw new Error('No encontramos un registro para el DNI ingresado.')
   }
 
   if (clienteByDni.usuario_id && clienteByDni.usuario_id !== authUser.id) {
-    throw new Error('Este DNI ya tiene una cuenta activa. Ingresá con tus credenciales.')
+    throw new Error('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu cuenta.')
   }
 
   const { data: samePhoneClients, error: phoneError } = await supabase

@@ -1,14 +1,16 @@
-import { router } from 'expo-router'
+import { Link, router } from 'expo-router'
 import { useState } from 'react'
-import { Text, TextInput, TouchableOpacity } from 'react-native'
+import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { OnboardingScaffold, onboardingStyles } from '../../components/onboarding/OnboardingScaffold'
 import { useOnboarding } from '../../context/OnboardingContext'
-import { lookupIdentityByDni, normalizeDni } from '../../lib/onboarding'
+import { normalizeDni, startRegistrationByDni } from '../../lib/onboarding'
 
 export default function OnboardingDniScreen() {
   const { updateState } = useOnboarding()
   const [dni, setDni] = useState('')
   const [error, setError] = useState('')
+  const [status, setStatus] = useState('')
+  const [activeDni, setActiveDni] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleContinue = async () => {
@@ -20,36 +22,41 @@ export default function OnboardingDniScreen() {
     }
 
     setLoading(true)
+    setActiveDni(false)
     setError('')
+    setStatus('Verificando DNI…')
 
     try {
-      const identity = await lookupIdentityByDni(cleanDni)
+      const result = await startRegistrationByDni(cleanDni)
 
-      if (!identity) {
-        setError('Tu DNI todavía no fue habilitado. Contactate con la sucursal para activar tu cuenta.')
+      if (result.status === 'active') {
+        setStatus('')
+        setActiveDni(true)
+        setError('Este DNI ya tiene una cuenta activa.')
         return
       }
 
       updateState({
         dni: cleanDni,
-        identity,
-        isIdentityConfirmed: false,
+        identity: result.identity,
+        registrationStatus: result.status,
+        isIdentityConfirmed: true,
         isCodeValidated: false,
-        verifiedPhone: '',
+        verifiedPhone: result.identity.telefono || '',
       })
-      router.push('/onboarding/identidad' as any)
-    } catch {
-      setError('No pudimos validar tu DNI ahora. Intentá nuevamente en unos minutos.')
+
+      setStatus('Continuá con la verificación')
+      router.push('/onboarding/codigo' as any)
+    } catch (err: any) {
+      setStatus('')
+      setError(err?.message || 'No pudimos iniciar el registro')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <OnboardingScaffold
-      title="Activar cuenta"
-      subtitle="Ingresá tu DNI para validar que ya estás registrado por la sucursal."
-    >
+    <OnboardingScaffold title="Crear cuenta" subtitle="Ingresá tu DNI para iniciar el registro.">
       <TextInput
         style={onboardingStyles.input}
         placeholder="DNI"
@@ -57,21 +64,42 @@ export default function OnboardingDniScreen() {
         value={dni}
         onChangeText={(value) => {
           setDni(value)
+          setStatus('')
+          setActiveDni(false)
           if (error) setError('')
         }}
         maxLength={14}
       />
 
+      {status ? <Text style={onboardingStyles.helperText}>{status}</Text> : null}
       {error ? <Text style={onboardingStyles.errorText}>{error}</Text> : null}
+
+      {activeDni ? (
+        <View style={{ gap: 10 }}>
+          <Link href={'/login' as any} asChild>
+            <TouchableOpacity style={onboardingStyles.buttonSecondary}>
+              <Text style={onboardingStyles.buttonSecondaryText}>Iniciá sesión</Text>
+            </TouchableOpacity>
+          </Link>
+
+          <Link href={'/login' as any} asChild>
+            <TouchableOpacity style={onboardingStyles.buttonSecondary}>
+              <Text style={onboardingStyles.buttonSecondaryText}>Recuperá tu cuenta</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
+      ) : null}
 
       <TouchableOpacity
         style={onboardingStyles.buttonPrimary}
         onPress={handleContinue}
         disabled={loading}
       >
-        <Text style={onboardingStyles.buttonPrimaryText}>
-          {loading ? 'Validando...' : 'Activar cuenta'}
-        </Text>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={onboardingStyles.buttonPrimaryText}>Continuar</Text>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity
