@@ -262,7 +262,12 @@ export default function AdminHome() {
           </View>
 
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
+              <TouchableOpacity style={styles.linkBtn} onPress={() => router.push('/clientes' as any)}>
+                <Text style={styles.linkBtnText}>Ver clientes</Text>
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={styles.searchInput}
               placeholder="Buscar por nombre, DNI, email o teléfono"
@@ -354,7 +359,10 @@ const styles = StyleSheet.create({
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   sectionCard: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 14 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
+  linkBtn: { borderWidth: 1, borderColor: '#60A5FA', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(37,99,235,0.2)' },
+  linkBtnText: { color: '#DBEAFE', fontSize: 12, fontWeight: '700' },
   actionsGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 10, padding: 10, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
   pendingClient: { color: '#fff', fontWeight: '700' },
