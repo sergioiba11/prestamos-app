@@ -63,9 +63,12 @@ export default function AdminHome() {
       .order('created_at', { ascending: false })
       .limit(12)
 
-    if (!error) {
-      setNotifications((data || []) as AdminNotification[])
+    if (error) {
+      console.error('admin-home notificaciones error', error)
+      return
     }
+
+    setNotifications((data || []) as AdminNotification[])
   }, [])
 
   const loadData = useCallback(async () => {
@@ -75,24 +78,32 @@ export default function AdminHome() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
+      console.log('admin-home auth user', user)
 
       if (user?.id) {
-        const { data: userRow } = await supabase
+        const { data: userRow, error: userRowError } = await supabase
           .from('usuarios')
           .select('nombre, rol')
           .eq('id', user.id)
           .maybeSingle()
 
+        if (userRowError) {
+          console.error('admin-home usuario/rol error', userRowError)
+        }
+
+        console.log('admin-home auth role row', userRow)
         setAdminName(userRow?.nombre || user.email?.split('@')[0] || 'Administrador')
         setAdminRole(userRow?.rol || 'Administrador')
       }
 
       const data = await fetchAdminPanelData()
+      console.log('admin-home fetchAdminPanelData result', data)
       setKpis(data.kpis)
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
       await loadNotifications()
     } catch (err: any) {
+      console.error('admin-home loadData error', err)
       Alert.alert('Error', err?.message || 'No se pudo cargar el panel admin.')
     } finally {
       setLoading(false)
@@ -260,7 +271,7 @@ export default function AdminHome() {
             />
 
             {filteredClients.length === 0 ? (
-              <Text style={styles.emptyText}>No hay clientes con préstamo activo para mostrar.</Text>
+              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
               <AdminClientsTable
                 rows={filteredClients}
