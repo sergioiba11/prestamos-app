@@ -335,6 +335,9 @@ async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminLi
       .sort()
       .pop()
 
+  const fallbackRows = (clientesRaw || []) as ClienteFallbackRow[]
+  console.log('[admin-dashboard] clientes fallback rows', fallbackRows.length)
+  return fallbackRows.map((c) => {
     return {
       clienteId: c.id,
       usuarioId: c.usuario_id || '',
