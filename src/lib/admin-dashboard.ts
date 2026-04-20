@@ -20,6 +20,20 @@ type Prestamo = {
   estado: string | null
   fecha_inicio: string | null
   fecha_limite: string | null
+  clientes?:
+    | {
+        id: string
+        nombre: string | null
+        telefono: string | null
+        dni: string | null
+      }
+    | Array<{
+        id: string
+        nombre: string | null
+        telefono: string | null
+        dni: string | null
+      }>
+    | null
 }
 
 type Cuota = {
@@ -110,8 +124,32 @@ export async function fetchAdminPanelData() {
     supabase.from('clientes').select('id,nombre,dni,telefono,direccion,usuario_id,usuarios:usuario_id(email)'),
     supabase.from('panel_clientes').select('*'),
     supabase
+      .from('panel_clientes')
+      .select(
+        'cliente_id_uuid,usuario_id,nombre,telefono,dni,cantidad_prestamos,total_a_pagar,total_pagado,restante'
+      ),
+    supabase
       .from('prestamos')
-      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+      .select(
+        `
+        id,
+        cliente_id,
+        monto,
+        interes,
+        total_a_pagar,
+        saldo_pendiente,
+        estado,
+        fecha_inicio,
+        fecha_limite,
+        clientes (
+          id,
+          nombre,
+          telefono,
+          dni
+        )
+      `
+      )
+      .eq('estado', 'activo')
       .order('fecha_inicio', { ascending: false }),
     supabase.from('prestamos').select('*', { count: 'exact', head: true }).eq('estado', 'vencido'),
     supabase
@@ -257,7 +295,8 @@ export async function fetchAdminPanelData() {
       proximoPago: '—',
       estado: 'activo',
     }
-  })
+    })
+    .filter((item) => Boolean(item.clienteId))
 
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = Number(prestamo.total_a_pagar || 0)
