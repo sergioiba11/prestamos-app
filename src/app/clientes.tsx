@@ -18,12 +18,11 @@ function formatearMoneda(valor: number) {
 }
 
 function badgeByEstado(cliente: ClienteAdminListadoItem) {
-  const estado = String(cliente.estadoCliente || '').toLowerCase()
-  if (estado.includes('venc')) {
-    return { text: 'Vencido', style: styles.badgeWarn }
+  if (cliente.tienePrestamoVencido || String(cliente.estadoCliente).includes('venc')) {
+    return { text: 'Préstamo vencido', style: styles.badgeWarn }
   }
   if (cliente.tienePrestamoActivo) {
-    return { text: 'Con préstamo activo', style: styles.badgeOk }
+    return { text: 'Préstamo activo', style: styles.badgeOk }
   }
   return { text: 'Sin préstamo', style: styles.badgeOff }
 }
@@ -101,6 +100,7 @@ export default function ClientesScreen() {
         <View>
           <Text style={styles.eyebrow}>Administración</Text>
           <Text style={styles.title}>Listado de clientes</Text>
+          <Text style={styles.subtitle}>Fuente: admin_clientes_listado</Text>
         </View>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Volver</Text>
@@ -137,8 +137,12 @@ export default function ClientesScreen() {
       >
         {clientesUI.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No hay clientes para mostrar</Text>
-            <Text style={styles.emptyText}>Probá con otra búsqueda o revisá permisos en Supabase.</Text>
+            <Text style={styles.emptyTitle}>{busquedaDebounced ? 'No encontramos resultados' : 'No hay clientes para mostrar'}</Text>
+            <Text style={styles.emptyText}>
+              {busquedaDebounced
+                ? 'Probá con otro criterio de búsqueda.'
+                : 'Cuando existan clientes, se mostrarán acá automáticamente.'}
+            </Text>
           </View>
         ) : null}
 
@@ -161,8 +165,9 @@ export default function ClientesScreen() {
               </View>
 
               <View style={styles.cardBottom}>
-                <Text style={styles.metaMuted}>Préstamos: {cliente.cantidadPrestamos}</Text>
+                <Text style={styles.metaMuted}>Préstamos activos: {cliente.cantidadPrestamosActivos}</Text>
                 <Text style={styles.metaMuted}>Deuda activa: {formatearMoneda(cliente.deudaActiva)}</Text>
+                <Text style={styles.metaMuted}>Restante: {formatearMoneda(cliente.restante)}</Text>
                 <Text style={styles.metaMuted}>Próximo vencimiento: {cliente.proximoVencimiento}</Text>
               </View>
 
@@ -206,6 +211,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '800',
+    marginTop: 4,
+  },
+  subtitle: {
+    color: '#BFDBFE',
+    fontSize: 12,
     marginTop: 4,
   },
   backButton: {
@@ -319,34 +329,36 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#020817',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    alignItems: 'center',
+    backgroundColor: '#020817',
+    paddingHorizontal: 24,
   },
   loadingText: {
-    color: '#CBD5E1',
-    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorText: {
     color: '#FCA5A5',
-    marginBottom: 12,
+    marginBottom: 8,
     fontSize: 13,
   },
   emptyCard: {
-    backgroundColor: '#0B1220',
-    borderColor: '#1E293B',
-    borderWidth: 1,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
     padding: 14,
+    alignItems: 'center',
   },
   emptyTitle: {
-    color: '#E2E8F0',
+    color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 15,
+    marginBottom: 6,
   },
   emptyText: {
     color: '#94A3B8',
-    marginTop: 6,
+    textAlign: 'center',
   },
 })

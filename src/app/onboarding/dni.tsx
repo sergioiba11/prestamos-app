@@ -32,12 +32,12 @@ export default function OnboardingDniScreen() {
       if (result.status === 'active') {
         setStatus('')
         setActiveDni(true)
-        setError('Este DNI ya tiene una cuenta activa')
+        setError('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu contraseña.')
         return
       }
 
       if (!result.cliente) {
-        throw new Error('No pudimos iniciar el registro')
+        throw new Error('No pudimos iniciar el registro para ese DNI.')
       }
 
       updateState({
@@ -49,11 +49,12 @@ export default function OnboardingDniScreen() {
         verifiedPhone: result.cliente.telefono || '',
       })
 
-      setStatus('Continuá con la verificación')
+      setStatus(result.status === 'new' ? 'DNI validado. Continuá con la verificación.' : 'DNI encontrado. Continuá con la verificación.')
       router.push('/onboarding/codigo' as any)
     } catch (err: any) {
       setStatus('')
-      setError(err?.message || 'No pudimos iniciar el registro')
+      console.error('[onboarding-dni] handleContinue error', err)
+      setError(err?.message || 'No pudimos iniciar el registro. Intentá nuevamente.')
     } finally {
       setLoading(false)
     }
