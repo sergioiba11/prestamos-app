@@ -20,6 +20,20 @@ type Prestamo = {
   estado: string | null
   fecha_inicio: string | null
   fecha_limite: string | null
+  clientes?:
+    | {
+        id: string
+        nombre: string | null
+        telefono: string | null
+        dni: string | null
+      }
+    | Array<{
+        id: string
+        nombre: string | null
+        telefono: string | null
+        dni: string | null
+      }>
+    | null
 }
 
 type Cuota = {
@@ -104,12 +118,34 @@ function isActivoEstado(estado?: string | null) {
 }
 
 export async function fetchAdminPanelData() {
-  const [clientesRes, prestamosRes, cuotasRes, pagosRes] = await Promise.all([
+  const [clientesRes, prestamosActivosRes, prestamosVencidosRes, resumenActivosRes, cuotasRes, pagosRes] =
+    await Promise.all([
     supabase.from('clientes').select('id,nombre,dni,telefono,direccion,usuario_id,usuarios:usuario_id(email)'),
     supabase
       .from('prestamos')
-      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+      .select(
+        `
+        id,
+        cliente_id,
+        monto,
+        interes,
+        total_a_pagar,
+        saldo_pendiente,
+        estado,
+        fecha_inicio,
+        fecha_limite,
+        clientes (
+          id,
+          nombre,
+          telefono,
+          dni
+        )
+      `
+      )
+      .eq('estado', 'activo')
       .order('fecha_inicio', { ascending: false }),
+    supabase.from('prestamos').select('*', { count: 'exact', head: true }).eq('estado', 'vencido'),
+    supabase.from('resumen_prestamos').select('*').gt('restante', 0),
     supabase
       .from('cuotas')
       .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado')
@@ -121,12 +157,27 @@ export async function fetchAdminPanelData() {
   ])
 
   if (clientesRes.error) throw clientesRes.error
-  if (prestamosRes.error) throw prestamosRes.error
+  if (prestamosActivosRes.error) throw prestamosActivosRes.error
+  if (prestamosVencidosRes.error) throw prestamosVencidosRes.error
+  if (resumenActivosRes.error) throw resumenActivosRes.error
   if (cuotasRes.error) throw cuotasRes.error
   if (pagosRes.error) throw pagosRes.error
 
   const clientes = (clientesRes.data || []) as Cliente[]
-  const prestamos = (prestamosRes.data || []) as Prestamo[]
+  const prestamosActivos = (prestamosActivosRes.data || []) as Prestamo[]
+  console.log('admin-dashboard prestamos activos', prestamosActivosRes.data, prestamosActivosRes.error)
+
+  const resumenActivosByPrestamo = new Map<string, { restante?: number | null; proximo_vencimiento?: string | null }>()
+  for (const item of resumenActivosRes.data || []) {
+    const prestamoId = String((item as any)?.prestamo_id || '')
+    if (!prestamoId) continue
+    resumenActivosByPrestamo.set(prestamoId, {
+      restante: Number((item as any)?.restante || 0),
+      proximo_vencimiento: ((item as any)?.proximo_vencimiento as string | null) || null,
+    })
+  }
+
+  const prestamos = prestamosActivos
   const cuotas = (cuotasRes.data || []) as Cuota[]
   const pagos = (pagosRes.data || []) as Pago[]
 
@@ -161,20 +212,23 @@ export async function fetchAdminPanelData() {
   }
 
   const activePrestamos = prestamos.filter((p) => isActivoEstado(p.estado))
-  const clientesActivos = new Set(activePrestamos.map((p) => p.cliente_id)).size
-
-  const prestamosVencidos = prestamos.filter((p) => {
-    const estado = low(p.estado)
-    if (estado === 'atrasado' || estado === 'en_mora') return true
-
-    const remaining = Number(p.saldo_pendiente || 0)
-    if (p.fecha_limite && remaining > 0) {
-      const due = new Date(`${p.fecha_limite.slice(0, 10)}T00:00:00`)
-      return due.getTime() < today.getTime()
-    }
-
-    return false
-  }).length
+  const clientesActivos = activePrestamos
+    .map((p) => {
+      const clienteRel = Array.isArray(p.clientes) ? p.clientes[0] : p.clientes
+      if (!clienteRel?.id) return null
+      return {
+        id: clienteRel.id,
+        nombre: clienteRel.nombre,
+        telefono: clienteRel.telefono,
+        dni: clienteRel.dni,
+        prestamo: p.monto,
+        estado: p.estado,
+        prestamoId: p.id,
+      }
+    })
+    .filter(Boolean)
+  const totalClientesActivos = clientesActivos.length
+  const prestamosVencidos = prestamosVencidosRes.count || 0
 
   const pagosPendientesRaw = pagos.filter((p) => {
     const estadoValidacion = low(p.estado_validacion)
@@ -196,28 +250,38 @@ export async function fetchAdminPanelData() {
     }
   })
 
-  const activosCards: ClientePrestamoActivo[] = activePrestamos.map((prestamo) => {
+  const activosCards: ClientePrestamoActivo[] = activePrestamos
+    .map((prestamo) => {
+    const clientePrestamoRel = Array.isArray(prestamo.clientes) ? prestamo.clientes[0] : prestamo.clientes
     const cliente = clientesMap.get(prestamo.cliente_id)
     const cuotasPrestamo = (cuotasByPrestamo.get(prestamo.id) || [])
       .filter((q) => ['pendiente', 'parcial'].includes(low(q.estado)))
       .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')))
 
     const proximaCuota = cuotasPrestamo[0]
+    const resumenPrestamo = resumenActivosByPrestamo.get(prestamo.id)
 
     return {
       prestamoId: prestamo.id,
       clienteId: prestamo.cliente_id,
-      nombre: cliente?.nombre || 'Cliente',
+      nombre: clientePrestamoRel?.nombre || cliente?.nombre || 'Cliente',
       email: cliente ? getEmail(cliente) : 'Sin email',
       usuarioId: cliente?.usuario_id || '',
-      dni: cliente?.dni || '—',
-      telefono: cliente?.telefono || 'Sin teléfono',
+      dni: clientePrestamoRel?.dni || cliente?.dni || '—',
+      telefono: clientePrestamoRel?.telefono || cliente?.telefono || 'Sin teléfono',
       direccion: cliente?.direccion || '',
-      prestamoActivo: Number(prestamo.saldo_pendiente || prestamo.total_a_pagar || prestamo.monto || 0),
-      proximoPago: proximaCuota?.fecha_vencimiento?.slice(0, 10) || prestamo.fecha_limite?.slice(0, 10) || '—',
+      prestamoActivo: Number(
+        resumenPrestamo?.restante || prestamo.saldo_pendiente || prestamo.total_a_pagar || prestamo.monto || 0
+      ),
+      proximoPago:
+        resumenPrestamo?.proximo_vencimiento?.slice(0, 10) ||
+        proximaCuota?.fecha_vencimiento?.slice(0, 10) ||
+        prestamo.fecha_limite?.slice(0, 10) ||
+        '—',
       estado: low(prestamo.estado) || 'activo',
     }
-  })
+    })
+    .filter((item) => Boolean(item.clienteId))
 
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = Number(prestamo.total_a_pagar || 0)
@@ -243,7 +307,7 @@ export async function fetchAdminPanelData() {
 
   const kpis: AdminKpis = {
     cobrarHoy,
-    clientesActivos,
+    clientesActivos: totalClientesActivos,
     prestamosVencidos,
     pagosPendientes: pagosPendientesRaw.length,
   }
