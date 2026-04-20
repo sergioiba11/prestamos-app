@@ -260,7 +260,7 @@ export default function AdminHome() {
             />
 
             {filteredClients.length === 0 ? (
-              <Text style={styles.emptyText}>No hay clientes con préstamo activo para mostrar.</Text>
+              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
               <AdminClientsTable
                 rows={filteredClients}
