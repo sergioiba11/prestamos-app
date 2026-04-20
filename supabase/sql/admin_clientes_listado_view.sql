@@ -67,8 +67,7 @@ from public.clientes c
 left join public.usuarios u on u.id = c.usuario_id
 left join prestamos_agg pr on pr.cliente_id = c.id
 left join pagos_agg pg on pg.cliente_id = c.id
-where c.usuario_id is not null
-  and lower(coalesce(u.rol, 'cliente')) = 'cliente';
+where c.usuario_id is not null;
 
 grant select on public.admin_clientes_listado to authenticated;
 

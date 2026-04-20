@@ -62,6 +62,21 @@ type ClienteFallbackRow = {
   dni: string | null
 }
 
+type UsuarioFallbackRow = {
+  id: string
+  email: string | null
+  rol: string | null
+}
+
+type PrestamoFallbackRow = {
+  cliente_id: string
+  estado: string | null
+  total_a_pagar: number | null
+  saldo_pendiente: number | null
+  monto: number | null
+  fecha_limite: string | null
+}
+
 export type AdminKpis = {
   cobrarHoy: number
   clientesActivos: number
@@ -208,12 +223,30 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
 
   if (!error) {
     const rows = (data || []) as AdminClientesListadoRow[]
+    if (rows.length > 0) {
+      console.log('[admin-dashboard] admin_clientes_listado rows', rows.length)
+      return rows.map(toListadoItem)
+    }
+
+    const { count, error: countError } = await supabase
+      .from('clientes')
+      .select('id', { count: 'exact', head: true })
+      .not('usuario_id', 'is', null)
+
+    if (!countError && Number(count || 0) > 0) {
+      console.warn('[admin-dashboard] admin_clientes_listado returned 0 rows with linked clientes. Using table fallback.')
+      return fetchAdminClientesListadoFromBaseTables()
+    }
+
     console.log('[admin-dashboard] admin_clientes_listado rows', rows.length)
-    return rows.map(toListadoItem)
+    return []
   }
 
   console.warn('[admin-dashboard] admin_clientes_listado query failed, fallback to clientes + usuarios', error)
+  return fetchAdminClientesListadoFromBaseTables()
+}
 
+async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
   const { data: clientesRaw, error: clientesError } = await supabase
     .from('clientes')
     .select('id,usuario_id,nombre,email,telefono,direccion,dni')
@@ -225,6 +258,84 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
   }
 
   const fallbackRows = (clientesRaw || []) as ClienteFallbackRow[]
+  const usuarioIds = fallbackRows.map((row) => row.usuario_id).filter(Boolean) as string[]
+
+  const [{ data: usuariosRaw, error: usuariosError }, { data: prestamosRaw, error: prestamosError }, { data: pagosRaw, error: pagosError }] =
+    await Promise.all([
+      usuarioIds.length
+        ? supabase.from('usuarios').select('id,email,rol').in('id', usuarioIds)
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from('prestamos').select('cliente_id,estado,total_a_pagar,saldo_pendiente,monto,fecha_limite'),
+      supabase.from('pagos').select('cliente_id,monto,estado_validacion,fecha_pago,created_at'),
+    ])
+
+  if (usuariosError) {
+    console.error('[admin-dashboard] usuarios fallback error', usuariosError)
+  }
+  if (prestamosError) {
+    console.error('[admin-dashboard] prestamos fallback error', prestamosError)
+  }
+  if (pagosError) {
+    console.error('[admin-dashboard] pagos fallback error', pagosError)
+  }
+
+  const usuarios = (usuariosRaw || []) as UsuarioFallbackRow[]
+  const prestamos = ((prestamosRaw || []) as PrestamoFallbackRow[]).filter((p) => Boolean(p.cliente_id))
+  const pagos = (pagosRaw || []) as Array<{
+    cliente_id: string | null
+    monto: number | null
+    estado_validacion: string | null
+    fecha_pago: string | null
+    created_at: string | null
+  }>
+
+  const usuariosById = new Map(usuarios.map((u) => [u.id, u]))
+  const prestamosByCliente = new Map<string, PrestamoFallbackRow[]>()
+  for (const prestamo of prestamos) {
+    const list = prestamosByCliente.get(prestamo.cliente_id) || []
+    list.push(prestamo)
+    prestamosByCliente.set(prestamo.cliente_id, list)
+  }
+
+  const pagosByCliente = new Map<string, Array<{ monto: number | null; estado_validacion: string | null; fecha_pago: string | null; created_at: string | null }>>()
+  for (const pago of pagos) {
+    if (!pago.cliente_id) continue
+    const list = pagosByCliente.get(pago.cliente_id) || []
+    list.push(pago)
+    pagosByCliente.set(pago.cliente_id, list)
+  }
+
+  const mapped = fallbackRows.map((c) => {
+    const usuario = c.usuario_id ? usuariosById.get(c.usuario_id) : null
+    const clientePrestamos = prestamosByCliente.get(c.id) || []
+    const clientePagos = pagosByCliente.get(c.id) || []
+
+    const cantidadPrestamos = clientePrestamos.length
+    const activos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
+    const cantidadPrestamosActivos = activos.length
+    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
+    const deudaActiva = activos.reduce((acc, prestamo) => {
+      const saldo = Number(prestamo.saldo_pendiente ?? prestamo.total_a_pagar ?? prestamo.monto ?? 0)
+      return acc + Math.max(saldo, 0)
+    }, 0)
+    const totalAPagar = clientePrestamos.reduce((acc, prestamo) => acc + Math.max(Number(prestamo.total_a_pagar ?? prestamo.monto ?? 0), 0), 0)
+    const totalPagado = clientePagos.reduce((acc, pago) => {
+      const estadoValidacion = low(pago.estado_validacion)
+      if (estadoValidacion && !['aprobado', 'confirmado', 'acreditado'].includes(estadoValidacion)) return acc
+      return acc + Math.max(Number(pago.monto || 0), 0)
+    }, 0)
+    const restante = Math.max(totalAPagar - totalPagado, 0)
+    const proximoVencimientoRaw = activos
+      .map((p) => (p.fecha_limite || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()[0]
+    const fechaUltimoPagoRaw = clientePagos
+      .map((p) => p.fecha_pago || p.created_at || '')
+      .filter(Boolean)
+      .sort()
+      .pop()
+
+  const fallbackRows = (clientesRaw || []) as ClienteFallbackRow[]
   console.log('[admin-dashboard] clientes fallback rows', fallbackRows.length)
   return fallbackRows.map((c) => {
     return {
@@ -234,19 +345,29 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
       dni: c.dni || '—',
       telefono: c.telefono || 'Sin teléfono',
       direccion: c.direccion || 'Sin dirección',
-      email: c.email || 'Sin email',
-      cantidadPrestamos: 0,
-      cantidadPrestamosActivos: 0,
-      tienePrestamoActivo: false,
-      tienePrestamoVencido: false,
-      deudaActiva: 0,
-      restante: 0,
-      estadoCliente: 'sin_prestamo',
-      fechaUltimoPago: '—',
-      proximoVencimiento: '—',
-      totalPagado: 0,
+      email: usuario?.email || c.email || 'Sin email',
+      cantidadPrestamos,
+      cantidadPrestamosActivos,
+      tienePrestamoActivo: cantidadPrestamosActivos > 0 || deudaActiva > 0 || restante > 0,
+      tienePrestamoVencido,
+      deudaActiva,
+      restante,
+      estadoCliente: tienePrestamoVencido ? 'vencido' : cantidadPrestamosActivos > 0 ? 'activo' : 'sin_prestamo',
+      fechaUltimoPago: ymd(fechaUltimoPagoRaw),
+      proximoVencimiento: ymd(proximoVencimientoRaw),
+      totalPagado,
     } satisfies ClienteAdminListadoItem
   })
+
+  const filtered = mapped.filter((row) => {
+    const usuario = row.usuarioId ? usuariosById.get(row.usuarioId) : null
+    const rol = low(usuario?.rol)
+    if (!rol) return true
+    return rol === 'cliente'
+  })
+
+  console.log('[admin-dashboard] clientes fallback rows', filtered.length)
+  return filtered
 }
 
 export async function fetchAdminPanelData() {
