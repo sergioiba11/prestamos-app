@@ -181,6 +181,27 @@ export function getClientesConPrestamoActivo(clientesListado: ClienteAdminListad
   return clientesListado.filter(hasActiveLoan)
 }
 
+function hasOverdueLoan(cliente: ClienteAdminListadoItem) {
+  const estado = low(cliente.estadoCliente)
+  return Boolean(cliente.tienePrestamoVencido) || estado.includes('venc') || estado.includes('mora') || estado.includes('atras')
+}
+
+export function toClientePrestamoActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
+  return {
+    prestamoId: `panel-${row.clienteId}`,
+    clienteId: row.clienteId,
+    nombre: row.nombre,
+    email: row.email,
+    usuarioId: row.usuarioId,
+    dni: row.dni,
+    telefono: row.telefono,
+    direccion: row.direccion,
+    prestamoActivo: Math.max(row.deudaActiva, row.restante, 0),
+    proximoPago: row.proximoVencimiento,
+    estado: row.estadoCliente,
+  }
+}
+
 export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoItem[]> {
   const { data, error } = await supabase.from('admin_clientes_listado').select('*').order('nombre', { ascending: true })
 
@@ -306,7 +327,9 @@ export async function fetchAdminPanelData() {
 
   const pagosPendientesRaw = pagos.filter((pago) => {
     const estadoValidacion = low(pago.estado_validacion)
-    if (estadoValidacion) return estadoValidacion === 'pendiente'
+    if (estadoValidacion) {
+      return estadoValidacion === 'pendiente' || estadoValidacion === 'en_revision'
+    }
     return !pago.fecha_pago
   })
 
@@ -326,19 +349,7 @@ export async function fetchAdminPanelData() {
 
   const activos = getClientesConPrestamoActivo(clientesListado)
 
-  const activosCards: ClientePrestamoActivo[] = activos.slice(0, 8).map((row) => ({
-    prestamoId: `panel-${row.clienteId}`,
-    clienteId: row.clienteId,
-    nombre: row.nombre,
-    email: row.email,
-    usuarioId: row.usuarioId,
-    dni: row.dni,
-    telefono: row.telefono,
-    direccion: row.direccion,
-    prestamoActivo: row.deudaActiva,
-    proximoPago: row.proximoVencimiento,
-    estado: row.estadoCliente,
-  }))
+  const activosCards: ClientePrestamoActivo[] = activos.slice(0, 8).map(toClientePrestamoActivoCard)
 
   const pagosByPrestamo = new Map<string, number>()
   for (const pago of pagos) {
@@ -369,10 +380,13 @@ export async function fetchAdminPanelData() {
     }
   })
 
+  const prestamosVencidosListado = clientesListado.filter(hasOverdueLoan).length
+  const prestamosVencidosCount = Number(prestamosVencidosResult.value.count || 0)
+
   const kpis: AdminKpis = {
     cobrarHoy,
     clientesActivos: activos.length,
-    prestamosVencidos: prestamosVencidosResult.value.count || 0,
+    prestamosVencidos: Math.max(prestamosVencidosCount, prestamosVencidosListado),
     pagosPendientes: pagosPendientesRaw.length,
   }
 
