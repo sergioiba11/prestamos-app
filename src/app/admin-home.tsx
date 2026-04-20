@@ -15,12 +15,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { AdminClientsTable } from '../components/admin/AdminClientsTable'
 import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { EditClientModal } from '../components/admin/EditClientModal'
 import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
@@ -45,9 +43,6 @@ export default function AdminHome() {
   const [search, setSearch] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
-  const [selectedClient, setSelectedClient] = useState<ClientePrestamoActivo | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
-
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
     clientesActivos: 0,
@@ -283,36 +278,32 @@ export default function AdminHome() {
             {filteredClients.length === 0 ? (
               <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
-              <AdminClientsTable
-                rows={filteredClients}
-                onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                onEdit={(row) => {
-                  setSelectedClient(row)
-                  setEditOpen(true)
-                }}
-                onHistory={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-              />
+              <View style={styles.activeList}>
+                {filteredClients.slice(0, 6).map((row) => (
+                  <View key={row.clienteId} style={styles.activeClientRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activeClientName}>{row.nombre}</Text>
+                      <Text style={styles.activeClientMeta}>DNI {row.dni} · {row.telefono}</Text>
+                      <Text style={styles.activeClientDebt}>Deuda activa: {money(row.prestamoActivo)}</Text>
+                    </View>
+                    <View style={styles.activeRight}>
+                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Préstamo activo</Text></View>
+                      <TouchableOpacity
+                        style={styles.detailBtn}
+                        onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
+                      >
+                        <Text style={styles.detailBtnText}>Ver detalle</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
             )}
           </View>
 
           <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
         </ScrollView>
       </View>
-
-      <EditClientModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        onSaved={() => void loadData()}
-        client={selectedClient ? {
-          id: selectedClient.clienteId,
-          usuario_id: selectedClient.usuarioId || undefined,
-          nombre: selectedClient.nombre,
-          dni: selectedClient.dni,
-          telefono: selectedClient.telefono,
-          direccion: selectedClient.direccion,
-          email: selectedClient.email,
-        } : null}
-      />
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrap}>
@@ -371,6 +362,26 @@ const styles = StyleSheet.create({
   rejectBtn: { backgroundColor: '#7F1D1D', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
   smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   searchInput: { borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#020817', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', marginBottom: 12 },
+
+  activeList: { gap: 10 },
+  activeClientRow: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  activeClientName: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+  activeClientMeta: { color: '#94A3B8', marginTop: 3, fontSize: 12 },
+  activeClientDebt: { color: '#BFDBFE', marginTop: 5, fontWeight: '700', fontSize: 12 },
+  activeRight: { alignItems: 'flex-end', gap: 8 },
+  activeBadge: { borderRadius: 999, backgroundColor: '#14532D', borderWidth: 1, borderColor: '#22C55E', paddingHorizontal: 10, paddingVertical: 5 },
+  activeBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  detailBtn: { borderRadius: 8, borderWidth: 1, borderColor: '#60A5FA', backgroundColor: '#1D4ED8', paddingHorizontal: 10, paddingVertical: 6 },
+  detailBtnText: { color: '#EFF6FF', fontSize: 11, fontWeight: '700' },
   emptyText: { color: '#94A3B8' },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
   modalWrap: { flex: 1, flexDirection: 'row' },

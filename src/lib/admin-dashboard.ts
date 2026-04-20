@@ -168,6 +168,19 @@ function toListadoItem(row: AdminClientesListadoRow): ClienteAdminListadoItem {
   }
 }
 
+
+function hasActiveLoan(cliente: ClienteAdminListadoItem) {
+  const estado = low(cliente.estadoCliente)
+  if (cliente.tienePrestamoActivo || cliente.tienePrestamoVencido) return true
+  if (cliente.cantidadPrestamosActivos > 0) return true
+  if (cliente.deudaActiva > 0 || cliente.restante > 0) return true
+  return estado === 'activo' || estado === 'atrasado' || estado === 'en_mora' || estado === 'vencido'
+}
+
+export function getClientesConPrestamoActivo(clientesListado: ClienteAdminListadoItem[]) {
+  return clientesListado.filter(hasActiveLoan)
+}
+
 export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoItem[]> {
   const { data, error } = await supabase.from('admin_clientes_listado').select('*').order('nombre', { ascending: true })
 
@@ -311,7 +324,7 @@ export async function fetchAdminPanelData() {
     }
   })
 
-  const activos = clientesListado.filter((c) => c.tienePrestamoActivo)
+  const activos = getClientesConPrestamoActivo(clientesListado)
 
   const activosCards: ClientePrestamoActivo[] = activos.slice(0, 8).map((row) => ({
     prestamoId: `panel-${row.clienteId}`,
