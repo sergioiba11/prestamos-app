@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import {
@@ -63,9 +64,12 @@ export default function AdminHome() {
       .order('created_at', { ascending: false })
       .limit(12)
 
-    if (!error) {
-      setNotifications((data || []) as AdminNotification[])
+    if (error) {
+      console.error('admin-home notificaciones error', error)
+      return
     }
+
+    setNotifications((data || []) as AdminNotification[])
   }, [])
 
   const loadData = useCallback(async () => {
@@ -75,24 +79,32 @@ export default function AdminHome() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
+      console.log('admin-home auth user', user)
 
       if (user?.id) {
-        const { data: userRow } = await supabase
+        const { data: userRow, error: userRowError } = await supabase
           .from('usuarios')
           .select('nombre, rol')
           .eq('id', user.id)
           .maybeSingle()
 
+        if (userRowError) {
+          console.error('admin-home usuario/rol error', userRowError)
+        }
+
+        console.log('admin-home auth role row', userRow)
         setAdminName(userRow?.nombre || user.email?.split('@')[0] || 'Administrador')
         setAdminRole(userRow?.rol || 'Administrador')
       }
 
       const data = await fetchAdminPanelData()
+      console.log('admin-home fetchAdminPanelData result', data)
       setKpis(data.kpis)
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
       await loadNotifications()
     } catch (err: any) {
+      console.error('admin-home loadData error', err)
       Alert.alert('Error', err?.message || 'No se pudo cargar el panel admin.')
     } finally {
       setLoading(false)
@@ -185,7 +197,7 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
-          <View style={styles.headerBlock}>
+          <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerBlock}>
             <View>
               <Text style={styles.headerEyebrow}>Panel de administración</Text>
               <Text style={styles.headerTitle}>¡Bienvenido, {adminName}!</Text>
@@ -207,7 +219,7 @@ export default function AdminHome() {
                 <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
               ) : null}
             </View>
-          </View>
+          </LinearGradient>
 
           <View style={styles.kpiGrid}>
             <AdminStatCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
@@ -250,7 +262,12 @@ export default function AdminHome() {
           </View>
 
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
+              <TouchableOpacity style={styles.linkBtn} onPress={() => router.push('/clientes' as any)}>
+                <Text style={styles.linkBtnText}>Ver clientes</Text>
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={styles.searchInput}
               placeholder="Buscar por nombre, DNI, email o teléfono"
@@ -260,7 +277,7 @@ export default function AdminHome() {
             />
 
             {filteredClients.length === 0 ? (
-              <Text style={styles.emptyText}>No hay clientes con préstamo activo para mostrar.</Text>
+              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
               <AdminClientsTable
                 rows={filteredClients}
@@ -330,10 +347,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A1120', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  headerEyebrow: { color: '#60A5FA', fontSize: 12, fontWeight: '700' },
+  headerBlock: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  headerEyebrow: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' },
   headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
-  headerSubtitle: { color: '#94A3B8', marginTop: 4 },
+  headerSubtitle: { color: 'rgba(255,255,255,0.88)', marginTop: 4 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative' },
   dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
@@ -342,7 +359,10 @@ const styles = StyleSheet.create({
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   sectionCard: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 14 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
+  linkBtn: { borderWidth: 1, borderColor: '#60A5FA', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(37,99,235,0.2)' },
+  linkBtnText: { color: '#DBEAFE', fontSize: 12, fontWeight: '700' },
   actionsGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 10, padding: 10, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
   pendingClient: { color: '#fff', fontWeight: '700' },

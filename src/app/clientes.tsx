@@ -10,33 +10,28 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { supabase } from '../lib/supabase'
-
-type ClienteListado = {
-  id: string
-  nombre: string
-  dni: string | null
-  telefono: string | null
-  usuario_id: string | null
-  usuarios?: {
-    email: string | null
-    nombre?: string | null
-  } | null
-  prestamos?: {
-    id: string
-    estado: string | null
-    total_a_pagar: number | null
-  }[]
-}
+import { LinearGradient } from 'expo-linear-gradient'
+import { ClienteAdminListadoItem, fetchAdminClientesListado } from '../lib/admin-dashboard'
 
 function formatearMoneda(valor: number) {
   return `$${Number(valor || 0).toLocaleString('es-AR')}`
 }
 
+function badgeByEstado(cliente: ClienteAdminListadoItem) {
+  const estado = String(cliente.estadoCliente || '').toLowerCase()
+  if (estado.includes('venc')) {
+    return { text: 'Vencido', style: styles.badgeWarn }
+  }
+  if (cliente.tienePrestamoActivo) {
+    return { text: 'Con préstamo activo', style: styles.badgeOk }
+  }
+  return { text: 'Sin préstamo', style: styles.badgeOff }
+}
+
 export default function ClientesScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [clientes, setClientes] = useState<ClienteListado[]>([])
+  const [clientes, setClientes] = useState<ClienteAdminListadoItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
@@ -47,35 +42,16 @@ export default function ClientesScreen() {
 
     setError(null)
 
-    const { data, error: queryError } = await supabase
-      .from('clientes')
-      .select(`
-        id,
-        nombre,
-        dni,
-        telefono,
-        usuario_id,
-        usuarios:usuario_id (
-          email,
-          nombre
-        ),
-        prestamos (
-          id,
-          estado,
-          total_a_pagar
-        )
-      `)
-      .order('created_at', { ascending: false })
-
-    if (queryError) {
-      setError(queryError.message || 'No se pudieron cargar los clientes')
+    try {
+      const listado = await fetchAdminClientesListado()
+      setClientes(listado)
+    } catch (err: any) {
+      setError(err?.message || 'No se pudieron cargar los clientes')
       setClientes([])
-    } else {
-      setClientes((data as ClienteListado[]) || [])
+    } finally {
+      if (esRefresh) setRefreshing(false)
+      else setLoading(false)
     }
-
-    if (esRefresh) setRefreshing(false)
-    else setLoading(false)
   }, [])
 
   useFocusEffect(
@@ -87,35 +63,25 @@ export default function ClientesScreen() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       setBusquedaDebounced(busqueda.trim().toLowerCase())
-    }, 300)
+    }, 250)
 
     return () => clearTimeout(timeout)
   }, [busqueda])
 
   const clientesUI = useMemo(() => {
-    const base = clientes.map((cliente) => {
-      const tienePrestamo = cliente.prestamos?.some((p) => p.estado === 'activo')
-      const prestamoActivo = (cliente.prestamos || []).find((p) => p.estado === 'activo')
-      const email = cliente.usuarios?.email || 'Sin email'
+    if (!busquedaDebounced) return clientes
 
-      return {
-        ...cliente,
-        email,
-        tienePrestamo: Boolean(tienePrestamo),
-        deudaActiva: Number(prestamoActivo?.total_a_pagar || 0),
-      }
-    })
+    return clientes.filter((cliente) => {
+      const nombre = cliente.nombre.toLowerCase()
+      const dni = cliente.dni.toLowerCase()
+      const email = cliente.email.toLowerCase()
+      const telefono = cliente.telefono.toLowerCase()
 
-    if (!busquedaDebounced) return base
-
-    return base.filter((cliente) => {
-      const nombre = cliente.nombre?.toLowerCase() || ''
-      const dni = cliente.dni?.toLowerCase() || ''
-      const email = (cliente.email || '').toLowerCase()
       return (
         nombre.includes(busquedaDebounced) ||
         dni.includes(busquedaDebounced) ||
-        email.includes(busquedaDebounced)
+        email.includes(busquedaDebounced) ||
+        telefono.includes(busquedaDebounced)
       )
     })
   }, [clientes, busquedaDebounced])
@@ -131,17 +97,20 @@ export default function ClientesScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Todos los clientes</Text>
+      <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
+        <View>
+          <Text style={styles.eyebrow}>Administración</Text>
+          <Text style={styles.title}>Listado de clientes</Text>
+        </View>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <View style={styles.searchContainer}>
-        <Text style={styles.searchLabel}>Buscar por nombre, DNI o email</Text>
+        <Text style={styles.searchLabel}>Buscar por nombre, DNI, email o teléfono</Text>
         <TextInput
           style={styles.searchInput}
           value={busqueda}
@@ -166,36 +135,48 @@ export default function ClientesScreen() {
           />
         }
       >
-        {clientesUI.map((cliente) => (
-          <View key={cliente.id} style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.nombre}>{cliente.nombre}</Text>
-                <Text style={styles.meta}>DNI: {cliente.dni || '—'}</Text>
-                <Text style={styles.meta}>Email: {cliente.email}</Text>
-                <Text style={styles.metaMuted}>Teléfono: {cliente.telefono || 'Sin teléfono'}</Text>
-              </View>
-
-              <View
-                style={[
-                  styles.badge,
-                  cliente.tienePrestamo ? styles.badgeVerde : styles.badgeGris,
-                ]}
-              >
-                <Text style={styles.badgeText}>
-                  {cliente.tienePrestamo ? 'Con préstamo' : 'Sin préstamo'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBottom}>
-              <Text style={styles.metaMuted}>Préstamos: {cliente.prestamos?.length || 0}</Text>
-              <Text style={styles.metaMuted}>
-                Deuda activa: {formatearMoneda(cliente.deudaActiva)}
-              </Text>
-            </View>
+        {clientesUI.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No hay clientes para mostrar</Text>
+            <Text style={styles.emptyText}>Probá con otra búsqueda o revisá permisos en Supabase.</Text>
           </View>
-        ))}
+        ) : null}
+
+        {clientesUI.map((cliente) => {
+          const badge = badgeByEstado(cliente)
+
+          return (
+            <View key={cliente.clienteId} style={styles.card}>
+              <View style={styles.cardTop}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.nombre}>{cliente.nombre}</Text>
+                  <Text style={styles.meta}>DNI: {cliente.dni}</Text>
+                  <Text style={styles.meta}>Email: {cliente.email}</Text>
+                  <Text style={styles.metaMuted}>Teléfono: {cliente.telefono}</Text>
+                </View>
+
+                <View style={[styles.badge, badge.style]}>
+                  <Text style={styles.badgeText}>{badge.text}</Text>
+                </View>
+              </View>
+
+              <View style={styles.cardBottom}>
+                <Text style={styles.metaMuted}>Préstamos: {cliente.cantidadPrestamos}</Text>
+                <Text style={styles.metaMuted}>Deuda activa: {formatearMoneda(cliente.deudaActiva)}</Text>
+                <Text style={styles.metaMuted}>Próximo vencimiento: {cliente.proximoVencimiento}</Text>
+              </View>
+
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.detailBtn}
+                  onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: cliente.clienteId } } as any)}
+                >
+                  <Text style={styles.detailBtnText}>Ver detalle</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )
+        })}
       </ScrollView>
     </View>
   )
@@ -213,15 +194,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
+    borderRadius: 16,
+    padding: 16,
+  },
+  eyebrow: {
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '700',
+    fontSize: 12,
   },
   title: {
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '800',
+    marginTop: 4,
   },
   backButton: {
-    backgroundColor: '#111827',
-    borderColor: '#1E293B',
+    backgroundColor: 'rgba(2,6,23,0.38)',
+    borderColor: 'rgba(147,197,253,0.6)',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
@@ -272,6 +261,23 @@ const styles = StyleSheet.create({
     borderTopColor: '#1E293B',
     gap: 4,
   },
+  cardActions: {
+    marginTop: 12,
+    alignItems: 'flex-end',
+  },
+  detailBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#60A5FA',
+    backgroundColor: '#1D4ED8',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  detailBtnText: {
+    color: '#EFF6FF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   nombre: {
     color: '#FFFFFF',
     fontSize: 18,
@@ -294,11 +300,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderWidth: 1,
   },
-  badgeVerde: {
+  badgeOk: {
     backgroundColor: '#14532D',
     borderColor: '#22C55E',
   },
-  badgeGris: {
+  badgeWarn: {
+    backgroundColor: '#7C2D12',
+    borderColor: '#FB923C',
+  },
+  badgeOff: {
     backgroundColor: '#334155',
     borderColor: '#64748B',
   },
@@ -322,5 +332,21 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
     marginBottom: 12,
     fontSize: 13,
+  },
+  emptyCard: {
+    backgroundColor: '#0B1220',
+    borderColor: '#1E293B',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  emptyTitle: {
+    color: '#E2E8F0',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  emptyText: {
+    color: '#94A3B8',
+    marginTop: 6,
   },
 })
