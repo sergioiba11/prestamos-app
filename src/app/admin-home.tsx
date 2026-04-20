@@ -197,11 +197,15 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
-          <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerBlock}>
-            <View>
+          <LinearGradient colors={['#0B1025', '#123A9D', '#1D66E3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerBlock}>
+            <View style={styles.headerLeft}>
+              <View style={styles.brandPill}>
+                <Ionicons name="shield-checkmark" size={14} color="#DBEAFE" />
+                <Text style={styles.brandPillText}>CrediTodo Admin</Text>
+              </View>
               <Text style={styles.headerEyebrow}>Panel de administración</Text>
-              <Text style={styles.headerTitle}>¡Bienvenido, {adminName}!</Text>
-              <Text style={styles.headerSubtitle}>Gestioná tus préstamos de forma rápida y segura.</Text>
+              <Text style={styles.headerTitle}>Hola, {adminName}</Text>
+              <Text style={styles.headerSubtitle}>Monitoreá préstamos, cobros y clientes en tiempo real.</Text>
             </View>
 
             <View style={styles.headerRight}>
@@ -210,7 +214,7 @@ export default function AdminHome() {
                 <Text style={styles.dateBadgeText}>{formatDate(new Date().toISOString())}</Text>
               </View>
               <TouchableOpacity style={styles.bellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                <Ionicons name="mail-outline" size={18} color="#DBEAFE" />
+                <Ionicons name="mail-unread-outline" size={18} color="#DBEAFE" />
                 {unreadCount > 0 ? (
                   <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>
                 ) : null}
@@ -328,33 +332,28 @@ export default function AdminHome() {
   )
 }
 
-function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
-      <Text style={styles.actionText}>{label}</Text>
-    </TouchableOpacity>
-  )
-}
-
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 18, gap: 14, paddingBottom: 30 },
+  content: { padding: 18, gap: 14, paddingBottom: 30, backgroundColor: '#020817' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   mobileTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, height: 56, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B',
-    backgroundColor: '#0A1120', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#020817', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  headerEyebrow: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
-  headerSubtitle: { color: 'rgba(255,255,255,0.88)', marginTop: 4 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative' },
-  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  headerBlock: { borderRadius: 22, padding: 22, flexDirection: 'row', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', borderWidth: 1, borderColor: 'rgba(147,197,253,0.25)' },
+  headerLeft: { gap: 6, maxWidth: 620 },
+  brandPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(15,23,42,0.34)', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 2 },
+  brandPillText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
+  headerEyebrow: { color: 'rgba(219,234,254,0.86)', fontSize: 12, fontWeight: '700' },
+  headerTitle: { color: '#fff', fontSize: 30, fontWeight: '800', marginTop: 2 },
+  headerSubtitle: { color: 'rgba(219,234,254,0.95)', marginTop: 2, fontSize: 14 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative', alignSelf: 'flex-start' },
+  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(147,197,253,0.55)', backgroundColor: 'rgba(2,6,23,0.32)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
-  bellBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155', backgroundColor: '#0F172A' },
+  bellBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', backgroundColor: 'rgba(2,6,23,0.38)' },
   unreadBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
