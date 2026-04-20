@@ -161,12 +161,30 @@ export async function fetchAdminPanelData() {
       .order('created_at', { ascending: false }),
   ])
 
-  if (clientesRes.error) throw clientesRes.error
-  if (panelClientesRes.error) throw panelClientesRes.error
-  if (prestamosRes.error) throw prestamosRes.error
-  if (prestamosVencidosRes.error) throw prestamosVencidosRes.error
-  if (cuotasRes.error) throw cuotasRes.error
-  if (pagosRes.error) throw pagosRes.error
+  if (clientesRes.error) {
+    console.error('admin-dashboard clientes error', clientesRes.error)
+    throw clientesRes.error
+  }
+  if (panelClientesRes.error) {
+    console.error('admin-dashboard panel_clientes error', panelClientesRes.error)
+    throw panelClientesRes.error
+  }
+  if (prestamosRes.error) {
+    console.error('admin-dashboard prestamos error', prestamosRes.error)
+    throw prestamosRes.error
+  }
+  if (prestamosVencidosRes.error) {
+    console.error('admin-dashboard prestamos_vencidos error', prestamosVencidosRes.error)
+    throw prestamosVencidosRes.error
+  }
+  if (cuotasRes.error) {
+    console.error('admin-dashboard cuotas error', cuotasRes.error)
+    throw cuotasRes.error
+  }
+  if (pagosRes.error) {
+    console.error('admin-dashboard pagos error', pagosRes.error)
+    throw pagosRes.error
+  }
 
   const clientes = (clientesRes.data || []) as Cliente[]
   const panelClientesRaw = (panelClientesRes.data || []) as PanelCliente[]
@@ -197,26 +215,24 @@ export async function fetchAdminPanelData() {
   console.log('admin-dashboard raw panel_clientes', panelClientesRaw)
   console.log('admin-dashboard raw usuarios', usuariosRaw)
 
-  const clientesActivos = panelClientesFiltrados
-    .map((row) => {
-      const clienteId = row.cliente_id_uuid || ''
-      const usuarioId = row.usuario_id || ''
-      const restante = Number(row.restante || 0)
-      const totalAPagar = Number(row.total_a_pagar || 0)
-      const totalPagado = Number(row.total_pagado || 0)
-      const prestamoActivo = restante > 0 ? restante : Math.max(totalAPagar - totalPagado, 0)
+  const clientesActivos = panelClientesFiltrados.map((row, index) => {
+    const clienteId = row.cliente_id_uuid || row.usuario_id || `sin-id-${index}`
+    const usuarioId = row.usuario_id || ''
+    const restante = Number(row.restante || 0)
+    const totalAPagar = Number(row.total_a_pagar || 0)
+    const totalPagado = Number(row.total_pagado || 0)
+    const prestamoActivo = restante > 0 ? restante : Math.max(totalAPagar - totalPagado, 0)
 
-      return {
-        id: clienteId,
-        nombre: row.nombre || 'Cliente',
-        telefono: row.telefono || 'Sin teléfono',
-        dni: row.dni || '—',
-        prestamo: prestamoActivo,
-        estado: prestamoActivo > 0 ? 'activo' : 'activo',
-        usuario_id: usuarioId,
-      }
-    })
-    .filter((row) => Boolean(row.id))
+    return {
+      id: clienteId,
+      nombre: row.nombre || 'Cliente',
+      telefono: row.telefono || 'Sin teléfono',
+      dni: row.dni || '—',
+      prestamo: prestamoActivo,
+      estado: prestamoActivo > 0 ? 'activo' : 'activo',
+      usuario_id: usuarioId,
+    }
+  })
 
   console.log('admin-dashboard mapped clientesActivos', clientesActivos)
 
