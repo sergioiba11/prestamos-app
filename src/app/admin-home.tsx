@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import {
@@ -196,7 +197,7 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
-          <View style={styles.headerBlock}>
+          <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerBlock}>
             <View>
               <Text style={styles.headerEyebrow}>Panel de administración</Text>
               <Text style={styles.headerTitle}>¡Bienvenido, {adminName}!</Text>
@@ -218,7 +219,7 @@ export default function AdminHome() {
                 <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
               ) : null}
             </View>
-          </View>
+          </LinearGradient>
 
           <View style={styles.kpiGrid}>
             <AdminStatCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
@@ -341,10 +342,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A1120', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  headerEyebrow: { color: '#60A5FA', fontSize: 12, fontWeight: '700' },
+  headerBlock: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  headerEyebrow: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' },
   headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
-  headerSubtitle: { color: '#94A3B8', marginTop: 4 },
+  headerSubtitle: { color: 'rgba(255,255,255,0.88)', marginTop: 4 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative' },
   dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },

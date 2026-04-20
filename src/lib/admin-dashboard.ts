@@ -122,6 +122,7 @@ function low(v?: string | null) {
 export async function fetchAdminPanelData() {
   const [clientesRes, panelClientesRes, prestamosRes, prestamosVencidosRes, cuotasRes, pagosRes] = await Promise.all([
     supabase.from('clientes').select('id,nombre,dni,telefono,direccion,usuario_id,usuarios:usuario_id(email)'),
+    supabase.from('panel_clientes').select('*'),
     supabase
       .from('panel_clientes')
       .select(
@@ -192,16 +193,18 @@ export async function fetchAdminPanelData() {
   const cuotas = (cuotasRes.data || []) as Cuota[]
   const pagos = (pagosRes.data || []) as Pago[]
 
-  const panelClientesFiltrados = panelClientesRaw.filter((row) => {
-    const cantidadPrestamos = Number(row.cantidad_prestamos || 0)
-    const restante = Number(row.restante || 0)
-    const totalAPagar = Number(row.total_a_pagar || 0)
-    const totalPagado = Number(row.total_pagado || 0)
+  console.log('panel_clientes RAW:', panelClientesRaw, panelClientesRes.error)
 
-    return cantidadPrestamos > 0 || restante > 0 || totalAPagar > totalPagado
+  const clientesActivos = (panelClientesRaw || []).filter((c) => {
+    const cantidadPrestamos = Number(c.cantidad_prestamos || 0)
+    const totalAPagar = Number(c.total_a_pagar || 0)
+    const totalPagado = Number(c.total_pagado || 0)
+    return cantidadPrestamos > 0 || totalAPagar > totalPagado
   })
 
-  const usuarioIds = Array.from(new Set(panelClientesFiltrados.map((c) => c.usuario_id).filter(Boolean))) as string[]
+  console.log('clientes activos filtrados:', clientesActivos)
+
+  const usuarioIds = Array.from(new Set(clientesActivos.map((c) => c.usuario_id).filter(Boolean))) as string[]
 
   let usuariosRaw: Array<{ id: string; email: string | null }> = []
   if (usuarioIds.length > 0) {
@@ -212,31 +215,21 @@ export async function fetchAdminPanelData() {
 
   const usuariosById = new Map(usuariosRaw.map((u) => [u.id, u.email || 'Sin email']))
 
-  console.log('admin-dashboard raw panel_clientes', panelClientesRaw)
-  console.log('admin-dashboard raw usuarios', usuariosRaw)
+  console.log('usuarios RAW:', usuariosRaw)
 
-  const clientesActivos = panelClientesFiltrados.map((row, index) => {
-    const clienteId = row.cliente_id_uuid || row.usuario_id || `sin-id-${index}`
-    const usuarioId = row.usuario_id || ''
-    const restante = Number(row.restante || 0)
-    const totalAPagar = Number(row.total_a_pagar || 0)
-    const totalPagado = Number(row.total_pagado || 0)
-    const prestamoActivo = restante > 0 ? restante : Math.max(totalAPagar - totalPagado, 0)
+  const clientesMap = clientesActivos.map((c, index) => ({
+    id: c.cliente_id_uuid || c.usuario_id || `sin-id-${index}`,
+    nombre: c.nombre || 'Cliente',
+    telefono: c.telefono || 'Sin teléfono',
+    dni: c.dni || '—',
+    prestamo: Number(c.total_a_pagar || 0),
+    estado: 'Activo',
+    usuario_id: c.usuario_id || '',
+  }))
 
-    return {
-      id: clienteId,
-      nombre: row.nombre || 'Cliente',
-      telefono: row.telefono || 'Sin teléfono',
-      dni: row.dni || '—',
-      prestamo: prestamoActivo,
-      estado: prestamoActivo > 0 ? 'activo' : 'activo',
-      usuario_id: usuarioId,
-    }
-  })
+  console.log('clientes mapeados final:', clientesMap)
 
-  console.log('admin-dashboard mapped clientesActivos', clientesActivos)
-
-  const clientesMap = new Map(clientes.map((c) => [c.id, c]))
+  const clientesById = new Map(clientes.map((c) => [c.id, c]))
   const cuotasByPrestamo = new Map<string, Cuota[]>()
 
   for (const cuota of cuotas) {
@@ -273,7 +266,7 @@ export async function fetchAdminPanelData() {
   })
 
   const pagosPendientesList: PagoPendienteItem[] = pagosPendientesRaw.slice(0, 8).map((p) => {
-    const cliente = p.cliente_id ? clientesMap.get(p.cliente_id) : null
+    const cliente = p.cliente_id ? clientesById.get(p.cliente_id) : null
 
     return {
       id: p.id,
@@ -286,8 +279,8 @@ export async function fetchAdminPanelData() {
     }
   })
 
-  const activosCards: ClientePrestamoActivo[] = clientesActivos.map((row) => {
-    const cliente = clientesMap.get(row.id)
+  const activosCards: ClientePrestamoActivo[] = clientesMap.map((row) => {
+    const cliente = clientesById.get(row.id)
 
     return {
       prestamoId: `panel-${row.id}`,
@@ -300,7 +293,7 @@ export async function fetchAdminPanelData() {
       direccion: cliente?.direccion || '',
       prestamoActivo: Number(row.prestamo || 0),
       proximoPago: '—',
-      estado: low(row.estado) || 'activo',
+      estado: 'activo',
     }
     })
     .filter((item) => Boolean(item.clienteId))
@@ -309,7 +302,7 @@ export async function fetchAdminPanelData() {
     const total = Number(prestamo.total_a_pagar || 0)
     const pagado = Number(pagosByPrestamo.get(prestamo.id) || 0)
     const restante = Math.max(total - pagado, 0)
-    const cliente = clientesMap.get(prestamo.cliente_id)
+    const cliente = clientesById.get(prestamo.cliente_id)
 
     return {
       prestamoId: prestamo.id,
@@ -329,7 +322,7 @@ export async function fetchAdminPanelData() {
 
   const kpis: AdminKpis = {
     cobrarHoy,
-    clientesActivos: clientesActivos.length,
+    clientesActivos: clientesMap.length,
     prestamosVencidos: prestamosVencidosRes.count || 0,
     pagosPendientes: pagosPendientesRaw.length,
   }
