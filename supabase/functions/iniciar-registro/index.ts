@@ -18,6 +18,13 @@ function normalizeDni(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '')
 }
 
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 async function fetchClienteByNormalizedDni(
   supabase: ReturnType<typeof createClient>,
   cleanDni: string
@@ -27,19 +34,10 @@ async function fetchClienteByNormalizedDni(
     .select('id,dni,nombre,telefono,usuario_id')
     .not('dni', 'is', null)
 
-  if (error) {
-    throw new Error(error.message)
-  }
+  if (error) throw new Error(error.message)
 
   const rows = (data || []) as ClienteRow[]
   return rows.find((row) => normalizeDni(row.dni) === cleanDni) || null
-}
-
-function jsonResponse(payload: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
 }
 
 Deno.serve(async (req) => {
@@ -62,8 +60,10 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const cleanDni = normalizeDni(body?.dni)
 
+    console.log('[iniciar-registro] input', { rawDni: body?.dni, cleanDni })
+
     if (cleanDni.length < 7 || cleanDni.length > 8) {
-      return jsonResponse({ ok: false, error: 'DNI inválido' }, 400)
+      return jsonResponse({ ok: false, error: 'DNI inválido. Debe tener 7 u 8 dígitos.' }, 400)
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -73,6 +73,8 @@ Deno.serve(async (req) => {
     let cliente = await fetchClienteByNormalizedDni(supabase, cleanDni)
 
     if (!cliente) {
+      console.log('[iniciar-registro] cliente no existe, creando placeholder', { cleanDni })
+
       const { data: created, error: createError } = await supabase
         .from('clientes')
         .insert({
@@ -85,16 +87,15 @@ Deno.serve(async (req) => {
         .maybeSingle<ClienteRow>()
 
       if (createError || !created) {
-        console.error('[iniciar-registro] error creating cliente:', createError)
-
-        // Evita duplicados por carrera: si otro proceso lo creó, lo buscamos de nuevo.
-        const retry = await fetchClienteByNormalizedDni(supabase, cleanDni)
-        if (!retry) {
-          throw new Error(createError?.message || 'No se pudo crear el cliente para ese DNI.')
+        console.error('[iniciar-registro] error creando cliente, reintentando lookup', createError)
+        const retried = await fetchClienteByNormalizedDni(supabase, cleanDni)
+        if (!retried) {
+          throw new Error(createError?.message || 'No se pudo crear/preparar el cliente para ese DNI.')
         }
-        cliente = retry
+        cliente = retried
       } else {
         cliente = created
+        console.log('[iniciar-registro] cliente placeholder creado', { clienteId: cliente.id })
         return jsonResponse({
           ok: true,
           status: 'new',
@@ -104,6 +105,11 @@ Deno.serve(async (req) => {
     }
 
     const status = cliente.usuario_id ? 'active' : 'existing'
+    console.log('[iniciar-registro] cliente encontrado', {
+      clienteId: cliente.id,
+      usuarioId: cliente.usuario_id,
+      status,
+    })
 
     return jsonResponse({
       ok: true,
@@ -111,7 +117,7 @@ Deno.serve(async (req) => {
       cliente,
     })
   } catch (error: any) {
-    console.error('[iniciar-registro] fatal error:', error)
+    console.error('[iniciar-registro] fatal error', error)
 
     return jsonResponse(
       {

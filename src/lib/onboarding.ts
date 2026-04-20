@@ -65,7 +65,8 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
   })
 
   if (error) {
-    throw new Error('No pudimos iniciar el registro. Intentá nuevamente.')
+    console.error('[onboarding] iniciar-registro invoke error', error)
+    throw new Error(error.message || 'No pudimos iniciar el registro. Intentá nuevamente.')
   }
 
   const payload = data as
@@ -84,7 +85,8 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
       }
     | null
 
-  if (!payload?.ok || !payload.status) {
+  if (!payload?.ok || !payload.status || !['new', 'existing', 'active'].includes(payload.status)) {
+    console.error('[onboarding] iniciar-registro invalid payload', payload)
     throw new Error(payload?.error || 'No pudimos iniciar el registro.')
   }
 
@@ -92,15 +94,19 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
     return { status: 'active', cliente: null }
   }
 
+  if (!payload.cliente?.id) {
+    throw new Error('No pudimos preparar el cliente para continuar el registro.')
+  }
+
   return {
     status: payload.status,
     cliente: {
-      clienteId: payload.cliente?.id || null,
-      dni: payload.cliente?.dni || cleanDni,
-      nombre: payload.cliente?.nombre || 'Cliente',
-      telefono: payload.cliente?.telefono || null,
-      usuarioId: payload.cliente?.usuario_id || null,
-      email: payload.cliente?.email || null,
+      clienteId: payload.cliente.id,
+      dni: payload.cliente.dni || cleanDni,
+      nombre: payload.cliente.nombre || 'Cliente',
+      telefono: payload.cliente.telefono || null,
+      usuarioId: payload.cliente.usuario_id || null,
+      email: payload.cliente.email || null,
       source: 'edge-start-registration',
     },
   }

@@ -15,12 +15,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { AdminClientsTable } from '../components/admin/AdminClientsTable'
 import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { EditClientModal } from '../components/admin/EditClientModal'
 import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
@@ -45,9 +43,6 @@ export default function AdminHome() {
   const [search, setSearch] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
-  const [selectedClient, setSelectedClient] = useState<ClientePrestamoActivo | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
-
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
     clientesActivos: 0,
@@ -197,11 +192,15 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
-          <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerBlock}>
-            <View>
+          <LinearGradient colors={['#0B1025', '#123A9D', '#1D66E3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerBlock}>
+            <View style={styles.headerLeft}>
+              <View style={styles.brandPill}>
+                <Ionicons name="shield-checkmark" size={14} color="#DBEAFE" />
+                <Text style={styles.brandPillText}>CrediTodo Admin</Text>
+              </View>
               <Text style={styles.headerEyebrow}>Panel de administración</Text>
-              <Text style={styles.headerTitle}>¡Bienvenido, {adminName}!</Text>
-              <Text style={styles.headerSubtitle}>Gestioná tus préstamos de forma rápida y segura.</Text>
+              <Text style={styles.headerTitle}>Hola, {adminName}</Text>
+              <Text style={styles.headerSubtitle}>Monitoreá préstamos, cobros y clientes en tiempo real.</Text>
             </View>
 
             <View style={styles.headerRight}>
@@ -210,7 +209,7 @@ export default function AdminHome() {
                 <Text style={styles.dateBadgeText}>{formatDate(new Date().toISOString())}</Text>
               </View>
               <TouchableOpacity style={styles.bellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                <Ionicons name="mail-outline" size={18} color="#DBEAFE" />
+                <Ionicons name="mail-unread-outline" size={18} color="#DBEAFE" />
                 {unreadCount > 0 ? (
                   <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>
                 ) : null}
@@ -279,36 +278,32 @@ export default function AdminHome() {
             {filteredClients.length === 0 ? (
               <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
-              <AdminClientsTable
-                rows={filteredClients}
-                onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                onEdit={(row) => {
-                  setSelectedClient(row)
-                  setEditOpen(true)
-                }}
-                onHistory={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-              />
+              <View style={styles.activeList}>
+                {filteredClients.slice(0, 6).map((row) => (
+                  <View key={row.clienteId} style={styles.activeClientRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activeClientName}>{row.nombre}</Text>
+                      <Text style={styles.activeClientMeta}>DNI {row.dni} · {row.telefono}</Text>
+                      <Text style={styles.activeClientDebt}>Deuda activa: {money(row.prestamoActivo)}</Text>
+                    </View>
+                    <View style={styles.activeRight}>
+                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Préstamo activo</Text></View>
+                      <TouchableOpacity
+                        style={styles.detailBtn}
+                        onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
+                      >
+                        <Text style={styles.detailBtnText}>Ver detalle</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
             )}
           </View>
 
           <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
         </ScrollView>
       </View>
-
-      <EditClientModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        onSaved={() => void loadData()}
-        client={selectedClient ? {
-          id: selectedClient.clienteId,
-          usuario_id: selectedClient.usuarioId || undefined,
-          nombre: selectedClient.nombre,
-          dni: selectedClient.dni,
-          telefono: selectedClient.telefono,
-          direccion: selectedClient.direccion,
-          email: selectedClient.email,
-        } : null}
-      />
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrap}>
@@ -328,33 +323,28 @@ export default function AdminHome() {
   )
 }
 
-function ActionButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
-      <Text style={styles.actionText}>{label}</Text>
-    </TouchableOpacity>
-  )
-}
-
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 18, gap: 14, paddingBottom: 30 },
+  content: { padding: 18, gap: 14, paddingBottom: 30, backgroundColor: '#020817' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   mobileTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, height: 56, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B',
-    backgroundColor: '#0A1120', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#020817', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: { borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  headerEyebrow: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
-  headerSubtitle: { color: 'rgba(255,255,255,0.88)', marginTop: 4 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative' },
-  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  headerBlock: { borderRadius: 22, padding: 22, flexDirection: 'row', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', borderWidth: 1, borderColor: 'rgba(147,197,253,0.25)' },
+  headerLeft: { gap: 6, maxWidth: 620 },
+  brandPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(15,23,42,0.34)', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 2 },
+  brandPillText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
+  headerEyebrow: { color: 'rgba(219,234,254,0.86)', fontSize: 12, fontWeight: '700' },
+  headerTitle: { color: '#fff', fontSize: 30, fontWeight: '800', marginTop: 2 },
+  headerSubtitle: { color: 'rgba(219,234,254,0.95)', marginTop: 2, fontSize: 14 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative', alignSelf: 'flex-start' },
+  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(147,197,253,0.55)', backgroundColor: 'rgba(2,6,23,0.32)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
-  bellBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155', backgroundColor: '#0F172A' },
+  bellBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', backgroundColor: 'rgba(2,6,23,0.38)' },
   unreadBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
@@ -372,6 +362,26 @@ const styles = StyleSheet.create({
   rejectBtn: { backgroundColor: '#7F1D1D', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
   smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   searchInput: { borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#020817', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', marginBottom: 12 },
+
+  activeList: { gap: 10 },
+  activeClientRow: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  activeClientName: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+  activeClientMeta: { color: '#94A3B8', marginTop: 3, fontSize: 12 },
+  activeClientDebt: { color: '#BFDBFE', marginTop: 5, fontWeight: '700', fontSize: 12 },
+  activeRight: { alignItems: 'flex-end', gap: 8 },
+  activeBadge: { borderRadius: 999, backgroundColor: '#14532D', borderWidth: 1, borderColor: '#22C55E', paddingHorizontal: 10, paddingVertical: 5 },
+  activeBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  detailBtn: { borderRadius: 8, borderWidth: 1, borderColor: '#60A5FA', backgroundColor: '#1D4ED8', paddingHorizontal: 10, paddingVertical: 6 },
+  detailBtnText: { color: '#EFF6FF', fontSize: 11, fontWeight: '700' },
   emptyText: { color: '#94A3B8' },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
   modalWrap: { flex: 1, flexDirection: 'row' },
