@@ -52,16 +52,37 @@ type AdminClientesListadoRow = {
   estado_cliente: string | null
 }
 
-type PanelClienteFallback = {
-  cliente_id_uuid: string | null
+type ClienteFallbackRow = {
+  id: string
   usuario_id: string | null
   nombre: string | null
+  email: string | null
   telefono: string | null
+  direccion: string | null
   dni: string | null
-  cantidad_prestamos: number | null
+}
+
+type UsuarioFallbackRow = {
+  id: string
+  email: string | null
+  rol: string | null
+}
+
+type PrestamoFallbackRow = {
+  cliente_id: string
+  estado: string | null
   total_a_pagar: number | null
-  total_pagado: number | null
-  restante: number | null
+  saldo_pendiente: number | null
+  monto: number | null
+  fecha_limite: string | null
+}
+
+type PagoFallbackRow = {
+  cliente_id: string | null
+  monto: number | null
+  estado_validacion: string | null
+  fecha_pago: string | null
+  created_at: string | null
 }
 
 export type AdminKpis = {
@@ -130,12 +151,18 @@ export type ClienteAdminListadoItem = {
   totalPagado: number
 }
 
-function low(v?: string | null) {
-  return String(v || '').toLowerCase()
+const ACTIVE_LOAN_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido'])
+const OVERDUE_LOAN_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
+const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
+const PENDING_PAYMENT_VALIDATION_STATES = new Set(['pendiente', 'en_revision'])
+const PAID_PAYMENT_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado'])
+
+function low(value?: string | null) {
+  return String(value || '').toLowerCase()
 }
 
-function ymd(v?: string | null) {
-  return v ? String(v).slice(0, 10) : '—'
+function ymd(value?: string | null) {
+  return value ? String(value).slice(0, 10) : '—'
 }
 
 function toListadoItem(row: AdminClientesListadoRow): ClienteAdminListadoItem {
@@ -168,17 +195,187 @@ function toListadoItem(row: AdminClientesListadoRow): ClienteAdminListadoItem {
   }
 }
 
-
 function hasActiveLoan(cliente: ClienteAdminListadoItem) {
   const estado = low(cliente.estadoCliente)
   if (cliente.tienePrestamoActivo || cliente.tienePrestamoVencido) return true
   if (cliente.cantidadPrestamosActivos > 0) return true
   if (cliente.deudaActiva > 0 || cliente.restante > 0) return true
-  return estado === 'activo' || estado === 'atrasado' || estado === 'en_mora' || estado === 'vencido'
+  return ACTIVE_LOAN_STATES.has(estado)
+}
+
+function hasOverdueLoan(cliente: ClienteAdminListadoItem) {
+  const estado = low(cliente.estadoCliente)
+  return Boolean(cliente.tienePrestamoVencido) || OVERDUE_LOAN_STATES.has(estado) || estado.includes('venc')
 }
 
 export function getClientesConPrestamoActivo(clientesListado: ClienteAdminListadoItem[]) {
   return clientesListado.filter(hasActiveLoan)
+}
+
+export function toClientePrestamoActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
+  return {
+    prestamoId: `panel-${row.clienteId}`,
+    clienteId: row.clienteId,
+    nombre: row.nombre,
+    email: row.email,
+    usuarioId: row.usuarioId,
+    dni: row.dni,
+    telefono: row.telefono,
+    direccion: row.direccion,
+    prestamoActivo: Math.max(row.deudaActiva, row.restante, 0),
+    proximoPago: row.proximoVencimiento,
+    estado: row.estadoCliente,
+  }
+}
+
+async function hasSuspiciousEmptyViewResult() {
+  const { count, error } = await supabase
+    .from('clientes')
+    .select('id', { count: 'exact', head: true })
+    .not('usuario_id', 'is', null)
+
+  if (error) {
+    console.error('[admin-dashboard] unable to validate empty view against clientes table', error)
+    return false
+  }
+
+  return Number(count || 0) > 0
+}
+
+async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
+  const { data: clientesRaw, error: clientesError } = await supabase
+    .from('clientes')
+    .select('id,usuario_id,nombre,email,telefono,direccion,dni')
+    .order('nombre', { ascending: true })
+
+  if (clientesError) {
+    console.error('[admin-dashboard] clientes fallback error', clientesError)
+    throw clientesError
+  }
+
+  const clientes = (clientesRaw || []) as ClienteFallbackRow[]
+  const usuarioIds = clientes.map((row) => row.usuario_id).filter(Boolean) as string[]
+
+  let usuarios: UsuarioFallbackRow[] = []
+  if (usuarioIds.length > 0) {
+    const { data: usuariosRaw, error: usuariosError } = await supabase
+      .from('usuarios')
+      .select('id,email,rol')
+      .in('id', usuarioIds)
+
+    if (usuariosError) {
+      console.error('[admin-dashboard] usuarios fallback error', usuariosError)
+    } else {
+      usuarios = (usuariosRaw || []) as UsuarioFallbackRow[]
+    }
+  }
+
+  const { data: prestamosRaw, error: prestamosError } = await supabase
+    .from('prestamos')
+    .select('cliente_id,estado,total_a_pagar,saldo_pendiente,monto,fecha_limite')
+
+  if (prestamosError) {
+    console.error('[admin-dashboard] prestamos fallback error', prestamosError)
+  }
+
+  const { data: pagosRaw, error: pagosError } = await supabase
+    .from('pagos')
+    .select('cliente_id,monto,estado_validacion,fecha_pago,created_at')
+
+  if (pagosError) {
+    console.error('[admin-dashboard] pagos fallback error', pagosError)
+  }
+
+  const prestamos = ((prestamosRaw || []) as PrestamoFallbackRow[]).filter((p) => Boolean(p.cliente_id))
+  const pagos = (pagosRaw || []) as PagoFallbackRow[]
+
+  const usuariosById = new Map<string, UsuarioFallbackRow>()
+  for (const usuario of usuarios) usuariosById.set(usuario.id, usuario)
+
+  const prestamosByCliente = new Map<string, PrestamoFallbackRow[]>()
+  for (const prestamo of prestamos) {
+    const list = prestamosByCliente.get(prestamo.cliente_id) || []
+    list.push(prestamo)
+    prestamosByCliente.set(prestamo.cliente_id, list)
+  }
+
+  const pagosByCliente = new Map<string, PagoFallbackRow[]>()
+  for (const pago of pagos) {
+    if (!pago.cliente_id) continue
+    const list = pagosByCliente.get(pago.cliente_id) || []
+    list.push(pago)
+    pagosByCliente.set(pago.cliente_id, list)
+  }
+
+  const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
+    const usuario = cliente.usuario_id ? usuariosById.get(cliente.usuario_id) : undefined
+    const clientePrestamos = prestamosByCliente.get(cliente.id) || []
+    const clientePagos = pagosByCliente.get(cliente.id) || []
+
+    const cantidadPrestamos = clientePrestamos.length
+    const prestamosActivos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
+    const cantidadPrestamosActivos = prestamosActivos.length
+    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
+
+    const deudaActiva = prestamosActivos.reduce((acc, p) => {
+      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
+      return acc + Math.max(saldo, 0)
+    }, 0)
+
+    const totalAPagar = clientePrestamos.reduce((acc, p) => {
+      const total = Number(p.total_a_pagar ?? p.monto ?? 0)
+      return acc + Math.max(total, 0)
+    }, 0)
+
+    const totalPagado = clientePagos.reduce((acc, p) => {
+      const estadoValidacion = low(p.estado_validacion)
+      if (estadoValidacion && !PAID_PAYMENT_VALIDATION_STATES.has(estadoValidacion)) return acc
+      return acc + Math.max(Number(p.monto || 0), 0)
+    }, 0)
+
+    const restante = Math.max(totalAPagar - totalPagado, 0)
+
+    const proximoVencimientoRaw = prestamosActivos
+      .map((p) => (p.fecha_limite || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()[0]
+
+    const fechaUltimoPagoRaw = clientePagos
+      .map((p) => p.fecha_pago || p.created_at || '')
+      .filter(Boolean)
+      .sort()
+      .pop()
+
+    return {
+      clienteId: cliente.id,
+      usuarioId: cliente.usuario_id || '',
+      nombre: cliente.nombre || 'Cliente',
+      dni: cliente.dni || '—',
+      telefono: cliente.telefono || 'Sin teléfono',
+      direccion: cliente.direccion || 'Sin dirección',
+      email: usuario?.email || cliente.email || 'Sin email',
+      cantidadPrestamos,
+      cantidadPrestamosActivos,
+      tienePrestamoActivo: cantidadPrestamosActivos > 0 || deudaActiva > 0 || restante > 0,
+      tienePrestamoVencido,
+      deudaActiva,
+      restante,
+      estadoCliente: tienePrestamoVencido ? 'vencido' : cantidadPrestamosActivos > 0 ? 'activo' : 'sin_prestamo',
+      fechaUltimoPago: ymd(fechaUltimoPagoRaw),
+      proximoVencimiento: ymd(proximoVencimientoRaw),
+      totalPagado,
+    }
+  })
+
+  const filtered = mapped.filter((row) => {
+    const usuario = row.usuarioId ? usuariosById.get(row.usuarioId) : undefined
+    const rol = low(usuario?.rol)
+    if (!rol) return true
+    return rol === 'cliente'
+  })
+
+  console.log('[admin-dashboard] clientes fallback rows', filtered.length)
+  return filtered
 }
 
 export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoItem[]> {
@@ -186,109 +383,73 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
 
   if (!error) {
     const rows = (data || []) as AdminClientesListadoRow[]
-    return rows.map(toListadoItem)
+
+    if (rows.length > 0) {
+      console.log('[admin-dashboard] admin_clientes_listado rows', rows.length)
+      return rows.map(toListadoItem)
+    }
+
+    if (await hasSuspiciousEmptyViewResult()) {
+      console.warn('[admin-dashboard] admin_clientes_listado returned 0 rows with linked clientes. Using table fallback.')
+      return fetchAdminClientesListadoFromBaseTables()
+    }
+
+    console.log('[admin-dashboard] admin_clientes_listado rows', rows.length)
+    return []
   }
 
-  console.warn('[admin-dashboard] admin_clientes_listado unavailable, fallback to panel_clientes', error)
-
-  const { data: panelData, error: panelError } = await supabase.from('panel_clientes').select('*')
-  if (panelError) {
-    console.error('[admin-dashboard] panel_clientes fallback error', panelError)
-    throw panelError
-  }
-
-  const fallbackRows = (panelData || []) as PanelClienteFallback[]
-  return fallbackRows.map((c, index) => {
-    const clienteId = c.cliente_id_uuid || c.usuario_id || `sin-id-${index}`
-    const deudaActiva = Math.max(Number(c.restante || 0), Number(c.total_a_pagar || 0) - Number(c.total_pagado || 0), 0)
-
-    return {
-      clienteId,
-      usuarioId: c.usuario_id || '',
-      nombre: c.nombre || 'Cliente',
-      dni: c.dni || '—',
-      telefono: c.telefono || 'Sin teléfono',
-      direccion: 'Sin dirección',
-      email: 'Sin email',
-      cantidadPrestamos: Number(c.cantidad_prestamos || 0),
-      cantidadPrestamosActivos: Number(c.cantidad_prestamos || 0),
-      tienePrestamoActivo: Number(c.cantidad_prestamos || 0) > 0 || deudaActiva > 0,
-      tienePrestamoVencido: false,
-      deudaActiva,
-      restante: deudaActiva,
-      estadoCliente: deudaActiva > 0 ? 'activo' : 'sin_prestamo',
-      fechaUltimoPago: '—',
-      proximoVencimiento: '—',
-      totalPagado: Number(c.total_pagado || 0),
-    } satisfies ClienteAdminListadoItem
-  })
+  console.warn('[admin-dashboard] admin_clientes_listado query failed, fallback to clientes + usuarios', error)
+  return fetchAdminClientesListadoFromBaseTables()
 }
 
 export async function fetchAdminPanelData() {
-  const [clientesListadoResult, cuotasResult, prestamosVencidosResult, pagosResult, prestamosHistorialResult] =
-    await Promise.allSettled([
-      fetchAdminClientesListado(),
-      supabase
-        .from('cuotas')
-        .select('prestamo_id,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
-      supabase.from('prestamos').select('id', { count: 'exact', head: true }).eq('estado', 'vencido'),
-      supabase
-        .from('pagos')
-        .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('prestamos')
-        .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
-        .order('fecha_inicio', { ascending: false }),
-    ])
+  const clientesListado = await fetchAdminClientesListado()
 
-  if (clientesListadoResult.status === 'rejected') {
-    console.error('[admin-dashboard] error loading clientes listado', clientesListadoResult.reason)
-    throw clientesListadoResult.reason
-  }
+  const [cuotasResult, pagosResult, prestamosHistorialResult] = await Promise.allSettled([
+    supabase
+      .from('cuotas')
+      .select('prestamo_id,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
+    supabase
+      .from('pagos')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('prestamos')
+      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+      .order('fecha_inicio', { ascending: false }),
+  ])
+
+  const cuotas: Cuota[] =
+    cuotasResult.status === 'fulfilled' && !cuotasResult.value.error ? ((cuotasResult.value.data || []) as Cuota[]) : []
 
   if (cuotasResult.status === 'rejected') {
-    console.error('[admin-dashboard] error loading cuotas', cuotasResult.reason)
-    throw cuotasResult.reason
-  }
-  if (cuotasResult.value.error) {
+    console.error('[admin-dashboard] cuotas request rejected', cuotasResult.reason)
+  } else if (cuotasResult.value.error) {
     console.error('[admin-dashboard] cuotas query error', cuotasResult.value.error)
-    throw cuotasResult.value.error
   }
 
-  if (prestamosVencidosResult.status === 'rejected') {
-    console.error('[admin-dashboard] error loading prestamos vencidos', prestamosVencidosResult.reason)
-    throw prestamosVencidosResult.reason
-  }
-  if (prestamosVencidosResult.value.error) {
-    console.error('[admin-dashboard] prestamos vencidos query error', prestamosVencidosResult.value.error)
-    throw prestamosVencidosResult.value.error
-  }
+  const pagos: Pago[] =
+    pagosResult.status === 'fulfilled' && !pagosResult.value.error ? ((pagosResult.value.data || []) as Pago[]) : []
 
   if (pagosResult.status === 'rejected') {
-    console.error('[admin-dashboard] error loading pagos', pagosResult.reason)
-    throw pagosResult.reason
-  }
-  if (pagosResult.value.error) {
+    console.error('[admin-dashboard] pagos request rejected', pagosResult.reason)
+  } else if (pagosResult.value.error) {
     console.error('[admin-dashboard] pagos query error', pagosResult.value.error)
-    throw pagosResult.value.error
   }
+
+  const prestamosHistorial: PrestamoHistorial[] =
+    prestamosHistorialResult.status === 'fulfilled' && !prestamosHistorialResult.value.error
+      ? ((prestamosHistorialResult.value.data || []) as PrestamoHistorial[])
+      : []
 
   if (prestamosHistorialResult.status === 'rejected') {
-    console.error('[admin-dashboard] error loading historial prestamos', prestamosHistorialResult.reason)
-    throw prestamosHistorialResult.reason
-  }
-  if (prestamosHistorialResult.value.error) {
-    console.error('[admin-dashboard] prestamos historial query error', prestamosHistorialResult.value.error)
-    throw prestamosHistorialResult.value.error
+    console.error('[admin-dashboard] prestamos request rejected', prestamosHistorialResult.reason)
+  } else if (prestamosHistorialResult.value.error) {
+    console.error('[admin-dashboard] prestamos query error', prestamosHistorialResult.value.error)
   }
 
-  const clientesListado = clientesListadoResult.value
-  const cuotas = (cuotasResult.value.data || []) as Cuota[]
-  const pagos = (pagosResult.value.data || []) as Pago[]
-  const prestamosHistorial = (prestamosHistorialResult.value.data || []) as PrestamoHistorial[]
-
-  const clientesById = new Map(clientesListado.map((c) => [c.clienteId, c]))
+  const clientesById = new Map<string, ClienteAdminListadoItem>()
+  for (const cliente of clientesListado) clientesById.set(cliente.clienteId, cliente)
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -296,7 +457,7 @@ export async function fetchAdminPanelData() {
 
   const cobrarHoy = cuotas.reduce((acc, cuota) => {
     const estado = low(cuota.estado)
-    if (!['pendiente', 'parcial'].includes(estado)) return acc
+    if (!PENDING_QUOTA_STATES.has(estado)) return acc
     if ((cuota.fecha_vencimiento || '').slice(0, 10) !== todayKey) return acc
 
     const saldoPendiente = Number(cuota.saldo_pendiente || 0)
@@ -306,12 +467,12 @@ export async function fetchAdminPanelData() {
 
   const pagosPendientesRaw = pagos.filter((pago) => {
     const estadoValidacion = low(pago.estado_validacion)
-    if (estadoValidacion) return estadoValidacion === 'pendiente'
+    if (estadoValidacion) return PENDING_PAYMENT_VALIDATION_STATES.has(estadoValidacion)
     return !pago.fecha_pago
   })
 
   const pagosPendientesList: PagoPendienteItem[] = pagosPendientesRaw.slice(0, 8).map((p) => {
-    const cliente = p.cliente_id ? clientesById.get(p.cliente_id) : null
+    const cliente = p.cliente_id ? clientesById.get(p.cliente_id) : undefined
 
     return {
       id: p.id,
@@ -325,20 +486,7 @@ export async function fetchAdminPanelData() {
   })
 
   const activos = getClientesConPrestamoActivo(clientesListado)
-
-  const activosCards: ClientePrestamoActivo[] = activos.slice(0, 8).map((row) => ({
-    prestamoId: `panel-${row.clienteId}`,
-    clienteId: row.clienteId,
-    nombre: row.nombre,
-    email: row.email,
-    usuarioId: row.usuarioId,
-    dni: row.dni,
-    telefono: row.telefono,
-    direccion: row.direccion,
-    prestamoActivo: row.deudaActiva,
-    proximoPago: row.proximoVencimiento,
-    estado: row.estadoCliente,
-  }))
+  const activosCards: ClientePrestamoActivo[] = activos.map(toClientePrestamoActivoCard)
 
   const pagosByPrestamo = new Map<string, number>()
   for (const pago of pagos) {
@@ -369,10 +517,19 @@ export async function fetchAdminPanelData() {
     }
   })
 
+  const prestamosVencidosByPrestamo = prestamosHistorial.filter((prestamo) => {
+    const estado = low(prestamo.estado)
+    if (OVERDUE_LOAN_STATES.has(estado)) return true
+    const fechaLimite = (prestamo.fecha_limite || '').slice(0, 10)
+    return Boolean(fechaLimite) && fechaLimite < todayKey && estado !== 'pagado' && estado !== 'cancelado'
+  }).length
+
+  const prestamosVencidosListado = clientesListado.filter(hasOverdueLoan).length
+
   const kpis: AdminKpis = {
     cobrarHoy,
     clientesActivos: activos.length,
-    prestamosVencidos: prestamosVencidosResult.value.count || 0,
+    prestamosVencidos: Math.max(prestamosVencidosByPrestamo, prestamosVencidosListado),
     pagosPendientes: pagosPendientesRaw.length,
   }
 
