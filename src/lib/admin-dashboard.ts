@@ -261,9 +261,12 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
     console.error('[admin-dashboard] pagos fallback error', pagosError)
   }
 
-  const usuariosById = new Map<string, UsuarioRow>(usuarios.map((u) => [u.id, u]))
-
   const prestamos = ((prestamosRaw || []) as PrestamoRow[]).filter((p) => Boolean(p.cliente_id))
+  const pagos = (pagosRaw || []) as PagoRow[]
+
+  const usuariosById = new Map<string, UsuarioRow>()
+  for (const usuario of usuarios) usuariosById.set(usuario.id, usuario)
+
   const prestamosByCliente = new Map<string, PrestamoRow[]>()
   for (const prestamo of prestamos) {
     const list = prestamosByCliente.get(prestamo.cliente_id) || []
@@ -271,7 +274,6 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
     prestamosByCliente.set(prestamo.cliente_id, list)
   }
 
-  const pagos = (pagosRaw || []) as PagoRow[]
   const pagosByCliente = new Map<string, PagoRow[]>()
   for (const pago of pagos) {
     if (!pago.cliente_id) continue
@@ -291,19 +293,19 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
     const tienePrestamoVencido = prestamosCliente.some((p) => OVERDUE_STATES.has(low(p.estado)))
 
     const deudaActiva = prestamosActivos.reduce((acc, p) => {
-      const saldo = toNumber(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto)
+      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
       return acc + Math.max(saldo, 0)
     }, 0)
 
     const totalAPagar = prestamosCliente.reduce((acc, p) => {
-      const total = toNumber(p.total_a_pagar ?? p.monto)
+      const total = Number(p.total_a_pagar ?? p.monto ?? 0)
       return acc + Math.max(total, 0)
     }, 0)
 
     const totalPagado = pagosCliente.reduce((acc, p) => {
       const estadoValidacion = low(p.estado_validacion)
       if (estadoValidacion && !APPROVED_VALIDATION_STATES.has(estadoValidacion)) return acc
-      return acc + Math.max(toNumber(p.monto), 0)
+      return acc + Math.max(Number(p.monto || 0), 0)
     }, 0)
 
     const restante = Math.max(totalAPagar - totalPagado, 0)
@@ -319,180 +321,6 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
       .sort()
       .pop()
 
-  const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
-    const usuario = cliente.usuario_id ? usuariosById.get(cliente.usuario_id) : undefined
-    const clientePrestamos = prestamosByCliente.get(cliente.id) || []
-    const clientePagos = pagosByCliente.get(cliente.id) || []
-
-    const cantidadPrestamos = clientePrestamos.length
-    const prestamosActivos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
-    const cantidadPrestamosActivos = prestamosActivos.length
-    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
-
-    const deudaActiva = prestamosActivos.reduce((acc, p) => {
-      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
-      return acc + Math.max(saldo, 0)
-    }, 0)
-
-    const totalAPagar = clientePrestamos.reduce((acc, p) => {
-      const total = Number(p.total_a_pagar ?? p.monto ?? 0)
-      return acc + Math.max(total, 0)
-    }, 0)
-
-    const totalPagado = clientePagos.reduce((acc, p) => {
-      const estadoValidacion = low(p.estado_validacion)
-      if (estadoValidacion && !PAID_PAYMENT_VALIDATION_STATES.has(estadoValidacion)) return acc
-      return acc + Math.max(Number(p.monto || 0), 0)
-    }, 0)
-
-    const restante = Math.max(totalAPagar - totalPagado, 0)
-
-    const proximoVencimientoRaw = prestamosActivos
-      .map((p) => (p.fecha_limite || '').slice(0, 10))
-      .filter(Boolean)
-      .sort()[0]
-
-    const fechaUltimoPagoRaw = clientePagos
-      .map((p) => p.fecha_pago || p.created_at || '')
-      .filter(Boolean)
-      .sort()
-      .pop()
-
-  if (pagosError) {
-    console.error('[admin-dashboard] pagos fallback error', pagosError)
-  }
-
-  const prestamos = ((prestamosRaw || []) as PrestamoFallbackRow[]).filter((p) => Boolean(p.cliente_id))
-  const pagos = (pagosRaw || []) as PagoFallbackRow[]
-
-  const usuariosById = new Map<string, UsuarioFallbackRow>()
-  for (const usuario of usuarios) usuariosById.set(usuario.id, usuario)
-
-  const prestamosByCliente = new Map<string, PrestamoFallbackRow[]>()
-  for (const prestamo of prestamos) {
-    const list = prestamosByCliente.get(prestamo.cliente_id) || []
-    list.push(prestamo)
-    prestamosByCliente.set(prestamo.cliente_id, list)
-  }
-
-  const pagosByCliente = new Map<string, PagoFallbackRow[]>()
-  for (const pago of pagos) {
-    if (!pago.cliente_id) continue
-    const list = pagosByCliente.get(pago.cliente_id) || []
-    list.push(pago)
-    pagosByCliente.set(pago.cliente_id, list)
-  }
-
-  const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
-    const usuario = cliente.usuario_id ? usuariosById.get(cliente.usuario_id) : undefined
-    const clientePrestamos = prestamosByCliente.get(cliente.id) || []
-    const clientePagos = pagosByCliente.get(cliente.id) || []
-
-    const cantidadPrestamos = clientePrestamos.length
-    const prestamosActivos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
-    const cantidadPrestamosActivos = prestamosActivos.length
-    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
-
-    const deudaActiva = prestamosActivos.reduce((acc, p) => {
-      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
-      return acc + Math.max(saldo, 0)
-    }, 0)
-
-    const totalAPagar = clientePrestamos.reduce((acc, p) => {
-      const total = Number(p.total_a_pagar ?? p.monto ?? 0)
-      return acc + Math.max(total, 0)
-    }, 0)
-
-    const totalPagado = clientePagos.reduce((acc, p) => {
-      const estadoValidacion = low(p.estado_validacion)
-      if (estadoValidacion && !PAID_PAYMENT_VALIDATION_STATES.has(estadoValidacion)) return acc
-      return acc + Math.max(Number(p.monto || 0), 0)
-    }, 0)
-
-    const restante = Math.max(totalAPagar - totalPagado, 0)
-
-    const proximoVencimientoRaw = prestamosActivos
-      .map((p) => (p.fecha_limite || '').slice(0, 10))
-      .filter(Boolean)
-      .sort()[0]
-
-    const fechaUltimoPagoRaw = clientePagos
-      .map((p) => p.fecha_pago || p.created_at || '')
-      .filter(Boolean)
-      .sort()
-      .pop()
-
-  const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
-    const usuario = cliente.usuario_id ? usuariosById.get(cliente.usuario_id) : null
-    const clientePrestamos = prestamosByCliente.get(cliente.id) || []
-    const clientePagos = pagosByCliente.get(cliente.id) || []
-
-    const cantidadPrestamos = clientePrestamos.length
-    const prestamosActivos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
-    const cantidadPrestamosActivos = prestamosActivos.length
-    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
-
-    const deudaActiva = prestamosActivos.reduce((acc, p) => {
-      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
-      return acc + Math.max(saldo, 0)
-    }, 0)
-
-    const totalAPagar = clientePrestamos.reduce((acc, p) => {
-      return acc + Math.max(Number(p.total_a_pagar ?? p.monto ?? 0), 0)
-    }, 0)
-
-    const totalPagado = clientePagos.reduce((acc, p) => {
-      const estadoValidacion = low(p.estado_validacion)
-      if (estadoValidacion && !PAID_PAYMENT_VALIDATION_STATES.has(estadoValidacion)) return acc
-      return acc + Math.max(Number(p.monto || 0), 0)
-    }, 0)
-
-    const restante = Math.max(totalAPagar - totalPagado, 0)
-
-    const proximoVencimientoRaw = prestamosActivos
-      .map((p) => (p.fecha_limite || '').slice(0, 10))
-      .filter(Boolean)
-      .sort()[0]
-
-    const fechaUltimoPagoRaw = clientePagos
-      .map((p) => p.fecha_pago || p.created_at || '')
-      .filter(Boolean)
-      .sort()
-      .pop()
-
-  const mapped = fallbackRows.map((c) => {
-    const usuario = c.usuario_id ? usuariosById.get(c.usuario_id) : null
-    const clientePrestamos = prestamosByCliente.get(c.id) || []
-    const clientePagos = pagosByCliente.get(c.id) || []
-
-    const cantidadPrestamos = clientePrestamos.length
-    const activos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
-    const cantidadPrestamosActivos = activos.length
-    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
-    const deudaActiva = activos.reduce((acc, prestamo) => {
-      const saldo = Number(prestamo.saldo_pendiente ?? prestamo.total_a_pagar ?? prestamo.monto ?? 0)
-      return acc + Math.max(saldo, 0)
-    }, 0)
-    const totalAPagar = clientePrestamos.reduce((acc, prestamo) => acc + Math.max(Number(prestamo.total_a_pagar ?? prestamo.monto ?? 0), 0), 0)
-    const totalPagado = clientePagos.reduce((acc, pago) => {
-      const estadoValidacion = low(pago.estado_validacion)
-      if (estadoValidacion && !['aprobado', 'confirmado', 'acreditado'].includes(estadoValidacion)) return acc
-      return acc + Math.max(Number(pago.monto || 0), 0)
-    }, 0)
-    const restante = Math.max(totalAPagar - totalPagado, 0)
-    const proximoVencimientoRaw = activos
-      .map((p) => (p.fecha_limite || '').slice(0, 10))
-      .filter(Boolean)
-      .sort()[0]
-    const fechaUltimoPagoRaw = clientePagos
-      .map((p) => p.fecha_pago || p.created_at || '')
-      .filter(Boolean)
-      .sort()
-      .pop()
-
-  const fallbackRows = (clientesRaw || []) as ClienteFallbackRow[]
-  console.log('[admin-dashboard] clientes fallback rows', fallbackRows.length)
-  return fallbackRows.map((c) => {
     return {
       clienteId: cliente.id,
       usuarioId: cliente.usuario_id || '',
