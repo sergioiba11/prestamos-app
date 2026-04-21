@@ -41,7 +41,7 @@ export function AdminClientsTable({
               <View style={styles.avatar}><Text style={styles.avatarText}>{toInitials(row.nombre)}</Text></View>
               <View>
                 <Text style={styles.name}>{row.nombre}</Text>
-                <Text style={styles.email}>{row.email}</Text>
+                <Text style={styles.email}>{row.email || 'Sin email'}</Text>
               </View>
             </View>
 
@@ -60,7 +60,7 @@ export function AdminClientsTable({
                 </TouchableOpacity>
                 {menuOpenFor === row.prestamoId ? (
                   <View style={styles.menu}>
-                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onView(row) }}><Text style={styles.menuItem}>Ver detalle</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onView(row) }}><Text style={styles.menuItem}>Ver detalles</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => { setMenuOpenFor(null); onEdit(row) }}><Text style={styles.menuItem}>Editar cliente</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => { setMenuOpenFor(null); onHistory(row) }}><Text style={styles.menuItem}>Historial pagos</Text></TouchableOpacity>
                   </View>
@@ -87,28 +87,29 @@ function TableHeader() {
 
 function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase()
-  const atrasado = s === 'atrasado' || s === 'en_mora'
+  const warning = s.includes('venc') || s.includes('mora') || s.includes('atras')
 
   return (
-    <View style={[styles.badge, atrasado ? styles.badgeWarn : styles.badgeOk]}>
-      <Text style={styles.badgeText}>{atrasado ? 'Atrasado' : 'Activo'}</Text>
+    <View style={[styles.badge, warning ? styles.badgeWarn : styles.badgeOk]}>
+      <Text style={styles.badgeText}>{warning ? 'Atención' : 'Activo'}</Text>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  tableWrap: { minWidth: 980, width: '100%' },
+  tableWrap: { minWidth: 1010, width: '100%' },
   headerRow: {
     flexDirection: 'row',
-    backgroundColor: '#0B1220',
-    borderRadius: 10,
+    backgroundColor: '#111827',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
-    paddingVertical: 10,
+    borderColor: '#1F2937',
+    paddingVertical: 11,
+    marginBottom: 4,
   },
   headerText: { color: '#94A3B8', fontWeight: '700', fontSize: 12, paddingHorizontal: 12 },
-  clientHeader: { width: 270 },
-  headerCell: { width: 118 },
+  clientHeader: { width: 286 },
+  headerCell: { width: 120 },
   row: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -117,17 +118,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cell: { paddingHorizontal: 12 },
-  clientCell: { width: 270, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  statusCell: { width: 118 },
-  actionsCell: { width: 118, flexDirection: 'row', gap: 8 },
-  text: { width: 118, color: '#E2E8F0' },
-  avatar: { width: 34, height: 34, borderRadius: 999, backgroundColor: '#1E3A8A', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
+  clientCell: { width: 286, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statusCell: { width: 120 },
+  actionsCell: { width: 120, flexDirection: 'row', gap: 8 },
+  text: { width: 120, color: '#E2E8F0' },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: '#1E3A8A',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: '#DBEAFE', fontWeight: '800', fontSize: 12 },
   name: { color: '#fff', fontWeight: '700' },
   email: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
-  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
-  badgeOk: { backgroundColor: '#134E4A' },
-  badgeWarn: { backgroundColor: '#7C2D12' },
+  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', borderWidth: 1 },
+  badgeOk: { backgroundColor: '#134E4A', borderColor: '#0F766E' },
+  badgeWarn: { backgroundColor: '#7C2D12', borderColor: '#C2410C' },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   iconBtn: {
     width: 30,
@@ -143,13 +153,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 34,
     right: 0,
-    backgroundColor: '#111827',
-    borderRadius: 8,
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#1E293B',
     padding: 8,
     gap: 8,
-    minWidth: 130,
+    minWidth: 140,
     zIndex: 40,
   },
   menuItem: { color: '#E2E8F0', fontSize: 12 },

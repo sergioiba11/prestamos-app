@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons'
-import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import {
@@ -15,6 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
+import { AdminClientsTable } from '../components/admin/AdminClientsTable'
 import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
@@ -31,13 +31,6 @@ function formatDate(value: string) {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function activeBadgeText(estado: string) {
-  const normalized = String(estado || '').toLowerCase()
-  if (normalized.includes('venc')) return 'Vencido'
-  if (normalized.includes('mora') || normalized.includes('atras')) return 'Atrasado'
-  return 'Préstamo activo'
 }
 
 export default function AdminHome() {
@@ -82,7 +75,6 @@ export default function AdminHome() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      console.log('admin-home auth user', user)
 
       if (user?.id) {
         const { data: userRow, error: userRowError } = await supabase
@@ -91,21 +83,13 @@ export default function AdminHome() {
           .eq('id', user.id)
           .maybeSingle()
 
-        if (userRowError) {
-          console.error('admin-home usuario/rol error', userRowError)
-        }
+        if (userRowError) console.error('admin-home usuario/rol error', userRowError)
 
-        console.log('admin-home auth role row', userRow)
         setAdminName(userRow?.nombre || user.email?.split('@')[0] || 'Administrador')
         setAdminRole(userRow?.rol || 'Administrador')
       }
 
       const data = await fetchAdminPanelData()
-      console.log('admin-home fetchAdminPanelData result', data)
-      console.log('admin-home kpis', data.kpis)
-      console.log('admin-home activosCards', data.activosCards)
-      console.log('admin-home pagosPendientesList', data.pagosPendientesList)
-      console.log('admin-home clientesListado count', data.clientesListado?.length)
       setKpis(data.kpis)
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
@@ -196,129 +180,141 @@ export default function AdminHome() {
           <TouchableOpacity onPress={() => setMenuOpen(true)}>
             <Ionicons name="menu" size={24} color="#E2E8F0" />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>CrediTodo Admin</Text>
-          <TouchableOpacity onPress={() => setNotificationsOpen((p) => !p)}>
-            <Ionicons name="notifications-outline" size={22} color="#E2E8F0" />
+          <Text style={styles.mobileTitle}>Admin</Text>
+          <TouchableOpacity style={styles.mobileBellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+            <Ionicons name="notifications-outline" size={20} color="#DBEAFE" />
+            {unreadCount > 0 ? (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>{unreadCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 72 }]}>
-          <LinearGradient colors={['#0B1025', '#123A9D', '#1D66E3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerBlock}>
-            <View style={styles.headerLeft}>
-              <View style={styles.brandPill}>
-                <Ionicons name="shield-checkmark" size={14} color="#DBEAFE" />
-                <Text style={styles.brandPillText}>CrediTodo Admin</Text>
-              </View>
-              <Text style={styles.headerEyebrow}>Panel de administración</Text>
-              <Text style={styles.headerTitle}>Hola, {adminName}</Text>
-              <Text style={styles.headerSubtitle}>Monitoreá préstamos, cobros y clientes en tiempo real.</Text>
+        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}> 
+          <View style={styles.pageTopRow}>
+            <View>
+              <Text style={styles.pageTitle}>Panel de administración</Text>
+              <Text style={styles.pageSubtitle}>Hola, {adminName}. Resumen financiero en tiempo real.</Text>
             </View>
-
-            <View style={styles.headerRight}>
-              <View style={styles.dateBadge}>
-                <Ionicons name="calendar-outline" size={16} color="#93C5FD" />
-                <Text style={styles.dateBadgeText}>{formatDate(new Date().toISOString())}</Text>
-              </View>
-              <TouchableOpacity style={styles.bellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                <Ionicons name="mail-unread-outline" size={18} color="#DBEAFE" />
-                {unreadCount > 0 ? (
-                  <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>
+            {!isMobile ? (
+              <View style={styles.headerActions}>
+                <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+                  <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
+                  <Text style={styles.notificationsText}>Notificaciones</Text>
+                  {unreadCount > 0 ? (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadText}>{unreadCount}</Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+                {notificationsOpen ? (
+                  <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
                 ) : null}
-              </TouchableOpacity>
-              {notificationsOpen ? (
-                <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
-              ) : null}
-            </View>
-          </LinearGradient>
+              </View>
+            ) : null}
+          </View>
 
           <View style={styles.kpiGrid}>
-            <AdminStatCard label="A cobrar hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
-            <AdminStatCard label="Clientes activos" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
-            <AdminStatCard label="Préstamos vencidos" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
-            <AdminStatCard label="Pagos pendientes" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+            <AdminStatCard label="A cobrar hoy" subtitle="Sin vencimientos hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+            <AdminStatCard label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+            <AdminStatCard label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+            <AdminStatCard label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
           </View>
 
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
             <View style={styles.actionsGrid}>
-              <AdminQuickAction label="Nuevo préstamo" icon="wallet-outline" onPress={() => router.push('/nuevo-prestamo' as any)} />
-              <AdminQuickAction label="Registrar pago" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
-              <AdminQuickAction label="Nuevo cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
-              <AdminQuickAction label="Ver clientes" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
+              <AdminQuickAction label="Nuevo préstamo" subtitle="Crear préstamo" icon="wallet-outline" onPress={() => router.push('/nuevo-prestamo' as any)} />
+              <AdminQuickAction label="Registrar pago" subtitle="Registrar abono" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
+              <AdminQuickAction label="Nuevo cliente" subtitle="Agregar cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
+              <AdminQuickAction label="Ver clientes" subtitle="Lista completa" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
-            {pendingPayments.length === 0 ? (
-              <Text style={styles.emptyText}>No hay pagos pendientes por ahora.</Text>
-            ) : (
-              pendingPayments.map((p) => (
-                <View key={p.id} style={styles.pendingRow}>
-                  <View>
-                    <Text style={styles.pendingClient}>{p.cliente} · DNI {p.dni}</Text>
-                    <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
-                    <Text style={styles.pendingMeta}>Estado: {p.estadoValidacion || 'pendiente'}</Text>
-                    {p.prestamoId ? <Text style={styles.pendingMeta}>Préstamo: {p.prestamoId}</Text> : null}
+          <View style={styles.twoColumns}>
+            <View style={[styles.sectionCard, styles.pendingSection]}>
+              <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
+              {pendingPayments.length === 0 ? (
+                <View style={styles.pendingEmptyWrap}>
+                  <View style={styles.pendingSuccessIcon}>
+                    <Ionicons name="checkmark" size={22} color="#16A34A" />
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                    <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <TouchableOpacity style={styles.approveBtn} onPress={() => updatePendingPayment(p.id, 'aprobar')}><Text style={styles.smallBtnText}>Aprobar</Text></TouchableOpacity>
-                      <TouchableOpacity style={styles.rejectBtn} onPress={() => updatePendingPayment(p.id, 'rechazar')}><Text style={styles.smallBtnText}>Rechazar</Text></TouchableOpacity>
+                  <Text style={styles.pendingEmptyTitle}>No hay pagos pendientes por ahora.</Text>
+                  <Text style={styles.pendingEmptySubtitle}>Los pagos registrados aparecerán aquí para su aprobación.</Text>
+                </View>
+              ) : (
+                pendingPayments.map((p) => (
+                  <View key={p.id} style={styles.pendingRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pendingClient}>{p.cliente} · DNI {p.dni}</Text>
+                      <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
+                      <Text style={styles.pendingMeta}>Estado: {p.estadoValidacion || 'pendiente'}</Text>
+                      {p.prestamoId ? <Text style={styles.pendingMeta}>Préstamo: {p.prestamoId}</Text> : null}
+                    </View>
+                    <View style={styles.pendingActions}>
+                      <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        <TouchableOpacity style={styles.approveBtn} onPress={() => updatePendingPayment(p.id, 'aprobar')}>
+                          <Text style={styles.smallBtnText}>Aprobar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.rejectBtn} onPress={() => updatePendingPayment(p.id, 'rechazar')}>
+                          <Text style={styles.smallBtnText}>Rechazar</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))
-            )}
+                ))
+              )}
+            </View>
+
+            <TouchableOpacity style={[styles.sectionCard, styles.historyCard]} onPress={() => router.push('/historial-prestamos' as any)}>
+              <View style={styles.historyIconWrap}>
+                <Ionicons name="time-outline" size={24} color="#A5B4FC" />
+              </View>
+              <Text style={styles.historyTitle}>Historial de préstamos</Text>
+              <Text style={styles.historySubtitle}>Ver todos los préstamos</Text>
+              <View style={styles.historyLinkRow}>
+                <Text style={styles.historyLink}>Abrir historial</Text>
+                <Ionicons name="arrow-forward" size={14} color="#93C5FD" />
+              </View>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
-              <TouchableOpacity style={styles.linkBtn} onPress={() => router.push('/clientes' as any)}>
-                <Text style={styles.linkBtnText}>Ver clientes</Text>
-              </TouchableOpacity>
+              <View style={styles.viewButtons}>
+                <View style={styles.viewBtn}><Ionicons name="list" size={14} color="#BFDBFE" /></View>
+                <View style={styles.viewBtn}><Ionicons name="grid" size={14} color="#64748B" /></View>
+              </View>
             </View>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar por nombre, DNI, email o teléfono"
-              placeholderTextColor="#64748B"
-              value={search}
-              onChangeText={setSearch}
-            />
+
+            <View style={styles.searchWrap}>
+              <Ionicons name="search-outline" size={16} color="#64748B" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar por nombre, DNI, email o teléfono"
+                placeholderTextColor="#64748B"
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
 
             {filteredClients.length === 0 ? (
-              <>
-                {console.log('admin-home activeClients raw', activeClients)}
-                <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
-              </>
+              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
             ) : (
-              <View style={styles.activeList}>
-                {filteredClients.slice(0, 6).map((row) => (
-                  <View key={row.clienteId} style={styles.activeClientRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.activeClientName}>{row.nombre}</Text>
-                      <Text style={styles.activeClientMeta}>DNI {row.dni} · {row.telefono}</Text>
-                      <Text style={styles.activeClientMeta}>Email: {row.email || 'Sin email'}</Text>
-                      <Text style={styles.activeClientDebt}>Deuda activa/restante: {money(row.prestamoActivo)}</Text>
-                      <Text style={styles.activeClientMeta}>Próximo vencimiento: {formatDate(row.proximoPago)}</Text>
-                    </View>
-                    <View style={styles.activeRight}>
-                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>{activeBadgeText(row.estado)}</Text></View>
-                      <TouchableOpacity
-                        style={styles.detailBtn}
-                        onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                      >
-                        <Text style={styles.detailBtnText}>Ver detalle</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
+              <AdminClientsTable
+                rows={filteredClients}
+                onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
+                onEdit={(row) => router.push({ pathname: '/clientes', params: { cliente_id: row.clienteId } } as any)}
+                onHistory={(row) => router.push({ pathname: '/historial-prestamos', params: { cliente_id: row.clienteId } } as any)}
+              />
             )}
+
+            <Text style={styles.tableCounter}>Mostrando {filteredClients.length} de {activeClients.length} clientes</Text>
           </View>
 
           <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
@@ -346,63 +342,84 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 18, gap: 14, paddingBottom: 30, backgroundColor: '#020817' },
+  content: { padding: 20, gap: 16, paddingBottom: 34, backgroundColor: '#020817' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
+  pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 26 },
+  pageSubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
+  headerActions: { position: 'relative' },
+  notificationsBtn: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  notificationsText: { color: '#CBD5E1', fontWeight: '700', fontSize: 12 },
   mobileTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, height: 56, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B',
     backgroundColor: '#020817', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  headerBlock: { borderRadius: 22, padding: 22, flexDirection: 'row', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', borderWidth: 1, borderColor: 'rgba(147,197,253,0.25)' },
-  headerLeft: { gap: 6, maxWidth: 620 },
-  brandPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(15,23,42,0.34)', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 2 },
-  brandPillText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
-  headerEyebrow: { color: 'rgba(219,234,254,0.86)', fontSize: 12, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 30, fontWeight: '800', marginTop: 2 },
-  headerSubtitle: { color: 'rgba(219,234,254,0.95)', marginTop: 2, fontSize: 14 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, position: 'relative', alignSelf: 'flex-start' },
-  dateBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(147,197,253,0.55)', backgroundColor: 'rgba(2,6,23,0.32)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  dateBadgeText: { color: '#DBEAFE', fontWeight: '600', fontSize: 12 },
-  bellBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(147,197,253,0.45)', backgroundColor: 'rgba(2,6,23,0.38)' },
-  unreadBadge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  mobileBellBtn: { width: 34, height: 34, borderRadius: 10, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' },
+  unreadBadge: { position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  sectionCard: { borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 14 },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 10 },
-  linkBtn: { borderWidth: 1, borderColor: '#60A5FA', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(37,99,235,0.2)' },
-  linkBtnText: { color: '#DBEAFE', fontSize: 12, fontWeight: '700' },
-  actionsGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 10, padding: 10, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
+  kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  sectionCard: { borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  actionsGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  twoColumns: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  pendingSection: { flex: 2, minWidth: 320 },
+  pendingEmptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 22 },
+  pendingSuccessIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(34,197,94,0.8)',
+    backgroundColor: 'rgba(22,163,74,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  pendingEmptyTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 14, textAlign: 'center' },
+  pendingEmptySubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 12, textAlign: 'center' },
+  pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 12, padding: 12, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
   pendingClient: { color: '#fff', fontWeight: '700' },
   pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
+  pendingActions: { alignItems: 'flex-end', gap: 6 },
   pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
   approveBtn: { backgroundColor: '#065F46', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
   rejectBtn: { backgroundColor: '#7F1D1D', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
   smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  searchInput: { borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#020817', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', marginBottom: 12 },
-
-  activeList: { gap: 10 },
-  activeClientRow: {
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 12,
+  historyCard: { flex: 1, minWidth: 260, justifyContent: 'center' },
+  historyIconWrap: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#312E81', borderWidth: 1, borderColor: '#4F46E5', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  historyTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 18 },
+  historySubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
+  historyLinkRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  historyLink: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
+  viewButtons: { flexDirection: 'row', gap: 8 },
+  viewBtn: { width: 30, height: 30, borderRadius: 8, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A' },
+  searchWrap: {
     flexDirection: 'row',
-    gap: 12,
     alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#020817',
+    paddingHorizontal: 12,
+    marginBottom: 12,
   },
-  activeClientName: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
-  activeClientMeta: { color: '#94A3B8', marginTop: 3, fontSize: 12 },
-  activeClientDebt: { color: '#BFDBFE', marginTop: 5, fontWeight: '700', fontSize: 12 },
-  activeRight: { alignItems: 'flex-end', gap: 8 },
-  activeBadge: { borderRadius: 999, backgroundColor: '#14532D', borderWidth: 1, borderColor: '#22C55E', paddingHorizontal: 10, paddingVertical: 5 },
-  activeBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  detailBtn: { borderRadius: 8, borderWidth: 1, borderColor: '#60A5FA', backgroundColor: '#1D4ED8', paddingHorizontal: 10, paddingVertical: 6 },
-  detailBtnText: { color: '#EFF6FF', fontSize: 11, fontWeight: '700' },
-  emptyText: { color: '#94A3B8' },
+  searchInput: { flex: 1, color: '#fff', paddingVertical: 10 },
+  emptyText: { color: '#94A3B8', paddingBottom: 8 },
+  tableCounter: { color: '#64748B', marginTop: 10, fontSize: 12 },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },

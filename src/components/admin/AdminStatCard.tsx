@@ -4,44 +4,48 @@ import { StyleSheet, Text, View } from 'react-native'
 export function AdminStatCard({
   label,
   value,
+  subtitle,
   icon,
   tone,
 }: {
   label: string
   value: string
+  subtitle?: string
   icon: keyof typeof Ionicons.glyphMap
   tone: 'blue' | 'violet' | 'teal' | 'orange'
 }) {
   return (
     <View style={[styles.card, toneStyles[tone].card]}>
       <View style={[styles.iconWrap, toneStyles[tone].iconWrap]}>
-        <Ionicons name={icon} size={16} color={toneStyles[tone].iconColor} />
+        <Ionicons name={icon} size={18} color={toneStyles[tone].iconColor} />
       </View>
       <Text style={styles.label}>{label}</Text>
       <Text style={styles.value}>{value}</Text>
+      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   card: {
-    minWidth: 190,
+    minWidth: 210,
     flex: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1220',
     padding: 14,
   },
   iconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  label: { color: '#94A3B8', fontSize: 12 },
-  value: { color: '#fff', fontWeight: '800', fontSize: 22, marginTop: 4 },
+  label: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  value: { color: '#fff', fontWeight: '800', fontSize: 24, marginTop: 5 },
+  subtitle: { color: '#64748B', fontSize: 11, marginTop: 4 },
 })
 
 const toneStyles = {
