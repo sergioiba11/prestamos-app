@@ -21,6 +21,7 @@ export default function OnboardingDniScreen() {
       return
     }
 
+    console.log('[onboarding-dni] validating dni', { cleanDni })
     setLoading(true)
     setActiveDni(false)
     setError('')
@@ -28,11 +29,12 @@ export default function OnboardingDniScreen() {
 
     try {
       const result = await startRegistrationByDni(cleanDni)
+      console.log('[onboarding-dni] startRegistrationByDni result', result)
 
       if (result.status === 'active') {
         setStatus('')
         setActiveDni(true)
-        setError('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu contraseña.')
+        setError('Este DNI ya tiene cuenta activa. Iniciá sesión o recuperá tu contraseña.')
         return
       }
 

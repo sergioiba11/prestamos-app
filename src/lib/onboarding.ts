@@ -162,96 +162,43 @@ export async function registerUserFromOnboarding(params: {
   password: string
   email?: string
   phone: string
+  clienteId?: string | null
 }) {
-  const dni = normalizeDni(params.dni)
-  const normalizedPhone = normalizePhoneAR(params.phone)
-  const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
-  const displayName = params.nombre?.trim() || 'Cliente'
-
-  if (!normalizedPhone) throw new Error('El teléfono verificado no es válido.')
-
-  const { data: clienteByDni, error: clienteError } = await supabase
-    .from('clientes')
-    .select('id, dni, telefono, usuario_id')
-    .eq('dni', dni)
-    .maybeSingle()
-
-  if (clienteError || !clienteByDni) {
-    throw new Error('No encontramos un registro para el DNI ingresado.')
+  const payload = {
+    dni: normalizeDni(params.dni),
+    nombre: params.nombre?.trim() || 'Cliente',
+    email: (params.email || `${normalizeDni(params.dni)}@creditodo.app`).trim().toLowerCase(),
+    password: params.password,
+    telefono: normalizePhoneAR(params.phone),
+    clienteId: params.clienteId || null,
   }
 
-  if (clienteByDni.usuario_id) {
-    throw new Error('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu cuenta.')
-  }
+  if (!payload.telefono) throw new Error('El teléfono verificado no es válido.')
 
-  const {
-    data: { user: currentUser },
-  } = await supabase.auth.getUser()
+  console.log('[onboarding] registro-cliente-publico payload', payload)
 
-  let authUserId = currentUser?.id || null
+  const { data, error } = await supabase.functions.invoke('registro-cliente-publico', {
+    body: payload,
+  })
 
-  if (!authUserId) {
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password: params.password,
-      phone: normalizedPhone,
-      options: {
-        data: {
-          dni,
-          role: 'cliente',
-          full_name: displayName,
-        },
-      },
-    })
+  console.log('[onboarding] registro-cliente-publico response', data)
 
-    if (signUpError || !signUpData.user) {
-      throw new Error(signUpError?.message || 'No se pudo crear la cuenta de autenticación.')
+  if (error) {
+    console.error('[onboarding] registro-cliente-publico invoke error', error)
+    if (error.message === 'Failed to send a request to the Edge Function') {
+      throw new Error('No se pudo conectar con el servidor de registro. Revisá conexión o deploy.')
     }
-
-    authUserId = signUpData.user.id
-  } else {
-    const { error: updateAuthError } = await supabase.auth.updateUser({
-      email,
-      password: params.password,
-      data: {
-        dni,
-        role: 'cliente',
-        full_name: displayName,
-      },
-    })
-
-    if (updateAuthError) {
-      if (updateAuthError.message.toLowerCase().includes('already')) {
-        throw new Error('El email ingresado ya está registrado.')
-      }
-      throw updateAuthError
-    }
+    throw new Error(error.message || 'No se pudo crear la cuenta.')
   }
 
-  const { data: samePhoneClients, error: phoneError } = await supabase
-    .from('clientes')
-    .select('id, dni')
-    .eq('telefono', normalizedPhone)
+  const response = data as { ok?: boolean; userId?: string; clienteId?: string; error?: string } | null
 
-  if (phoneError) throw new Error('No pudimos validar el teléfono en este momento.')
+  if (!response?.ok) {
+    console.error('[onboarding] registro-cliente-publico business error', response)
+    throw new Error(response?.error || 'No se pudo crear la cuenta.')
+  }
 
-  const isPhoneUsedByAnotherDni = (samePhoneClients || []).some((row) => normalizeDni(row.dni) !== dni)
-  if (isPhoneUsedByAnotherDni) throw new Error('El teléfono ya está asociado a otro cliente.')
-
-  const { error: usuarioError } = await supabase
-    .from('usuarios')
-    .upsert({ id: authUserId, nombre: displayName, email, rol: 'cliente' })
-
-  if (usuarioError) throw usuarioError
-
-  const { error: clienteUpdateError } = await supabase
-    .from('clientes')
-    .update({ usuario_id: authUserId, telefono: normalizedPhone })
-    .eq('id', clienteByDni.id)
-
-  if (clienteUpdateError) throw clienteUpdateError
-
-  return { userId: authUserId, email }
+  return { userId: response.userId, clienteId: response.clienteId, email: payload.email }
 }
 
 export async function signInWithEmailOrDni(params: {

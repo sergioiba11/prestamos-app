@@ -14,7 +14,6 @@ import { OnboardingScaffold, onboardingStyles } from '../../components/onboardin
 import { authTheme } from '../../constants/auth-theme'
 import { useOnboarding } from '../../context/OnboardingContext'
 import { isValidPhoneAR, maskPhone, normalizePhoneAR, sendPhoneOtp, verifyPhoneOtp } from '../../lib/onboarding'
-import { supabase } from '../../lib/supabase'
 
 const RESEND_COOLDOWN = 45
 
@@ -81,7 +80,6 @@ export default function VerificationCodeScreen() {
     setCode('')
 
     try {
-      await supabase.auth.signOut()
       const sentPhone = await sendPhoneOtp(phoneToSend)
 
       updateState({
