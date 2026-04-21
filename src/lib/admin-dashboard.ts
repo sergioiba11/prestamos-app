@@ -117,6 +117,9 @@ export type PagoPendienteItem = {
   monto: number
   metodo: string
   createdAt: string
+  estadoValidacion?: string
+  prestamoId?: string
+  telefono?: string
 }
 
 export type HistorialPrestamoItem = {
@@ -142,11 +145,12 @@ export type AdminDashboardData = {
   clientesListado: ClienteAdminListadoItem[]
 }
 
-const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido'])
+const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
 const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
-const PENDING_VALIDATION_STATES = new Set(['pendiente', 'en_revision'])
-const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado'])
+const PENDING_VALIDATION_STATES = new Set(['pendiente', 'pendiente_aprobacion', 'en_revision'])
+const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado', 'pagado'])
+const TRANSFER_PENDING_METHODS = new Set(['transferencia', 'alias', 'mp_transferencia'])
 
 function low(value?: string | null): string {
   return String(value || '').toLowerCase()
@@ -170,6 +174,33 @@ function hasActiveLoan(cliente: ClienteAdminListadoItem): boolean {
 function hasOverdueLoan(cliente: ClienteAdminListadoItem): boolean {
   const estado = low(cliente.estadoCliente)
   return Boolean(cliente.tienePrestamoVencido) || OVERDUE_STATES.has(estado) || estado.includes('venc')
+}
+
+function isActiveLoanState(value?: string | null) {
+  return ACTIVE_STATES.has(low(value))
+}
+
+function isOverdueLoanState(value?: string | null) {
+  return OVERDUE_STATES.has(low(value))
+}
+
+function resolvePagoClienteId(pago: PagoRow, prestamosById: Map<string, PrestamoRow>) {
+  if (pago.cliente_id) return pago.cliente_id
+  if (!pago.prestamo_id) return ''
+  return prestamosById.get(pago.prestamo_id)?.cliente_id || ''
+}
+
+function isApprovedPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo'>) {
+  const estado = low(pago.estado_validacion)
+  if (estado) return APPROVED_VALIDATION_STATES.has(estado)
+  return low(pago.metodo) === 'efectivo'
+}
+
+function isPendingValidationPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo' | 'created_at'>) {
+  const estado = low(pago.estado_validacion)
+  if (estado) return PENDING_VALIDATION_STATES.has(estado)
+  const metodo = low(pago.metodo)
+  return TRANSFER_PENDING_METHODS.has(metodo) && Boolean(pago.created_at)
 }
 
 function toListadoItemFromView(row: AdminClientesListadoViewRow): ClienteAdminListadoItem {
@@ -263,6 +294,8 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const prestamos = ((prestamosRaw || []) as PrestamoRow[]).filter((p) => Boolean(p.cliente_id))
   const pagos = (pagosRaw || []) as PagoRow[]
+  const prestamosById = new Map<string, PrestamoRow>()
+  for (const prestamo of prestamos) prestamosById.set(prestamo.id, prestamo)
 
   const usuariosById = new Map<string, UsuarioRow>()
   for (const usuario of usuarios) usuariosById.set(usuario.id, usuario)
@@ -276,10 +309,11 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const pagosByCliente = new Map<string, PagoRow[]>()
   for (const pago of pagos) {
-    if (!pago.cliente_id) continue
-    const list = pagosByCliente.get(pago.cliente_id) || []
+    const pagoClienteId = resolvePagoClienteId(pago, prestamosById)
+    if (!pagoClienteId) continue
+    const list = pagosByCliente.get(pagoClienteId) || []
     list.push(pago)
-    pagosByCliente.set(pago.cliente_id, list)
+    pagosByCliente.set(pagoClienteId, list)
   }
 
   const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
@@ -288,9 +322,9 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
     const pagosCliente = pagosByCliente.get(cliente.id) || []
 
     const cantidadPrestamos = prestamosCliente.length
-    const prestamosActivos = prestamosCliente.filter((p) => ACTIVE_STATES.has(low(p.estado)))
+    const prestamosActivos = prestamosCliente.filter((p) => isActiveLoanState(p.estado))
     const cantidadPrestamosActivos = prestamosActivos.length
-    const tienePrestamoVencido = prestamosCliente.some((p) => OVERDUE_STATES.has(low(p.estado)))
+    const tienePrestamoVencido = prestamosCliente.some((p) => isOverdueLoanState(p.estado))
 
     const deudaActiva = prestamosActivos.reduce((acc, p) => {
       const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
@@ -303,8 +337,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
     }, 0)
 
     const totalPagado = pagosCliente.reduce((acc, p) => {
-      const estadoValidacion = low(p.estado_validacion)
-      if (estadoValidacion && !APPROVED_VALIDATION_STATES.has(estadoValidacion)) return acc
+      if (!isApprovedPayment(p)) return acc
       return acc + Math.max(Number(p.monto || 0), 0)
     }, 0)
 
@@ -365,18 +398,8 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
     if (viewRows.length > 0) {
       return viewRows.map(toListadoItemFromView)
     }
-
-    const { count, error: countError } = await supabase
-      .from('clientes')
-      .select('id', { count: 'exact', head: true })
-      .not('usuario_id', 'is', null)
-
-    if (!countError && Number(count || 0) > 0) {
-      console.warn('[admin-dashboard] empty admin_clientes_listado with linked clientes, using fallback')
-      return fetchAdminClientesListadoFromBaseTables()
-    }
-
-    return []
+    console.warn('[admin-dashboard] empty admin_clientes_listado, using fallback')
+    return fetchAdminClientesListadoFromBaseTables()
   }
 
   console.warn('[admin-dashboard] admin_clientes_listado failed, using fallback', error)
@@ -408,6 +431,8 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
 
   const prestamos: PrestamoRow[] =
     prestamosResult.status === 'fulfilled' && !prestamosResult.value.error ? ((prestamosResult.value.data || []) as PrestamoRow[]) : []
+  const prestamosById = new Map<string, PrestamoRow>()
+  for (const prestamo of prestamos) prestamosById.set(prestamo.id, prestamo)
 
   if (cuotasResult.status === 'rejected') console.error('[admin-dashboard] cuotas rejected', cuotasResult.reason)
   if (cuotasResult.status === 'fulfilled' && cuotasResult.value.error) console.error('[admin-dashboard] cuotas error', cuotasResult.value.error)
@@ -432,23 +457,23 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     return acc + (saldoPendiente > 0 ? saldoPendiente : Math.max(fallback, 0))
   }, 0)
 
-  const pagosPendientesRaw = pagos.filter((pago) => {
-    const estadoValidacion = low(pago.estado_validacion)
-    if (estadoValidacion) return PENDING_VALIDATION_STATES.has(estadoValidacion)
-    return !pago.fecha_pago
-  })
+  const pagosPendientesRaw = pagos.filter((pago) => isPendingValidationPayment(pago))
 
   const pagosPendientesList: PagoPendienteItem[] = pagosPendientesRaw.slice(0, 8).map((pago) => {
-    const cliente = pago.cliente_id ? clientesById.get(pago.cliente_id) : undefined
+    const resolvedClienteId = resolvePagoClienteId(pago, prestamosById)
+    const cliente = resolvedClienteId ? clientesById.get(resolvedClienteId) : undefined
 
     return {
       id: pago.id,
-      clienteId: pago.cliente_id || '',
+      clienteId: resolvedClienteId || '',
       cliente: cliente?.nombre || 'Cliente',
       dni: cliente?.dni || '—',
       monto: toNumber(pago.monto),
       metodo: pago.metodo || 'Sin método',
       createdAt: pago.created_at || '',
+      estadoValidacion: low(pago.estado_validacion) || (isApprovedPayment(pago) ? 'aprobado' : 'pendiente'),
+      prestamoId: pago.prestamo_id || undefined,
+      telefono: cliente?.telefono || undefined,
     }
   })
 
@@ -458,6 +483,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const pagosByPrestamo = new Map<string, number>()
   for (const pago of pagos) {
     if (!pago.prestamo_id) continue
+    if (!isApprovedPayment(pago)) continue
     const current = pagosByPrestamo.get(pago.prestamo_id) || 0
     pagosByPrestamo.set(pago.prestamo_id, current + toNumber(pago.monto))
   }

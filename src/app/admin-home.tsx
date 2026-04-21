@@ -102,6 +102,10 @@ export default function AdminHome() {
 
       const data = await fetchAdminPanelData()
       console.log('admin-home fetchAdminPanelData result', data)
+      console.log('admin-home kpis', data.kpis)
+      console.log('admin-home activosCards', data.activosCards)
+      console.log('admin-home pagosPendientesList', data.pagosPendientesList)
+      console.log('admin-home clientesListado count', data.clientesListado?.length)
       setKpis(data.kpis)
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
@@ -256,6 +260,8 @@ export default function AdminHome() {
                   <View>
                     <Text style={styles.pendingClient}>{p.cliente} · DNI {p.dni}</Text>
                     <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
+                    <Text style={styles.pendingMeta}>Estado: {p.estadoValidacion || 'pendiente'}</Text>
+                    {p.prestamoId ? <Text style={styles.pendingMeta}>Préstamo: {p.prestamoId}</Text> : null}
                   </View>
                   <View style={{ alignItems: 'flex-end', gap: 6 }}>
                     <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
@@ -285,7 +291,10 @@ export default function AdminHome() {
             />
 
             {filteredClients.length === 0 ? (
-              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
+              <>
+                {console.log('admin-home activeClients raw', activeClients)}
+                <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
+              </>
             ) : (
               <View style={styles.activeList}>
                 {filteredClients.slice(0, 6).map((row) => (
