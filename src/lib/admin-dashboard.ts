@@ -7,7 +7,6 @@ type ClienteRow = {
   dni: string | null
   telefono: string | null
   direccion: string | null
-  email: string | null
 }
 
 type UsuarioRow = {
@@ -251,7 +250,7 @@ function toActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
 export async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
   const { data: clientesRaw, error: clientesError } = await supabase
     .from('clientes')
-    .select('id,usuario_id,nombre,dni,telefono,direccion,email')
+    .select('id,usuario_id,nombre,dni,telefono,direccion')
     .order('nombre', { ascending: true })
 
   if (clientesError) {
@@ -361,7 +360,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
       dni: cliente.dni || '—',
       telefono: cliente.telefono || 'Sin teléfono',
       direccion: cliente.direccion || 'Sin dirección',
-      email: usuario?.email || cliente.email || 'Sin email',
+      email: usuario?.email || 'Sin email',
       cantidadPrestamos,
       cantidadPrestamosActivos,
       tienePrestamoActivo: cantidadPrestamosActivos > 0 || deudaActiva > 0 || restante > 0,
@@ -394,15 +393,16 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
 
   if (!error) {
     const viewRows = (data || []) as AdminClientesListadoViewRow[]
+    console.log('[admin-dashboard] view rows', viewRows.length)
 
     if (viewRows.length > 0) {
       return viewRows.map(toListadoItemFromView)
     }
-    console.warn('[admin-dashboard] empty admin_clientes_listado, using fallback')
-    return fetchAdminClientesListadoFromBaseTables()
+  } else {
+    console.warn('[admin-dashboard] admin_clientes_listado failed', error)
   }
 
-  console.warn('[admin-dashboard] admin_clientes_listado failed, using fallback', error)
+  console.warn('[admin-dashboard] using fallback from base tables')
   return fetchAdminClientesListadoFromBaseTables()
 }
 
@@ -480,6 +480,10 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const activos = clientesListado.filter(hasActiveLoan)
   const activosCards = activos.map(toActivoCard)
 
+  console.log('[admin-dashboard] clientesListado', clientesListado)
+  console.log('[admin-dashboard] activos', activos)
+  console.log('[admin-dashboard] pagosPendientesRaw', pagosPendientesRaw)
+
   const pagosByPrestamo = new Map<string, number>()
   for (const pago of pagos) {
     if (!pago.prestamo_id) continue
@@ -518,6 +522,8 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   }).length
 
   const prestamosVencidosListado = clientesListado.filter(hasOverdueLoan).length
+
+  console.log('[admin-dashboard] historial size', historial.length)
 
   const kpis: AdminKpis = {
     cobrarHoy,

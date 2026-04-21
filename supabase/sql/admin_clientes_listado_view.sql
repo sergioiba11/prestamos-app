@@ -1,4 +1,3 @@
--- Fuente de verdad plana para panel/listado administrativo
 create or replace view public.admin_clientes_listado
 with (security_invoker = true)
 as
@@ -6,12 +5,14 @@ with prestamos_agg as (
   select
     p.cliente_id,
     count(*)::int as cantidad_prestamos,
-    count(*) filter (where lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido'))::int as cantidad_prestamos_activos,
-    bool_or(lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido')) as tiene_prestamo_activo,
-    bool_or(lower(coalesce(p.estado, '')) = 'vencido') as tiene_prestamo_vencido,
+    count(*) filter (
+      where lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido', 'pendiente')
+    )::int as cantidad_prestamos_activos,
+    bool_or(lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido', 'pendiente')) as tiene_prestamo_activo,
+    bool_or(lower(coalesce(p.estado, '')) in ('vencido', 'atrasado', 'en_mora')) as tiene_prestamo_vencido,
     sum(
       case
-        when lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido')
+        when lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido', 'pendiente')
           then greatest(coalesce(p.saldo_pendiente, p.total_a_pagar, p.monto, 0), 0)
         else 0
       end
@@ -19,7 +20,8 @@ with prestamos_agg as (
     sum(greatest(coalesce(p.total_a_pagar, p.monto, 0), 0))::numeric as total_a_pagar,
     min(
       case
-        when lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido') then p.fecha_limite
+        when lower(coalesce(p.estado, '')) in ('activo', 'atrasado', 'en_mora', 'vencido', 'pendiente')
+          then p.fecha_limite
       end
     ) as proximo_vencimiento
   from public.prestamos p
@@ -27,19 +29,20 @@ with prestamos_agg as (
 ),
 pagos_agg as (
   select
-    pa.cliente_id,
-    max(pa.fecha_pago) as fecha_ultimo_pago,
+    coalesce(pa.cliente_id, pr.cliente_id) as cliente_id,
+    max(coalesce(pa.fecha_pago, pa.created_at)) as fecha_ultimo_pago,
     sum(
       case
-        when lower(coalesce(pa.estado_validacion, 'aprobado')) in ('aprobado', 'confirmado', 'acreditado')
+        when lower(coalesce(pa.estado_validacion, '')) in ('aprobado', 'confirmado', 'acreditado', 'pagado')
           then coalesce(pa.monto, 0)
-        when pa.estado_validacion is null and lower(coalesce(pa.estado, '')) = 'completado'
+        when pa.estado_validacion is null and lower(coalesce(pa.metodo, '')) = 'efectivo'
           then coalesce(pa.monto, 0)
         else 0
       end
     )::numeric as total_pagado
   from public.pagos pa
-  group by pa.cliente_id
+  left join public.prestamos pr on pr.id = pa.prestamo_id
+  group by coalesce(pa.cliente_id, pr.cliente_id)
 )
 select
   c.id as cliente_id,
@@ -66,68 +69,6 @@ select
 from public.clientes c
 left join public.usuarios u on u.id = c.usuario_id
 left join prestamos_agg pr on pr.cliente_id = c.id
-left join pagos_agg pg on pg.cliente_id = c.id
-where c.usuario_id is not null;
+left join pagos_agg pg on pg.cliente_id = c.id;
 
 grant select on public.admin_clientes_listado to authenticated;
-
-alter table if exists public.clientes enable row level security;
-alter table if exists public.usuarios enable row level security;
-alter table if exists public.prestamos enable row level security;
-alter table if exists public.pagos enable row level security;
-alter table if exists public.cuotas enable row level security;
-
-drop policy if exists admin_read_clientes on public.clientes;
-create policy admin_read_clientes on public.clientes
-for select to authenticated
-using (
-  exists (
-    select 1 from public.usuarios u
-    where u.id = auth.uid()
-      and lower(coalesce(u.rol, '')) in ('admin', 'administrador', 'empleado')
-  )
-);
-
-drop policy if exists admin_read_usuarios on public.usuarios;
-create policy admin_read_usuarios on public.usuarios
-for select to authenticated
-using (
-  exists (
-    select 1 from public.usuarios u
-    where u.id = auth.uid()
-      and lower(coalesce(u.rol, '')) in ('admin', 'administrador', 'empleado')
-  )
-);
-
-drop policy if exists admin_read_prestamos on public.prestamos;
-create policy admin_read_prestamos on public.prestamos
-for select to authenticated
-using (
-  exists (
-    select 1 from public.usuarios u
-    where u.id = auth.uid()
-      and lower(coalesce(u.rol, '')) in ('admin', 'administrador', 'empleado')
-  )
-);
-
-drop policy if exists admin_read_pagos on public.pagos;
-create policy admin_read_pagos on public.pagos
-for select to authenticated
-using (
-  exists (
-    select 1 from public.usuarios u
-    where u.id = auth.uid()
-      and lower(coalesce(u.rol, '')) in ('admin', 'administrador', 'empleado')
-  )
-);
-
-drop policy if exists admin_read_cuotas on public.cuotas;
-create policy admin_read_cuotas on public.cuotas
-for select to authenticated
-using (
-  exists (
-    select 1 from public.usuarios u
-    where u.id = auth.uid()
-      and lower(coalesce(u.rol, '')) in ('admin', 'administrador', 'empleado')
-  )
-);

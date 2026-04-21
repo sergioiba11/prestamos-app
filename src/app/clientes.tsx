@@ -43,6 +43,8 @@ export default function ClientesScreen() {
 
     try {
       const listado = await fetchAdminClientesListado()
+      console.log('clientes screen listado', listado)
+      if (listado.length === 0) console.warn('clientes screen sin resultados')
       setClientes(listado)
     } catch (err: any) {
       setError(err?.message || 'No se pudieron cargar los clientes')
@@ -100,7 +102,7 @@ export default function ClientesScreen() {
         <View>
           <Text style={styles.eyebrow}>Administración</Text>
           <Text style={styles.title}>Listado de clientes</Text>
-          <Text style={styles.subtitle}>Fuente: admin_clientes_listado</Text>
+          <Text style={styles.subtitle}>Fuente: panel consolidado</Text>
         </View>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Volver</Text>
