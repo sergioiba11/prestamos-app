@@ -29,7 +29,15 @@ pagos_agg as (
   select
     pa.cliente_id,
     max(pa.fecha_pago) as fecha_ultimo_pago,
-    sum(case when lower(coalesce(pa.estado_validacion, 'aprobado')) <> 'rechazado' then coalesce(pa.monto, 0) else 0 end)::numeric as total_pagado
+    sum(
+      case
+        when lower(coalesce(pa.estado_validacion, 'aprobado')) in ('aprobado', 'confirmado', 'acreditado')
+          then coalesce(pa.monto, 0)
+        when pa.estado_validacion is null and lower(coalesce(pa.estado, '')) = 'completado'
+          then coalesce(pa.monto, 0)
+        else 0
+      end
+    )::numeric as total_pagado
   from public.pagos pa
   group by pa.cliente_id
 )
@@ -58,7 +66,8 @@ select
 from public.clientes c
 left join public.usuarios u on u.id = c.usuario_id
 left join prestamos_agg pr on pr.cliente_id = c.id
-left join pagos_agg pg on pg.cliente_id = c.id;
+left join pagos_agg pg on pg.cliente_id = c.id
+where c.usuario_id is not null;
 
 grant select on public.admin_clientes_listado to authenticated;
 
