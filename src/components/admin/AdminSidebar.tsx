@@ -36,7 +36,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
       <View>
         <View style={styles.logoWrap}>
           <View style={styles.logoBadge}>
-            <Ionicons name="flash" size={16} color="#fff" />
+            <Ionicons name="flash" size={18} color="#DBEAFE" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.logoText}>CrediTodo</Text>
@@ -49,22 +49,33 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
           ) : null}
         </View>
 
-        {navItems.map((item) => (
-          <Pressable
-            key={item.key}
-            style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover]}
-            onPress={() => onNavigate(item.key)}
-          >
-            <Ionicons name={item.icon} size={18} color={item.key === active ? '#BFDBFE' : '#94A3B8'} />
-            <Text style={[styles.linkText, item.key === active && styles.linkTextActive]}>{item.label}</Text>
-          </Pressable>
-        ))}
+        <View style={styles.navList}>
+          {navItems.map((item) => (
+            <Pressable
+              key={item.key}
+              style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover]}
+              onPress={() => onNavigate(item.key)}
+            >
+              <View style={[styles.navIconWrap, item.key === active && styles.navIconWrapActive]}>
+                <Ionicons name={item.icon} size={17} color={item.key === active ? '#DBEAFE' : '#94A3B8'} />
+              </View>
+              <Text style={[styles.linkText, item.key === active && styles.linkTextActive]}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.userName}>{adminName}</Text>
-        <Text style={styles.userRole}>{adminRole || 'Administrador'}</Text>
+        <View style={styles.userBox}>
+          <View style={styles.userAvatar}><Ionicons name="person" size={16} color="#BFDBFE" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.userName}>{adminName}</Text>
+            <Text style={styles.userRole}>{adminRole || 'Administrador'}</Text>
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+          <Ionicons name="log-out-outline" size={16} color="#E2E8F0" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
       </View>
@@ -74,35 +85,79 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
 
 const styles = StyleSheet.create({
   sidebar: {
-    width: 270,
-    backgroundColor: '#0A1120',
+    width: 282,
+    backgroundColor: '#030B1A',
     borderRightWidth: 1,
     borderRightColor: '#1E293B',
-    paddingHorizontal: 14,
-    paddingTop: 20,
-    paddingBottom: 14,
+    paddingHorizontal: 16,
+    paddingTop: 22,
+    paddingBottom: 16,
     justifyContent: 'space-between',
   },
   sidebarMobile: { width: 290, height: '100%' },
-  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  logoWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: '#0B1220',
+  },
   logoBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#2563EB',
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: '#1E40AF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   logoSub: { color: '#94A3B8', fontSize: 11 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 11, marginBottom: 4 },
-  linkActive: { backgroundColor: '#1E3A8A', borderWidth: 1, borderColor: '#2563EB' },
-  linkHover: { backgroundColor: '#172554' },
-  linkText: { color: '#CBD5E1', fontWeight: '600' },
+  navList: { gap: 6 },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 7 },
+  linkActive: { backgroundColor: 'rgba(37,99,235,0.2)', borderWidth: 1, borderColor: '#2563EB' },
+  linkHover: { backgroundColor: '#111C30' },
+  navIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navIconWrapActive: { borderColor: '#2563EB', backgroundColor: '#1E3A8A' },
+  linkText: { color: '#CBD5E1', fontWeight: '600', fontSize: 14 },
   linkTextActive: { color: '#DBEAFE' },
-  footer: { borderTopWidth: 1, borderTopColor: '#1E293B', paddingTop: 12, gap: 6 },
-  userName: { color: '#fff', fontWeight: '700' },
-  userRole: { color: '#94A3B8', fontSize: 12, textTransform: 'capitalize' },
-  logoutBtn: { marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#334155', paddingVertical: 9, alignItems: 'center' },
-  logoutText: { color: '#E2E8F0', fontWeight: '700' },
+  footer: { borderTopWidth: 1, borderTopColor: '#1E293B', paddingTop: 12, gap: 10 },
+  userBox: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0B1220',
+  },
+  userAvatar: { width: 30, height: 30, borderRadius: 999, backgroundColor: '#1E3A8A', alignItems: 'center', justifyContent: 'center' },
+  userName: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  userRole: { color: '#94A3B8', fontSize: 11, textTransform: 'capitalize', marginTop: 1 },
+  logoutBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 9,
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  logoutText: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
 })
