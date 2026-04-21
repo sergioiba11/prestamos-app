@@ -228,6 +228,20 @@ export function toClientePrestamoActivoCard(row: ClienteAdminListadoItem): Clien
   }
 }
 
+async function hasSuspiciousEmptyViewResult() {
+  const { count, error } = await supabase
+    .from('clientes')
+    .select('id', { count: 'exact', head: true })
+    .not('usuario_id', 'is', null)
+
+  if (error) {
+    console.error('[admin-dashboard] unable to validate empty view against clientes table', error)
+    return false
+  }
+
+  return Number(count || 0) > 0
+}
+
 async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
   const { data: clientesRaw, error: clientesError } = await supabase
     .from('clientes')
@@ -267,6 +281,70 @@ async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminLi
   const { data: pagosRaw, error: pagosError } = await supabase
     .from('pagos')
     .select('cliente_id,monto,estado_validacion,fecha_pago,created_at')
+
+  if (pagosError) {
+    console.error('[admin-dashboard] pagos fallback error', pagosError)
+  }
+
+  const prestamos = ((prestamosRaw || []) as PrestamoFallbackRow[]).filter((p) => Boolean(p.cliente_id))
+  const pagos = (pagosRaw || []) as PagoFallbackRow[]
+
+  const usuariosById = new Map<string, UsuarioFallbackRow>()
+  for (const usuario of usuarios) usuariosById.set(usuario.id, usuario)
+
+  const prestamosByCliente = new Map<string, PrestamoFallbackRow[]>()
+  for (const prestamo of prestamos) {
+    const list = prestamosByCliente.get(prestamo.cliente_id) || []
+    list.push(prestamo)
+    prestamosByCliente.set(prestamo.cliente_id, list)
+  }
+
+  const pagosByCliente = new Map<string, PagoFallbackRow[]>()
+  for (const pago of pagos) {
+    if (!pago.cliente_id) continue
+    const list = pagosByCliente.get(pago.cliente_id) || []
+    list.push(pago)
+    pagosByCliente.set(pago.cliente_id, list)
+  }
+
+  const mapped: ClienteAdminListadoItem[] = clientes.map((cliente) => {
+    const usuario = cliente.usuario_id ? usuariosById.get(cliente.usuario_id) : undefined
+    const clientePrestamos = prestamosByCliente.get(cliente.id) || []
+    const clientePagos = pagosByCliente.get(cliente.id) || []
+
+    const cantidadPrestamos = clientePrestamos.length
+    const prestamosActivos = clientePrestamos.filter((p) => ACTIVE_LOAN_STATES.has(low(p.estado)))
+    const cantidadPrestamosActivos = prestamosActivos.length
+    const tienePrestamoVencido = clientePrestamos.some((p) => OVERDUE_LOAN_STATES.has(low(p.estado)))
+
+    const deudaActiva = prestamosActivos.reduce((acc, p) => {
+      const saldo = Number(p.saldo_pendiente ?? p.total_a_pagar ?? p.monto ?? 0)
+      return acc + Math.max(saldo, 0)
+    }, 0)
+
+    const totalAPagar = clientePrestamos.reduce((acc, p) => {
+      const total = Number(p.total_a_pagar ?? p.monto ?? 0)
+      return acc + Math.max(total, 0)
+    }, 0)
+
+    const totalPagado = clientePagos.reduce((acc, p) => {
+      const estadoValidacion = low(p.estado_validacion)
+      if (estadoValidacion && !PAID_PAYMENT_VALIDATION_STATES.has(estadoValidacion)) return acc
+      return acc + Math.max(Number(p.monto || 0), 0)
+    }, 0)
+
+    const restante = Math.max(totalAPagar - totalPagado, 0)
+
+    const proximoVencimientoRaw = prestamosActivos
+      .map((p) => (p.fecha_limite || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()[0]
+
+    const fechaUltimoPagoRaw = clientePagos
+      .map((p) => p.fecha_pago || p.created_at || '')
+      .filter(Boolean)
+      .sort()
+      .pop()
 
   if (pagosError) {
     console.error('[admin-dashboard] pagos fallback error', pagosError)
@@ -446,12 +524,7 @@ export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoIt
       return rows.map(toListadoItem)
     }
 
-    const { count, error: countError } = await supabase
-      .from('clientes')
-      .select('id', { count: 'exact', head: true })
-      .not('usuario_id', 'is', null)
-
-    if (!countError && Number(count || 0) > 0) {
+    if (await hasSuspiciousEmptyViewResult()) {
       console.warn('[admin-dashboard] admin_clientes_listado returned 0 rows with linked clientes. Using table fallback.')
       return fetchAdminClientesListadoFromBaseTables()
     }
