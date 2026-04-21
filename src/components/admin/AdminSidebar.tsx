@@ -1,7 +1,14 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
-export type AdminNavKey = 'inicio' | 'nuevo-prestamo' | 'registrar-pago' | 'clientes' | 'usuarios' | 'config'
+export type AdminNavKey =
+  | 'inicio'
+  | 'nuevo-prestamo'
+  | 'registrar-pago'
+  | 'clientes'
+  | 'crear-cliente'
+  | 'crear-empleado'
+  | 'config'
 
 type Props = {
   active: AdminNavKey
@@ -18,7 +25,8 @@ const navItems: Array<{ key: AdminNavKey; label: string; icon: keyof typeof Ioni
   { key: 'nuevo-prestamo', label: 'Nuevo préstamo', icon: 'wallet-outline' },
   { key: 'registrar-pago', label: 'Registrar pago', icon: 'cash-outline' },
   { key: 'clientes', label: 'Ver clientes', icon: 'people-outline' },
-  { key: 'usuarios', label: 'Usuarios', icon: 'person-add-outline' },
+  { key: 'crear-cliente', label: 'Crear cliente', icon: 'person-circle-outline' },
+  { key: 'crear-empleado', label: 'Crear empleado', icon: 'person-add-outline' },
   { key: 'config', label: 'Configuración', icon: 'settings-outline' },
 ]
 

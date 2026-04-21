@@ -27,9 +27,17 @@ function money(v: number) {
 }
 
 function formatDate(value: string) {
-  if (!value) return '—'
+  if (!value || value === '—') return '—'
   const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function activeBadgeText(estado: string) {
+  const normalized = String(estado || '').toLowerCase()
+  if (normalized.includes('venc')) return 'Vencido'
+  if (normalized.includes('mora') || normalized.includes('atras')) return 'Atrasado'
+  return 'Préstamo activo'
 }
 
 export default function AdminHome() {
@@ -118,7 +126,8 @@ export default function AdminHome() {
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
     if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
-    if (key === 'usuarios') return router.push('/nuevo-empleado' as any)
+    if (key === 'crear-cliente') return router.push('/nuevo-cliente' as any)
+    if (key === 'crear-empleado') return router.push('/nuevo-empleado' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
@@ -284,10 +293,12 @@ export default function AdminHome() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.activeClientName}>{row.nombre}</Text>
                       <Text style={styles.activeClientMeta}>DNI {row.dni} · {row.telefono}</Text>
-                      <Text style={styles.activeClientDebt}>Deuda activa: {money(row.prestamoActivo)}</Text>
+                      <Text style={styles.activeClientMeta}>Email: {row.email || 'Sin email'}</Text>
+                      <Text style={styles.activeClientDebt}>Deuda activa/restante: {money(row.prestamoActivo)}</Text>
+                      <Text style={styles.activeClientMeta}>Próximo vencimiento: {formatDate(row.proximoPago)}</Text>
                     </View>
                     <View style={styles.activeRight}>
-                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Préstamo activo</Text></View>
+                      <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>{activeBadgeText(row.estado)}</Text></View>
                       <TouchableOpacity
                         style={styles.detailBtn}
                         onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}

@@ -76,10 +76,11 @@ export default function HistorialPrestamosScreen() {
     setShowMobileMenu(false)
 
     if (key === 'inicio') return router.push('/admin-home' as any)
-    if (key === 'prestamos') return router.push('/nuevo-prestamo' as any)
-    if (key === 'pagos') return router.push('/cargar-pago' as any)
+    if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
+    if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
-    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'crear-cliente') return router.push('/nuevo-cliente' as any)
+    if (key === 'crear-empleado') return router.push('/nuevo-empleado' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
@@ -105,7 +106,7 @@ export default function HistorialPrestamosScreen() {
   return (
     <View style={styles.page}>
       {!mobile ? (
-        <AdminSidebar active="historial" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
         <View style={styles.mobileTopBar}>
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
@@ -171,7 +172,7 @@ export default function HistorialPrestamosScreen() {
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
           <AdminSidebar
-            active="historial"
+            active="inicio"
             adminName={adminName}
             adminRole={adminRole}
             onNavigate={onNavigate}
