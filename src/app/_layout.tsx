@@ -44,6 +44,16 @@ export default function RootLayout() {
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="register" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+
+          <Stack.Screen name="admin-home" options={{ headerShown: false }} />
+          <Stack.Screen name="historial-prestamos" options={{ headerShown: false }} />
+          <Stack.Screen name="clientes" options={{ headerShown: false }} />
+          <Stack.Screen name="nuevo-prestamo" options={{ headerShown: false }} />
+          <Stack.Screen name="cargar-pago" options={{ headerShown: false }} />
+          <Stack.Screen name="nuevo-cliente" options={{ headerShown: false }} />
+          <Stack.Screen name="nuevo-empleado" options={{ headerShown: false }} />
+          <Stack.Screen name="configuraciones" options={{ headerShown: false }} />
+          <Stack.Screen name="cliente-detalle" options={{ headerShown: false }} />
         </Stack>
       </OnboardingProvider>
     </AuthProvider>

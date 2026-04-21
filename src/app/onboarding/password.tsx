@@ -37,7 +37,15 @@ export default function CreatePasswordScreen() {
     setError('')
 
     try {
-      await registerUserFromOnboarding({
+      const payload = {
+        dni: state.identity.dni,
+        nombre: state.identity.nombre,
+        email,
+        phone: state.verifiedPhone,
+      }
+      console.log('[onboarding-password] payload', payload)
+
+      const response = await registerUserFromOnboarding({
         dni: state.identity.dni,
         nombre: state.identity.nombre,
         password,
@@ -45,8 +53,11 @@ export default function CreatePasswordScreen() {
         phone: state.verifiedPhone,
       })
 
+      console.log('[onboarding-password] response', response)
       router.push('/onboarding/biometria' as any)
     } catch (err: any) {
+      console.error('[onboarding-password] function name', 'completar-registro-cliente')
+      console.error('[onboarding-password] real error', err)
       setError(err?.message || 'No se pudo crear la cuenta.')
     } finally {
       setLoading(false)

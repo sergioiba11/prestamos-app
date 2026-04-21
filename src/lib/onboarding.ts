@@ -22,6 +22,24 @@ export type RegistrationLookupResult = {
 
 const AR_PHONE_REGEX = /^\+549\d{10}$/
 
+function mapEdgeInvokeError(rawMessage: string, functionName: string): string {
+  const normalized = rawMessage.toLowerCase()
+
+  if (normalized.includes('failed to send a request to the edge function')) {
+    return `No se pudo contactar la función '${functionName}'. Verificá deploy, nombre y conectividad.`
+  }
+
+  if (normalized.includes('functions') && normalized.includes('not found')) {
+    return `La función '${functionName}' no existe o no está deployada.`
+  }
+
+  if (normalized.includes('fetch')) {
+    return `No se pudo conectar con la función '${functionName}'. Revisá URL de Supabase y red.`
+  }
+
+  return rawMessage
+}
+
 export function normalizeDni(value: string | null | undefined): string {
   return String(value || '').replace(/[.\s-]/g, '').replace(/\D/g, '')
 }
@@ -55,18 +73,25 @@ export function maskPhone(value: string | null | undefined): string {
 
 export async function startRegistrationByDni(dni: string): Promise<RegistrationLookupResult> {
   const cleanDni = normalizeDni(dni)
+  const functionName = 'iniciar-registro'
+  const payloadToSend = { dni: cleanDni }
 
   if (cleanDni.length < 7 || cleanDni.length > 8) {
     throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
   }
 
-  const { data, error } = await supabase.functions.invoke('iniciar-registro', {
-    body: { dni: cleanDni },
+  console.log('[onboarding] invoking function', { functionName })
+  console.log('[onboarding] payload', payloadToSend)
+
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: payloadToSend,
   })
 
+  console.log('[onboarding] function response', { functionName, data })
+
   if (error) {
-    console.error('[onboarding] iniciar-registro invoke error', error)
-    throw new Error(error.message || 'No pudimos iniciar el registro. Intentá nuevamente.')
+    console.error('[onboarding] function invoke error', { functionName, error })
+    throw new Error(mapEdgeInvokeError(error.message || 'No pudimos iniciar el registro.', functionName))
   }
 
   const payload = data as
@@ -86,7 +111,7 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
     | null
 
   if (!payload?.ok || !payload.status || !['new', 'existing', 'active'].includes(payload.status)) {
-    console.error('[onboarding] iniciar-registro invalid payload', payload)
+    console.error('[onboarding] invalid payload from function', { functionName, payload })
     throw new Error(payload?.error || 'No pudimos iniciar el registro.')
   }
 
@@ -167,91 +192,57 @@ export async function registerUserFromOnboarding(params: {
   const normalizedPhone = normalizePhoneAR(params.phone)
   const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
   const displayName = params.nombre?.trim() || 'Cliente'
+  const functionName = 'completar-registro-cliente'
 
   if (!normalizedPhone) throw new Error('El teléfono verificado no es válido.')
 
-  const { data: clienteByDni, error: clienteError } = await supabase
-    .from('clientes')
-    .select('id, dni, telefono, usuario_id')
-    .eq('dni', dni)
-    .maybeSingle()
-
-  if (clienteError || !clienteByDni) {
-    throw new Error('No encontramos un registro para el DNI ingresado.')
+  const payload = {
+    dni,
+    nombre: displayName,
+    email,
+    password: params.password,
+    telefono: normalizedPhone,
   }
 
-  if (clienteByDni.usuario_id) {
-    throw new Error('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu cuenta.')
+  console.log('[onboarding] invoking function', { functionName })
+  console.log('[onboarding] payload', payload)
+
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: payload,
+  })
+
+  console.log('[onboarding] function response', { functionName, data })
+
+  if (error) {
+    console.error('[onboarding] function invoke error', { functionName, error })
+    throw new Error(mapEdgeInvokeError(error.message || 'No se pudo completar el registro.', functionName))
   }
 
-  const {
-    data: { user: currentUser },
-  } = await supabase.auth.getUser()
-
-  let authUserId = currentUser?.id || null
-
-  if (!authUserId) {
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password: params.password,
-      phone: normalizedPhone,
-      options: {
-        data: {
-          dni,
-          role: 'cliente',
-          full_name: displayName,
-        },
-      },
-    })
-
-    if (signUpError || !signUpData.user) {
-      throw new Error(signUpError?.message || 'No se pudo crear la cuenta de autenticación.')
-    }
-
-    authUserId = signUpData.user.id
-  } else {
-    const { error: updateAuthError } = await supabase.auth.updateUser({
-      email,
-      password: params.password,
-      data: {
-        dni,
-        role: 'cliente',
-        full_name: displayName,
-      },
-    })
-
-    if (updateAuthError) {
-      if (updateAuthError.message.toLowerCase().includes('already')) {
-        throw new Error('El email ingresado ya está registrado.')
+  const response = data as
+    | {
+        ok?: boolean
+        error?: string
+        message?: string
+        userId?: string
+        email?: string
       }
-      throw updateAuthError
-    }
+    | null
+
+  if (!response?.ok) {
+    const responseError = response?.error || 'No se pudo completar el registro.'
+    console.error('[onboarding] function business error', { functionName, responseError, response })
+    throw new Error(responseError)
   }
 
-  const { data: samePhoneClients, error: phoneError } = await supabase
-    .from('clientes')
-    .select('id, dni')
-    .eq('telefono', normalizedPhone)
+  if (!response.userId) {
+    throw new Error('No se recibió el usuario creado al finalizar el registro.')
+  }
 
-  if (phoneError) throw new Error('No pudimos validar el teléfono en este momento.')
-
-  const isPhoneUsedByAnotherDni = (samePhoneClients || []).some((row) => normalizeDni(row.dni) !== dni)
-  if (isPhoneUsedByAnotherDni) throw new Error('El teléfono ya está asociado a otro cliente.')
-
-  const { error: usuarioError } = await supabase
-    .from('usuarios')
-    .upsert({ id: authUserId, nombre: displayName, email, rol: 'cliente' })
-
-  if (usuarioError) throw usuarioError
-
-  const { error: clienteUpdateError } = await supabase
-    .from('clientes')
-    .update({ usuario_id: authUserId, telefono: normalizedPhone })
-    .eq('id', clienteByDni.id)
-
-  if (clienteUpdateError) throw clienteUpdateError
-
-  return { userId: authUserId, email }
+  return {
+    userId: response.userId,
+    email: response.email || email,
+    message: response.message || 'Cuenta creada correctamente.',
+  }
 }
 
 export async function signInWithEmailOrDni(params: {

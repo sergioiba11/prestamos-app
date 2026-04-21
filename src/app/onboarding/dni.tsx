@@ -27,7 +27,9 @@ export default function OnboardingDniScreen() {
     setStatus('Verificando DNI…')
 
     try {
+      console.log('[onboarding-dni] payload', { dni: cleanDni })
       const result = await startRegistrationByDni(cleanDni)
+      console.log('[onboarding-dni] response', result)
 
       if (result.status === 'active') {
         setStatus('')
@@ -53,7 +55,8 @@ export default function OnboardingDniScreen() {
       router.push('/onboarding/codigo' as any)
     } catch (err: any) {
       setStatus('')
-      console.error('[onboarding-dni] handleContinue error', err)
+      console.error('[onboarding-dni] function name', 'iniciar-registro')
+      console.error('[onboarding-dni] real error', err)
       setError(err?.message || 'No pudimos iniciar el registro. Intentá nuevamente.')
     } finally {
       setLoading(false)
