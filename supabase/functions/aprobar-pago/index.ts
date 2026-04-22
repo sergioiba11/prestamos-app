@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
       p_pago_id: pago.id,
       p_actor_id: user.id,
       p_observacion: observacionRevision,
+      p_preview_esperado: preview,
     })
 
     if (rpcError) {
@@ -234,23 +235,18 @@ Deno.serve(async (req) => {
       if (status === 'already_rejected' || status === 'invalid_state') {
         return jsonResponse({ error: errorMsg }, 409)
       }
+      if (status === 'preview_mismatch') {
+        return jsonResponse(
+          {
+            error: errorMsg,
+            code: 'preview_mismatch',
+            preview_esperado: resultado?.preview_esperado ?? preview,
+            impacto_real: resultado?.impacto_real_calculado ?? null,
+          },
+          409
+        )
+      }
       return jsonResponse({ error: errorMsg }, 400)
-    }
-
-    const totalAplicadoReal = Number(resultado?.total_aplicado || 0)
-    const cuotasImpactadasReal = Array.isArray(resultado?.cuotas_impactadas) ? resultado.cuotas_impactadas : []
-    if (
-      Math.abs(totalAplicadoReal - preview.total_aplicado) > 0.01 ||
-      JSON.stringify(cuotasImpactadasReal) !== JSON.stringify(preview.cuotas_impactadas)
-    ) {
-      return jsonResponse(
-        {
-          error: 'La aplicación real del pago no coincide con la previsualización esperada.',
-          preview,
-          resultado,
-        },
-        409
-      )
     }
 
     await supabase.from('notificaciones').insert({
