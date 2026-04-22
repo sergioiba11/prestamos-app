@@ -21,6 +21,10 @@ function jsonResponse(payload: Record<string, unknown>, status = 200) {
   })
 }
 
+function businessError(error: string, code: string, status = 200) {
+  return jsonResponse({ ok: false, error, code }, status)
+}
+
 function normalizeDni(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '')
 }
@@ -49,7 +53,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ ok: false, error: 'Método no permitido' }, 405)
+    return jsonResponse({ ok: false, error: 'Método no permitido', code: 'METHOD_NOT_ALLOWED' }, 405)
   }
 
   const rollback = {
@@ -63,7 +67,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.' }, 500)
+      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.', code: 'MISSING_ENV' }, 500)
     }
 
     const body = await req.json().catch(() => ({}))
@@ -75,16 +79,16 @@ Deno.serve(async (req) => {
     const clienteId = body?.clienteId ? String(body.clienteId) : null
 
     if (dni.length < 7 || dni.length > 8) {
-      return jsonResponse({ ok: false, error: 'DNI inválido. Debe tener 7 u 8 dígitos.' }, 400)
+      return businessError('DNI inválido. Debe tener 7 u 8 dígitos.', 'DNI_INVALID')
     }
     if (!isValidEmail(email)) {
-      return jsonResponse({ ok: false, error: 'Ingresá un correo válido.' }, 400)
+      return businessError('Ingresá un correo válido.', 'EMAIL_INVALID')
     }
     if (password.length < 8) {
-      return jsonResponse({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' }, 400)
+      return businessError('La contraseña debe tener al menos 8 caracteres.', 'PASSWORD_TOO_SHORT')
     }
     if (!/^\+549\d{10}$/.test(telefono)) {
-      return jsonResponse({ ok: false, error: 'Teléfono inválido. Debe ser de Argentina (+549...).' }, 400)
+      return businessError('Teléfono inválido. Debe ser de Argentina (+549...).', 'PHONE_INVALID')
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -109,7 +113,7 @@ Deno.serve(async (req) => {
     }
 
     if (cliente?.usuario_id) {
-      return jsonResponse({ ok: false, error: 'Ese DNI ya pertenece a un cliente.' }, 400)
+      return businessError('Ese DNI ya pertenece a un cliente.', 'DNI_ALREADY_REGISTERED')
     }
 
     const { data: duplicatedEmail, error: duplicatedEmailError } = await supabase
@@ -123,7 +127,7 @@ Deno.serve(async (req) => {
     }
 
     if (duplicatedEmail?.id) {
-      return jsonResponse({ ok: false, error: 'Ese correo ya está registrado.' }, 400)
+      return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
     }
 
     if (!cliente) {
@@ -156,9 +160,9 @@ Deno.serve(async (req) => {
     if (createAuthError || !authData.user) {
       const authMessage = String(createAuthError?.message || '').toLowerCase()
       if (authMessage.includes('already') || authMessage.includes('registered') || authMessage.includes('exists')) {
-        return jsonResponse({ ok: false, error: 'Ese correo ya está registrado.' }, 400)
+        return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
       }
-      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.' }, 500)
+      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.', code: 'AUTH_USER_CREATE_FAILED' }, 500)
     }
 
     rollback.userId = authData.user.id
@@ -214,6 +218,6 @@ Deno.serve(async (req) => {
       console.error('[registro-cliente-publico] rollback error', rollbackError)
     }
 
-    return jsonResponse({ ok: false, error: error?.message || 'No se pudo crear la cuenta.' }, 500)
+    return jsonResponse({ ok: false, error: error?.message || 'No se pudo crear la cuenta.', code: 'INTERNAL_ERROR' }, 500)
   }
 })

@@ -29,3 +29,13 @@ entrypoint = "./functions/crear-pago-mp/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/webhook-mp/index.ts"
+
+[functions.registro-cliente-publico]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/registro-cliente-publico/index.ts"
+
+[functions.resolver-identificador-login]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/resolver-identificador-login/index.ts"

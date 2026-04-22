@@ -37,7 +37,10 @@ export default function RecoverPasswordScreen() {
     try {
       setLoading(true)
       setError('')
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail)
+      const redirectTo = process.env.EXPO_PUBLIC_PASSWORD_RECOVERY_REDIRECT_TO
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        ...(redirectTo ? { redirectTo } : {}),
+      })
       if (resetError) throw resetError
       setSuccess('Te enviamos un correo para restablecer tu contraseña.')
     } catch (err: any) {
