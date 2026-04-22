@@ -12,7 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { normalizeDni, normalizePhoneAR, registerUserFromOnboarding } from '../lib/onboarding'
+import { normalizeDni, normalizePhoneAR } from '../lib/onboarding'
+import { supabase } from '../lib/supabase'
 
 export default function RegisterScreen() {
   const [nombre, setNombre] = useState('')
@@ -23,6 +24,34 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const extractInvokeErrorMessage = async (invokeError: any): Promise<string> => {
+    const fallbackMessage = String(invokeError?.message || 'No se pudo crear la cuenta.')
+    const fallbackGeneric = 'Edge Function returned a non-2xx status code'
+
+    const context = invokeError?.context
+
+    if (context && typeof context.json === 'function') {
+      try {
+        const payload = await context.clone().json()
+        if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error
+      } catch {
+        // no-op
+      }
+    }
+
+    if (typeof context === 'string' && context.trim()) {
+      try {
+        const parsed = JSON.parse(context)
+        if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error
+      } catch {
+        // no-op
+      }
+    }
+
+    if (fallbackMessage && fallbackMessage !== fallbackGeneric) return fallbackMessage
+    return 'No se pudo completar el registro en este momento.'
+  }
 
   const submit = async () => {
     if (loading) return
@@ -78,14 +107,30 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true)
-      await registerUserFromOnboarding({
+      const payload = {
         dni: dniLimpio,
         nombre: nombreLimpio,
         email: emailLimpio,
-        phone: phoneNormalizado,
+        telefono: phoneNormalizado,
         password: passwordLimpia,
         clienteId: null,
+      }
+
+      const { data, error: invokeError } = await supabase.functions.invoke('registro-cliente-publico', {
+        body: payload,
       })
+
+      if (invokeError) {
+        const detailMessage = await extractInvokeErrorMessage(invokeError)
+        setError(detailMessage)
+        return
+      }
+
+      const response = data as { ok?: boolean; error?: string; code?: string } | null
+      if (!response?.ok) {
+        setError(response?.error || 'No se pudo completar el registro.')
+        return
+      }
 
       setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
       setTimeout(() => router.replace('/login' as any), 600)

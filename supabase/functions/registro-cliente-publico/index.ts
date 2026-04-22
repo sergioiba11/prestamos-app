@@ -22,6 +22,14 @@ type RollbackState = {
   previousCliente: ClienteRow | null
 }
 
+type LogContext = {
+  step: string
+  message: string
+  email?: string | null
+  dni?: string | null
+  code?: string
+}
+
 function jsonResponse(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -31,6 +39,26 @@ function jsonResponse(payload: Record<string, unknown>, status = 200) {
 
 function businessError(error: string, code: string) {
   return jsonResponse({ ok: false, error, code }, 200)
+}
+
+function logInfo(ctx: LogContext) {
+  console.log(ctx.step, {
+    step: ctx.step,
+    message: ctx.message,
+    email: ctx.email ?? null,
+    dni: ctx.dni ?? null,
+    ...(ctx.code ? { code: ctx.code } : {}),
+  })
+}
+
+function logError(ctx: LogContext) {
+  console.error(ctx.step, {
+    step: ctx.step,
+    message: ctx.message,
+    email: ctx.email ?? null,
+    dni: ctx.dni ?? null,
+    ...(ctx.code ? { code: ctx.code } : {}),
+  })
 }
 
 function normalizeDni(value: unknown): string {
@@ -56,32 +84,8 @@ function isValidEmail(value: string): boolean {
 }
 
 Deno.serve(async (req) => {
-  console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-    stage: 'inicio_funcion',
-    status: 'OK',
-    message: 'Invocación recibida',
-    method: req.method,
-  })
-
-  if (req.method === 'OPTIONS') {
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'respuesta_final',
-      status: 'OK',
-      message: 'Preflight OPTIONS respondido',
-      code: 'OPTIONS_OK',
-    })
-    return jsonResponse({ ok: true, code: 'OPTIONS_OK' }, 200)
-  }
-
-  if (req.method !== 'POST') {
-    console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'respuesta_final',
-      status: 'ERROR',
-      message: 'Método no permitido',
-      code: 'METHOD_NOT_ALLOWED',
-    })
-    return businessError('Método no permitido', 'METHOD_NOT_ALLOWED')
-  }
+  let logEmail: string | null = null
+  let logDni: string | null = null
 
   const rollback: RollbackState = {
     userId: null,
@@ -94,188 +98,177 @@ Deno.serve(async (req) => {
   const runRollback = async (context: string, state: RollbackState) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!supabaseUrl || !serviceRoleKey || !state.userId) return
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'rollback_compensatorio',
-      status: 'OK',
-      message: 'Iniciando rollback compensatorio',
-      context,
-      hasInsertedUsuario: state.insertedUsuario,
-      hasClienteId: Boolean(state.clienteId),
-      createdCliente: state.createdCliente,
-    })
+    if (!supabaseUrl || !serviceRoleKey || !state.userId) {
+      logError({
+        step: 'ROLLBACK_ERROR',
+        message: `Rollback omitido (${context}) por estado incompleto`,
+        email: logEmail,
+        dni: logDni,
+        code: 'ROLLBACK_SKIPPED',
+      })
+      return
+    }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    if (state.insertedUsuario) {
-      const { error: deleteUsuarioError } = await admin.from('usuarios').delete().eq('id', state.userId)
-      if (deleteUsuarioError) {
-        console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-          stage: 'rollback_compensatorio',
-          status: 'ERROR',
-          message: 'Falló eliminación en usuarios durante rollback',
-          detail: deleteUsuarioError.message,
-        })
+    try {
+      if (state.insertedUsuario) {
+        const { error: deleteUsuarioError } = await admin.from('usuarios').delete().eq('id', state.userId)
+        if (deleteUsuarioError) throw deleteUsuarioError
       }
-    }
 
-    if (state.clienteId) {
-      if (state.createdCliente) {
-        const { error: deleteClienteError } = await admin.from('clientes').delete().eq('id', state.clienteId)
-        if (deleteClienteError) {
-          console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-            stage: 'rollback_compensatorio',
-            status: 'ERROR',
-            message: 'Falló eliminación de cliente creado durante rollback',
-            detail: deleteClienteError.message,
-          })
-        }
-      } else {
-        const { error: restoreClienteError } = await admin
-          .from('clientes')
-          .update({
-            usuario_id: state.previousCliente?.usuario_id ?? null,
-            nombre: state.previousCliente?.nombre ?? null,
-            telefono: state.previousCliente?.telefono ?? null,
-            dni: state.previousCliente?.dni ?? null,
-          })
-          .eq('id', state.clienteId)
+      if (state.clienteId) {
+        if (state.createdCliente) {
+          const { error: deleteClienteError } = await admin.from('clientes').delete().eq('id', state.clienteId)
+          if (deleteClienteError) throw deleteClienteError
+        } else {
+          const { error: restoreClienteError } = await admin
+            .from('clientes')
+            .update({
+              usuario_id: state.previousCliente?.usuario_id ?? null,
+              nombre: state.previousCliente?.nombre ?? null,
+              telefono: state.previousCliente?.telefono ?? null,
+              dni: state.previousCliente?.dni ?? null,
+            })
+            .eq('id', state.clienteId)
 
-        if (restoreClienteError) {
-          console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-            stage: 'rollback_compensatorio',
-            status: 'ERROR',
-            message: 'Falló restauración de cliente existente durante rollback',
-            detail: restoreClienteError.message,
-          })
+          if (restoreClienteError) throw restoreClienteError
         }
       }
-    }
 
-    const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
-    if (deleteAuthError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'rollback_compensatorio',
-        status: 'ERROR',
-        message: 'Falló eliminación en Auth durante rollback',
-        detail: deleteAuthError.message,
+      const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
+      if (deleteAuthError) throw deleteAuthError
+
+      logInfo({
+        step: 'ROLLBACK_OK',
+        message: `Rollback completado (${context})`,
+        email: logEmail,
+        dni: logDni,
+      })
+    } catch (rollbackErr) {
+      logError({
+        step: 'ROLLBACK_ERROR',
+        message: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+        email: logEmail,
+        dni: logDni,
+        code: 'ROLLBACK_FAILED',
       })
     }
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'rollback_compensatorio',
-      status: 'OK',
-      message: 'Rollback compensatorio finalizado',
-      context,
-    })
   }
 
   try {
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'lectura_validacion_body',
-      status: 'OK',
-      message: 'Iniciando lectura de body',
+    logInfo({ step: 'FUNCTION_START', message: 'Inicio de registro-cliente-publico', email: null, dni: null })
+
+    if (req.method === 'OPTIONS') {
+      return jsonResponse({ ok: true, code: 'OPTIONS_OK' }, 200)
+    }
+
+    if (req.method !== 'POST') {
+      logError({
+        step: 'VALIDATION_ERROR',
+        message: 'Método no permitido',
+        email: null,
+        dni: null,
+        code: 'METHOD_NOT_ALLOWED',
+      })
+      return businessError('Método no permitido', 'METHOD_NOT_ALLOWED')
+    }
+
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      logError({
+        step: 'VALIDATION_ERROR',
+        message: 'Body inválido o JSON malformado',
+        email: null,
+        dni: null,
+        code: 'INVALID_JSON',
+      })
+      return businessError('Body inválido. Enviá JSON válido.', 'INVALID_JSON')
+    }
+
+    const dni = normalizeDni((body as Record<string, unknown>)?.dni)
+    const nombre = String((body as Record<string, unknown>)?.nombre ?? '').trim() || 'Cliente'
+    const email = String((body as Record<string, unknown>)?.email ?? '').trim().toLowerCase()
+    const password = String((body as Record<string, unknown>)?.password ?? '')
+    const telefono = normalizePhoneAR((body as Record<string, unknown>)?.telefono)
+    const clienteId = (body as Record<string, unknown>)?.clienteId
+      ? String((body as Record<string, unknown>).clienteId)
+      : null
+
+    logEmail = email || null
+    logDni = dni || null
+
+    logInfo({
+      step: 'BODY_PARSED',
+      message: 'Body parseado correctamente',
+      email: logEmail,
+      dni: logDni,
     })
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'lectura_validacion_body',
-        status: 'ERROR',
-        message: 'Variables de entorno faltantes',
+      logError({
+        step: 'VALIDATION_ERROR',
+        message: 'Faltan variables de entorno',
+        email: logEmail,
+        dni: logDni,
         code: 'MISSING_ENV',
       })
-      return businessError('Faltan variables de entorno de Supabase.', 'MISSING_ENV')
+      return businessError('Servicio no disponible en este momento.', 'MISSING_ENV')
     }
 
-    const body = await req.json().catch(() => ({}))
-    const dni = normalizeDni(body?.dni)
-    const nombre = String(body?.nombre ?? '').trim() || 'Cliente'
-    const email = String(body?.email ?? '').trim().toLowerCase()
-    const password = String(body?.password ?? '')
-    const telefono = normalizePhoneAR(body?.telefono)
-    const clienteId = body?.clienteId ? String(body.clienteId) : null
+    logInfo({ step: 'ENV_OK', message: 'Variables de entorno presentes', email: logEmail, dni: logDni })
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'lectura_validacion_body',
-      status: 'OK',
-      message: 'Body leído y normalizado',
-      hasClienteId: Boolean(clienteId),
-    })
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'validacion_nombre',
-      status: 'OK',
-      message: 'Nombre normalizado',
-      nombreLength: nombre.length,
-    })
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'validacion_dni',
-      status: 'OK',
-      message: 'Validando formato de DNI',
-      dniLength: dni.length,
-    })
     if (dni.length < 7 || dni.length > 8) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'validacion_dni',
-        status: 'ERROR',
+      logError({
+        step: 'VALIDATION_ERROR',
         message: 'DNI inválido',
+        email: logEmail,
+        dni: logDni,
         code: 'DNI_INVALID',
       })
       return businessError('DNI inválido. Debe tener 7 u 8 dígitos.', 'DNI_INVALID')
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'validacion_email',
-      status: 'OK',
-      message: 'Validando formato de correo',
-    })
     if (!isValidEmail(email)) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'validacion_email',
-        status: 'ERROR',
+      logError({
+        step: 'VALIDATION_ERROR',
         message: 'Correo inválido',
+        email: logEmail,
+        dni: logDni,
         code: 'EMAIL_INVALID',
       })
       return businessError('Ingresá un correo válido.', 'EMAIL_INVALID')
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'validacion_password',
-      status: 'OK',
-      message: 'Validando longitud de contraseña',
-      passwordLength: password.length,
-    })
     if (password.length < 8) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'validacion_password',
-        status: 'ERROR',
+      logError({
+        step: 'VALIDATION_ERROR',
         message: 'Contraseña demasiado corta',
+        email: logEmail,
+        dni: logDni,
         code: 'PASSWORD_TOO_SHORT',
       })
       return businessError('La contraseña debe tener al menos 8 caracteres.', 'PASSWORD_TOO_SHORT')
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'validacion_telefono',
-      status: 'OK',
-      message: 'Validando formato de teléfono',
-    })
     if (!/^\+549\d{10}$/.test(telefono)) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'validacion_telefono',
-        status: 'ERROR',
+      logError({
+        step: 'VALIDATION_ERROR',
         message: 'Teléfono inválido',
+        email: logEmail,
+        dni: logDni,
         code: 'PHONE_INVALID',
       })
       return businessError('Teléfono inválido. Debe ser de Argentina (+549...).', 'PHONE_INVALID')
     }
+
+    logInfo({ step: 'VALIDATION_OK', message: 'Validaciones de entrada superadas', email: logEmail, dni: logDni })
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -283,117 +276,104 @@ Deno.serve(async (req) => {
 
     let cliente: ClienteRow | null = null
 
-    if (clienteId) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_dni',
-        status: 'OK',
-        message: 'Buscando cliente por clienteId',
+    try {
+      if (clienteId) {
+        const { data, error } = await supabase
+          .from('clientes')
+          .select('id,dni,nombre,telefono,usuario_id')
+          .eq('id', clienteId)
+          .maybeSingle<ClienteRow>()
+        if (error) throw error
+        if (data && normalizeDni(data.dni) === dni) cliente = data
+      }
+
+      if (!cliente) {
+        const { data, error } = await supabase.from('clientes').select('id,dni,nombre,telefono,usuario_id').not('dni', 'is', null)
+        if (error) throw error
+        const rows = (data || []) as ClienteRow[]
+        cliente = rows.find((row) => normalizeDni(row.dni) === dni) || null
+      }
+
+      if (cliente?.usuario_id) {
+        logError({
+          step: 'DUPLICATE_DNI_CHECK_ERROR',
+          message: 'DNI ya registrado',
+          email: logEmail,
+          dni: logDni,
+          code: 'DNI_ALREADY_REGISTERED',
+        })
+        return businessError('Ese DNI ya pertenece a un cliente.', 'DNI_ALREADY_REGISTERED')
+      }
+
+      logInfo({
+        step: 'DUPLICATE_DNI_CHECK_OK',
+        message: 'Chequeo de DNI completado',
+        email: logEmail,
+        dni: logDni,
       })
-      const { data } = await supabase
-        .from('clientes')
-        .select('id,dni,nombre,telefono,usuario_id')
-        .eq('id', clienteId)
-        .maybeSingle<ClienteRow>()
-      if (data && normalizeDni(data.dni) === dni) cliente = data
+    } catch (err) {
+      logError({
+        step: 'DUPLICATE_DNI_CHECK_ERROR',
+        message: err instanceof Error ? err.message : String(err),
+        email: logEmail,
+        dni: logDni,
+        code: 'DNI_CHECK_FAILED',
+      })
+      throw err
+    }
+
+    try {
+      const { data: duplicatedEmail, error: duplicatedEmailError } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (duplicatedEmailError) throw duplicatedEmailError
+
+      if (duplicatedEmail?.id) {
+        logError({
+          step: 'DUPLICATE_EMAIL_CHECK_ERROR',
+          message: 'Correo duplicado en usuarios',
+          email: logEmail,
+          dni: logDni,
+          code: 'EMAIL_ALREADY_REGISTERED',
+        })
+        return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
+      }
+
+      const { data: authDuplicatedEmail, error: authDuplicatedEmailError } = await supabase.auth.admin.getUserByEmail(email)
+      if (authDuplicatedEmailError) throw authDuplicatedEmailError
+
+      if (authDuplicatedEmail?.user?.id) {
+        logError({
+          step: 'DUPLICATE_EMAIL_CHECK_ERROR',
+          message: 'Correo duplicado en auth',
+          email: logEmail,
+          dni: logDni,
+          code: 'EMAIL_ALREADY_REGISTERED',
+        })
+        return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
+      }
+
+      logInfo({
+        step: 'DUPLICATE_EMAIL_CHECK_OK',
+        message: 'Chequeo de correo completado',
+        email: logEmail,
+        dni: logDni,
+      })
+    } catch (err) {
+      logError({
+        step: 'DUPLICATE_EMAIL_CHECK_ERROR',
+        message: err instanceof Error ? err.message : String(err),
+        email: logEmail,
+        dni: logDni,
+        code: 'EMAIL_CHECK_FAILED',
+      })
+      throw err
     }
 
     if (!cliente) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_dni',
-        status: 'OK',
-        message: 'Buscando cliente por DNI normalizado',
-      })
-      const { data } = await supabase.from('clientes').select('id,dni,nombre,telefono,usuario_id').not('dni', 'is', null)
-      const rows = (data || []) as ClienteRow[]
-      cliente = rows.find((row) => normalizeDni(row.dni) === dni) || null
-    }
-
-    if (cliente?.usuario_id) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_dni',
-        status: 'ERROR',
-        message: 'DNI ya vinculado a usuario',
-        code: 'DNI_ALREADY_REGISTERED',
-      })
-      return businessError('Ese DNI ya pertenece a un cliente.', 'DNI_ALREADY_REGISTERED')
-    }
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'chequeo_duplicado_dni',
-      status: 'OK',
-      message: 'Chequeo de DNI completado',
-    })
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'chequeo_duplicado_correo',
-      status: 'OK',
-      message: 'Verificando correo en usuarios',
-    })
-    const { data: duplicatedEmail, error: duplicatedEmailError } = await supabase
-      .from('usuarios')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle()
-
-    if (duplicatedEmailError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_correo',
-        status: 'ERROR',
-        message: 'Error al verificar correo duplicado',
-        detail: duplicatedEmailError.message,
-      })
-      throw new Error(duplicatedEmailError.message)
-    }
-
-    if (duplicatedEmail?.id) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_correo',
-        status: 'ERROR',
-        message: 'Correo ya registrado',
-        code: 'EMAIL_ALREADY_REGISTERED',
-      })
-      return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
-    }
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'chequeo_duplicado_correo_auth',
-      status: 'OK',
-      message: 'Verificando correo en Auth antes de createUser',
-    })
-    const { data: authDuplicatedEmail, error: authDuplicatedEmailError } = await supabase.auth.admin.getUserByEmail(email)
-
-    if (authDuplicatedEmailError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_correo_auth',
-        status: 'ERROR',
-        message: 'Error al verificar correo en Auth',
-        detail: authDuplicatedEmailError.message,
-      })
-      throw new Error(authDuplicatedEmailError.message)
-    }
-
-    if (authDuplicatedEmail?.user?.id) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'chequeo_duplicado_correo_auth',
-        status: 'ERROR',
-        message: 'Correo ya registrado en Auth',
-        code: 'EMAIL_ALREADY_REGISTERED',
-      })
-      return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
-    }
-
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'chequeo_duplicado_correo',
-      status: 'OK',
-      message: 'Chequeo de correo completado',
-    })
-
-    if (!cliente) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'insercion_clientes',
-        status: 'OK',
-        message: 'Creando cliente base sin usuario',
-      })
       const { data: created, error: createClienteError } = await supabase
         .from('clientes')
         .insert({ dni, nombre, telefono, usuario_id: null })
@@ -401,22 +381,19 @@ Deno.serve(async (req) => {
         .maybeSingle<ClienteRow>()
 
       if (createClienteError || !created) {
-        console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-          stage: 'insercion_clientes',
-          status: 'ERROR',
-          message: 'Falló creación inicial de cliente',
-          detail: createClienteError?.message || 'No se pudo crear el cliente.',
+        logError({
+          step: 'CLIENTE_INSERT_ERROR',
+          message: createClienteError?.message || 'No se pudo crear cliente base',
+          email: logEmail,
+          dni: logDni,
+          code: 'CLIENTE_CREATE_FAILED',
         })
         return businessError('No se pudo crear el cliente base.', 'CLIENTE_CREATE_FAILED')
       }
 
       cliente = created
       rollback.createdCliente = true
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'insercion_clientes',
-        status: 'OK',
-        message: 'Cliente base creado',
-      })
+      logInfo({ step: 'CLIENTE_INSERT_OK', message: 'Cliente base creado', email: logEmail, dni: logDni })
     }
 
     rollback.clienteId = cliente.id
@@ -428,11 +405,8 @@ Deno.serve(async (req) => {
       usuario_id: cliente.usuario_id,
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'creacion_auth_user',
-      status: 'OK',
-      message: 'Creando usuario auth',
-    })
+    logInfo({ step: 'AUTH_CREATE_START', message: 'Creando usuario en Auth', email: logEmail, dni: logDni })
+
     const { data: authData, error: createAuthError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -445,23 +419,19 @@ Deno.serve(async (req) => {
     })
 
     if (createAuthError || !authData.user) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'creacion_auth_user',
-        status: 'ERROR',
-        message: 'Falló createUser en Auth',
-        detail: createAuthError?.message || 'Usuario auth no creado',
+      logError({
+        step: 'AUTH_CREATE_ERROR',
+        message: createAuthError?.message || 'No se pudo crear cuenta auth',
+        email: logEmail,
+        dni: logDni,
         code: 'AUTH_CREATE_FAILED',
       })
-      return businessError('No se pudo crear la cuenta', 'AUTH_CREATE_FAILED')
+      return businessError('No se pudo crear la cuenta.', 'AUTH_CREATE_FAILED')
     }
 
     rollback.userId = authData.user.id
+    logInfo({ step: 'AUTH_CREATE_OK', message: 'Usuario auth creado', email: logEmail, dni: logDni })
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'insercion_usuarios',
-      status: 'OK',
-      message: 'Insertando fila en usuarios',
-    })
     const { error: usuarioError } = await supabase.from('usuarios').insert({
       id: authData.user.id,
       nombre,
@@ -470,22 +440,28 @@ Deno.serve(async (req) => {
     })
 
     if (usuarioError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'insercion_usuarios',
-        status: 'ERROR',
-        message: 'Falló inserción en usuarios',
-        detail: usuarioError.message,
+      logError({
+        step: 'USUARIO_INSERT_ERROR',
+        message: usuarioError.message,
+        email: logEmail,
+        dni: logDni,
+        code: 'USUARIOS_INSERT_FAILED',
       })
-      await runRollback('insercion_usuarios', rollback)
+      logError({
+        step: 'ROL_ASSIGN_ERROR',
+        message: 'No se pudo persistir rol del usuario',
+        email: logEmail,
+        dni: logDni,
+        code: 'ROL_ASSIGN_FAILED',
+      })
+      await runRollback('USUARIO_INSERT_ERROR', rollback)
       return businessError('No se pudo crear el usuario interno.', 'USUARIOS_INSERT_FAILED')
     }
-    rollback.insertedUsuario = true
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'vinculacion_clientes',
-      status: 'OK',
-      message: 'Actualizando cliente con usuario_id',
-    })
+    rollback.insertedUsuario = true
+    logInfo({ step: 'USUARIO_INSERT_OK', message: 'Usuario interno creado', email: logEmail, dni: logDni })
+    logInfo({ step: 'ROL_ASSIGN_OK', message: 'Rol cliente asignado', email: logEmail, dni: logDni })
+
     const { error: clienteUpdateError } = await supabase
       .from('clientes')
       .update({
@@ -497,50 +473,33 @@ Deno.serve(async (req) => {
       .eq('id', cliente.id)
 
     if (clienteUpdateError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'vinculacion_clientes',
-        status: 'ERROR',
-        message: 'Falló vinculación en clientes',
-        detail: clienteUpdateError.message,
+      logError({
+        step: 'CLIENTE_INSERT_ERROR',
+        message: clienteUpdateError.message,
+        email: logEmail,
+        dni: logDni,
+        code: 'CLIENTE_UPDATE_FAILED',
       })
-      await runRollback('vinculacion_clientes', rollback)
+      await runRollback('CLIENTE_INSERT_ERROR', rollback)
       return businessError('No se pudo vincular el cliente.', 'CLIENTE_UPDATE_FAILED')
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'respuesta_final',
-      status: 'OK',
-      message: 'Registro completado correctamente',
-      code: 'REGISTER_OK',
-    })
-    return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id })
+    logInfo({ step: 'CLIENTE_INSERT_OK', message: 'Cliente vinculado al usuario', email: logEmail, dni: logDni })
+    logInfo({ step: 'FUNCTION_SUCCESS', message: 'Registro completado', email: logEmail, dni: logDni })
+
+    return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id }, 200)
   } catch (err: any) {
-    console.error('ERROR_REGISTRO', err)
-    console.error('REGISTRO_CLIENTE_PUBLICO_UNHANDLED', {
-      message: err?.message || 'Unhandled error',
-      stack: err?.stack || null,
+    console.error('FUNCTION_UNHANDLED_ERROR', {
+      message: err?.message ?? String(err),
+      stack: err?.stack ?? null,
     })
 
-    try {
-      await runRollback('catch_unhandled', rollback)
-    } catch (rollbackError) {
-      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'rollback_compensatorio',
-        status: 'ERROR',
-        message: 'Error durante rollback compensatorio',
-        detail:
-          rollbackError instanceof Error
-            ? rollbackError.message
-            : String(rollbackError),
-      })
-    }
+    await runRollback('FUNCTION_UNHANDLED_ERROR', rollback)
 
-    console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-      stage: 'respuesta_final',
-      status: 'ERROR',
-      message: 'Error interno no controlado',
+    return jsonResponse({
+      ok: false,
+      error: 'No se pudo completar el registro',
       code: 'INTERNAL_ERROR',
-    })
-    return jsonResponse({ ok: false, error: 'Error interno del servidor', code: 'INTERNAL_ERROR' }, 500)
+    }, 500)
   }
 })
