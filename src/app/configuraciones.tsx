@@ -419,16 +419,16 @@ export default function Configuraciones() {
         </View>
 
         <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Préstamos</Text>
+          <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
           <Text style={styles.cardTextDisabled}>
-            Próximamente: intereses por cuotas, límites, modalidades y configuraciones rápidas.
+            Efectivo: habilitado. Transferencia: habilitada con validación. Mercado Pago: {badgeConectado ? 'conectado' : 'próximamente / pendiente de conexión'}.
           </Text>
         </View>
 
         <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Clientes y empleados</Text>
+          <Text style={styles.cardTitleDisabled}>Preferencias avanzadas</Text>
           <Text style={styles.cardTextDisabled}>
-            Próximamente: permisos, estados, edición rápida y gestión del equipo.
+            Próximamente: intereses por cuotas, límites, modalidades y reglas de mora automáticas.
           </Text>
         </View>
 

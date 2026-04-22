@@ -87,13 +87,6 @@ export default function ClienteHome() {
     router.replace('/login' as any)
   }
 
-  const estadoUltimoPago = useMemo(() => {
-    if (ultimoPago?.estado === 'pendiente') return 'Pago pendiente de aprobación'
-    if (ultimoPago?.estado === 'aprobado') return 'Pago aprobado'
-    if (ultimoPago?.estado === 'rechazado') return 'Pago rechazado'
-    return 'No hay movimientos recientes'
-  }, [ultimoPago])
-
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />

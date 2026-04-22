@@ -164,8 +164,8 @@ export default function PagoAprobado() {
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
 
   const cuotasImpactadas = useMemo(
-    () => parseCuotasImpactadas(getParamString(params.cuotas_aplicadas)),
-    [params.cuotas_aplicadas]
+    () => parseCuotasImpactadas(getParamString(params.cuotas_impactadas)),
+    [params.cuotas_impactadas]
   )
   const cuotasImpactadasDetalle = useMemo(
     () => parseCuotasImpactadasDetalle(getParamString(params.cuotas_impactadas_detalle)),
