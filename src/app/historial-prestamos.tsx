@@ -15,6 +15,7 @@ import {
 } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
+import { prestamoEstadoLabel } from '../lib/status'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
@@ -159,8 +160,11 @@ export default function HistorialPrestamosScreen() {
                   <Text style={styles.itemMeta}>DNI: {item.dni}</Text>
                   <Text style={styles.itemMeta}>Monto: {money(item.monto)} · Interés: {item.interes}%</Text>
                   <Text style={styles.itemMeta}>Total: {money(item.total)} · Pagado: {money(item.pagado)}</Text>
-                  <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {item.estado}</Text>
-                  <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)}</Text>
+                  <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {prestamoEstadoLabel(item.estado)}</Text>
+                  <Text style={styles.itemMeta}>Modalidad: {item.modalidad} · Cuotas: {item.cuotasPlan || '—'}</Text>
+                  <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)} · Mora: {fecha(item.fechaMora)}</Text>
+                  <Text style={styles.itemMeta}>Próxima cuota: {item.proximaCuota}</Text>
+                  <Text style={styles.itemMeta}>Cuotas pagadas: {item.cuotasPagadas} · Pendientes: {item.cuotasPendientes} · Vencidas: {item.cuotasVencidas}</Text>
                 </View>
               ))}
 

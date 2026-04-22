@@ -39,7 +39,6 @@ export default function PagosPendientesScreen() {
   const [adminName, setAdminName] = useState('Operador')
   const [adminRole, setAdminRole] = useState<UserRole>('unknown')
   const [items, setItems] = useState<PendingPayment[]>([])
-  const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [obsModal, setObsModal] = useState<{ open: boolean; action: 'aprobar' | 'rechazar'; payment: PendingPayment | null }>({
     open: false,
@@ -49,7 +48,6 @@ export default function PagosPendientesScreen() {
   const [observation, setObservation] = useState('')
 
   const onNavigate = (key: AdminNavKey) => {
-    setMobileMenu(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
     if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeCuotaEstado, normalizePagoEstado, normalizePrestamoEstado } from './status'
 
 type ClienteRow = {
   id: string
@@ -25,6 +26,9 @@ type PrestamoRow = {
   estado: string | null
   fecha_inicio: string | null
   fecha_limite: string | null
+  fecha_inicio_mora: string | null
+  modalidad: string | null
+  cuotas: number | null
 }
 
 type PagoRow = {
@@ -40,6 +44,7 @@ type PagoRow = {
 
 type CuotaRow = {
   prestamo_id: string
+  numero_cuota: number | null
   fecha_vencimiento: string | null
   monto_cuota: number | null
   monto_pagado: number | null
@@ -134,6 +139,13 @@ export type HistorialPrestamoItem = {
   estado: string
   fechaInicio: string
   fechaLimite: string
+  fechaMora: string
+  modalidad: string
+  cuotasPlan: number
+  proximaCuota: string
+  cuotasPendientes: number
+  cuotasPagadas: number
+  cuotasVencidas: number
 }
 
 export type AdminDashboardData = {
@@ -144,11 +156,7 @@ export type AdminDashboardData = {
   clientesListado: ClienteAdminListadoItem[]
 }
 
-const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
-const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
-const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
-const PENDING_VALIDATION_STATES = new Set(['pendiente', 'pendiente_aprobacion', 'en_revision'])
-const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado', 'pagado'])
+const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial', 'vencida'])
 const TRANSFER_PENDING_METHODS = new Set(['transferencia', 'alias', 'mp_transferencia'])
 
 function low(value?: string | null): string {
@@ -167,20 +175,21 @@ function hasActiveLoan(cliente: ClienteAdminListadoItem): boolean {
   if (cliente.tienePrestamoActivo || cliente.tienePrestamoVencido) return true
   if (cliente.cantidadPrestamosActivos > 0) return true
   if (cliente.deudaActiva > 0 || cliente.restante > 0) return true
-  return ACTIVE_STATES.has(low(cliente.estadoCliente))
+  const estado = normalizePrestamoEstado(cliente.estadoCliente)
+  return estado === 'activo' || estado === 'atrasado'
 }
 
 function hasOverdueLoan(cliente: ClienteAdminListadoItem): boolean {
-  const estado = low(cliente.estadoCliente)
-  return Boolean(cliente.tienePrestamoVencido) || OVERDUE_STATES.has(estado) || estado.includes('venc')
+  const estado = normalizePrestamoEstado(cliente.estadoCliente)
+  return Boolean(cliente.tienePrestamoVencido) || estado === 'atrasado'
 }
 
 function isActiveLoanState(value?: string | null) {
-  return ACTIVE_STATES.has(low(value))
+  return normalizePrestamoEstado(value) === 'activo' || normalizePrestamoEstado(value) === 'atrasado'
 }
 
 function isOverdueLoanState(value?: string | null) {
-  return OVERDUE_STATES.has(low(value))
+  return normalizePrestamoEstado(value) === 'atrasado'
 }
 
 function resolvePagoClienteId(pago: PagoRow, prestamosById: Map<string, PrestamoRow>) {
@@ -190,14 +199,14 @@ function resolvePagoClienteId(pago: PagoRow, prestamosById: Map<string, Prestamo
 }
 
 function isApprovedPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo'>) {
-  const estado = low(pago.estado_validacion)
-  if (estado) return APPROVED_VALIDATION_STATES.has(estado)
+  const estado = normalizePagoEstado(pago.estado_validacion)
+  if (estado !== 'desconocido') return estado === 'aprobado'
   return low(pago.metodo) === 'efectivo'
 }
 
 function isPendingValidationPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo' | 'created_at'>) {
-  const estado = low(pago.estado_validacion)
-  if (estado) return PENDING_VALIDATION_STATES.has(estado)
+  const estado = normalizePagoEstado(pago.estado_validacion)
+  if (estado !== 'desconocido') return estado === 'pendiente'
   const metodo = low(pago.metodo)
   return TRANSFER_PENDING_METHODS.has(metodo) && Boolean(pago.created_at)
 }
@@ -277,7 +286,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: prestamosRaw, error: prestamosError } = await supabase
     .from('prestamos')
-    .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+    .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite,fecha_inicio_mora,modalidad,cuotas')
 
   if (prestamosError) {
     console.error('[admin-dashboard] prestamos fallback error', prestamosError)
@@ -412,14 +421,14 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const [cuotasResult, pagosResult, prestamosResult] = await Promise.allSettled([
     supabase
       .from('cuotas')
-      .select('prestamo_id,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
+      .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
       .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
-      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite,fecha_inicio_mora,modalidad,cuotas')
       .order('fecha_inicio', { ascending: false }),
   ])
 
@@ -492,11 +501,25 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     pagosByPrestamo.set(pago.prestamo_id, current + toNumber(pago.monto))
   }
 
+  const cuotasByPrestamo = new Map<string, CuotaRow[]>()
+  for (const cuota of cuotas) {
+    const list = cuotasByPrestamo.get(cuota.prestamo_id) || []
+    list.push(cuota)
+    cuotasByPrestamo.set(cuota.prestamo_id, list)
+  }
+
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = toNumber(prestamo.total_a_pagar)
     const pagado = toNumber(pagosByPrestamo.get(prestamo.id))
     const restante = Math.max(total - pagado, 0)
     const cliente = clientesById.get(prestamo.cliente_id)
+    const cuotasPrestamo = cuotasByPrestamo.get(prestamo.id) || []
+    const cuotasPagadas = cuotasPrestamo.filter((c) => normalizeCuotaEstado(c.estado) === 'pagada').length
+    const cuotasPendientes = cuotasPrestamo.filter((c) => ['pendiente', 'parcial'].includes(normalizeCuotaEstado(c.estado))).length
+    const cuotasVencidas = cuotasPrestamo.filter((c) => normalizeCuotaEstado(c.estado) === 'vencida').length
+    const proxima = cuotasPrestamo
+      .filter((c) => ['pendiente', 'parcial', 'vencida'].includes(normalizeCuotaEstado(c.estado)))
+      .sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))[0]
 
     return {
       prestamoId: prestamo.id,
@@ -511,12 +534,19 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       estado: low(prestamo.estado) || 'activo',
       fechaInicio: ymd(prestamo.fecha_inicio),
       fechaLimite: ymd(prestamo.fecha_limite),
+      fechaMora: ymd(prestamo.fecha_inicio_mora),
+      modalidad: prestamo.modalidad || '—',
+      cuotasPlan: toNumber(prestamo.cuotas),
+      proximaCuota: proxima ? `#${toNumber(proxima.numero_cuota)} · ${ymd(proxima.fecha_vencimiento)}` : '—',
+      cuotasPendientes,
+      cuotasPagadas,
+      cuotasVencidas,
     }
   })
 
   const prestamosVencidosByPrestamo = prestamos.filter((prestamo) => {
-    const estado = low(prestamo.estado)
-    if (OVERDUE_STATES.has(estado)) return true
+    const estado = normalizePrestamoEstado(prestamo.estado)
+    if (estado === 'atrasado') return true
     const fechaLimite = (prestamo.fecha_limite || '').slice(0, 10)
     return Boolean(fechaLimite) && fechaLimite < todayKey && estado !== 'pagado' && estado !== 'cancelado'
   }).length
