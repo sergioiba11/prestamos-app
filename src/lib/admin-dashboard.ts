@@ -38,7 +38,9 @@ type PagoRow = {
   metodo: string | null
   created_at: string | null
   fecha_pago: string | null
+  estado: string | null
   estado_validacion: string | null
+  impactado: boolean | null
 }
 
 type CuotaRow = {
@@ -200,15 +202,19 @@ function resolvePagoClienteId(pago: PagoRow, prestamosById: Map<string, Prestamo
   return prestamosById.get(pago.prestamo_id)?.cliente_id || ''
 }
 
-function isApprovedPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo'>) {
-  const estado = low(pago.estado_validacion)
-  if (estado) return APPROVED_VALIDATION_STATES.has(estado)
+function isApprovedPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion' | 'metodo'>) {
+  const estado = low(pago.estado)
+  if (estado) return estado === 'aprobado'
+  const estadoValidacion = low(pago.estado_validacion)
+  if (estadoValidacion) return APPROVED_VALIDATION_STATES.has(estadoValidacion)
   return low(pago.metodo) === 'efectivo'
 }
 
-function isPendingValidationPayment(pago: Pick<PagoRow, 'estado_validacion' | 'metodo' | 'created_at'>) {
-  const estado = low(pago.estado_validacion)
-  if (estado) return PENDING_VALIDATION_STATES.has(estado)
+function isPendingValidationPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion' | 'metodo' | 'created_at'>) {
+  const estado = low(pago.estado)
+  if (estado) return estado === 'pendiente_aprobacion'
+  const estadoValidacion = low(pago.estado_validacion)
+  if (estadoValidacion) return PENDING_VALIDATION_STATES.has(estadoValidacion)
   const metodo = low(pago.metodo)
   return TRANSFER_PENDING_METHODS.has(metodo) && Boolean(pago.created_at)
 }
@@ -296,7 +302,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: pagosRaw, error: pagosError } = await supabase
     .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado')
 
   if (pagosError) {
     console.error('[admin-dashboard] pagos fallback error', pagosError)
@@ -348,6 +354,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
     const totalPagado = pagosCliente.reduce((acc, p) => {
       if (!isApprovedPayment(p)) return acc
+      if (low(p.metodo) !== 'efectivo' && p.impactado === false) return acc
       return acc + Math.max(Number(p.monto || 0), 0)
     }, 0)
 
@@ -426,7 +433,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
-      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
@@ -482,7 +489,10 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       monto: toNumber(pago.monto),
       metodo: pago.metodo || 'Sin método',
       createdAt: pago.created_at || '',
-      estadoValidacion: low(pago.estado_validacion) || (isApprovedPayment(pago) ? 'aprobado' : 'pendiente'),
+      estadoValidacion:
+        low(pago.estado) ||
+        low(pago.estado_validacion) ||
+        (isApprovedPayment(pago) ? 'aprobado' : 'pendiente'),
       prestamoId: pago.prestamo_id || undefined,
       telefono: cliente?.telefono || undefined,
     }
@@ -499,6 +509,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   for (const pago of pagos) {
     if (!pago.prestamo_id) continue
     if (!isApprovedPayment(pago)) continue
+    if (low(pago.metodo) !== 'efectivo' && pago.impactado === false) continue
     const current = pagosByPrestamo.get(pago.prestamo_id) || 0
     pagosByPrestamo.set(pago.prestamo_id, current + toNumber(pago.monto))
   }
@@ -513,10 +524,16 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
 
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = toNumber(prestamo.total_a_pagar)
-    const pagado = toNumber(pagosByPrestamo.get(prestamo.id))
-    const restante = Math.max(total - pagado, 0)
     const cliente = clientesById.get(prestamo.cliente_id)
     const cuotasPrestamo = cuotasByPrestamo.get(prestamo.id) || []
+    const restanteDesdeCuotas = cuotasPrestamo.reduce((acc, cuota) => {
+      const saldo = toNumber(cuota.saldo_pendiente)
+      if (saldo > 0) return acc + saldo
+      const fallback = Math.max(toNumber(cuota.monto_cuota) - toNumber(cuota.monto_pagado), 0)
+      return acc + fallback
+    }, 0)
+    const restante = Math.max(restanteDesdeCuotas, toNumber(prestamo.saldo_pendiente), 0)
+    const pagado = Math.max(total - restante, toNumber(pagosByPrestamo.get(prestamo.id)), 0)
     const cuotasPagadas = cuotasPrestamo.filter((c) => low(c.estado) === 'pagada' || toNumber(c.saldo_pendiente) <= 0).length
     const cuotasPendientes = cuotasPrestamo.filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0).length
     const proximaCuota = cuotasPrestamo

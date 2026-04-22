@@ -448,7 +448,86 @@ Deno.serve(async (req) => {
       }
     }
 
+    const { data: prestamo, error: prestamoError } = await supabase
+      .from('prestamos')
+      .select('id, cliente_id, estado')
+      .eq('id', prestamo_id)
+      .single()
+
+    if (prestamoError || !prestamo) {
+      return jsonResponse({ error: 'Préstamo no encontrado' }, 404)
+    }
+
+    if (prestamo.cliente_id !== cliente_id) {
+      return jsonResponse(
+        { error: 'El préstamo no pertenece al cliente enviado' },
+        400
+      )
+    }
+
+    const { data: cuotasPendientes, error: cuotasError } = await supabase
+      .from('cuotas')
+      .select(`
+        id,
+        prestamo_id,
+        cliente_id,
+        numero_cuota,
+        monto_cuota,
+        monto_pagado,
+        saldo_pendiente,
+        estado,
+        fecha_vencimiento
+      `)
+      .eq('prestamo_id', prestamo_id)
+      .eq('cliente_id', cliente_id)
+      .in('estado', ['pendiente', 'parcial'])
+      .order('numero_cuota', { ascending: true })
+
+    if (cuotasError) {
+      return jsonResponse({ error: cuotasError.message }, 500)
+    }
+
+    if (!cuotasPendientes || cuotasPendientes.length === 0) {
+      return jsonResponse(
+        { error: 'El préstamo no tiene cuotas pendientes' },
+        400
+      )
+    }
+
+    const deudaPendienteTotal = redondear(
+      cuotasPendientes.reduce(
+        (acc, cuota) => acc + Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0),
+        0
+      )
+    )
+    if (montoEntregado > deudaPendienteTotal + 0.009) {
+      return jsonResponse(
+        { error: `El monto supera la deuda pendiente (${deudaPendienteTotal})` },
+        400
+      )
+    }
+
     if (metodo === 'transferencia' || metodo === 'mercado_pago') {
+      const duplicateQuery = supabase
+        .from('pagos')
+        .select('id, estado')
+        .eq('prestamo_id', prestamo_id)
+        .eq('cliente_id', cliente_id)
+        .eq('monto', montoEntregado)
+        .eq('estado', 'pendiente_aprobacion')
+        .limit(1)
+
+      const { data: possibleDuplicates } = await duplicateQuery
+      if (possibleDuplicates && possibleDuplicates.length > 0) {
+        return jsonResponse({
+          ok: true,
+          pendiente: true,
+          estado: 'pendiente_aprobacion',
+          pago: { id: possibleDuplicates[0].id },
+          idempotente: true,
+        })
+      }
+
       const { data: pagoPendiente, error: pagoPendienteError } = await supabase
         .from('pagos')
         .insert({
@@ -496,52 +575,6 @@ Deno.serve(async (req) => {
             ? 'Pago pendiente de aprobación'
             : 'Pago de Mercado Pago pendiente de confirmación',
       })
-    }
-
-    const { data: prestamo, error: prestamoError } = await supabase
-      .from('prestamos')
-      .select('id, cliente_id, estado')
-      .eq('id', prestamo_id)
-      .single()
-
-    if (prestamoError || !prestamo) {
-      return jsonResponse({ error: 'Préstamo no encontrado' }, 404)
-    }
-
-    if (prestamo.cliente_id !== cliente_id) {
-      return jsonResponse(
-        { error: 'El préstamo no pertenece al cliente enviado' },
-        400
-      )
-    }
-
-    const { data: cuotasPendientes, error: cuotasError } = await supabase
-      .from('cuotas')
-      .select(`
-        id,
-        prestamo_id,
-        cliente_id,
-        numero_cuota,
-        monto_cuota,
-        monto_pagado,
-        saldo_pendiente,
-        estado,
-        fecha_vencimiento
-      `)
-      .eq('prestamo_id', prestamo_id)
-      .eq('cliente_id', cliente_id)
-      .in('estado', ['pendiente', 'parcial'])
-      .order('numero_cuota', { ascending: true })
-
-    if (cuotasError) {
-      return jsonResponse({ error: cuotasError.message }, 500)
-    }
-
-    if (!cuotasPendientes || cuotasPendientes.length === 0) {
-      return jsonResponse(
-        { error: 'El préstamo no tiene cuotas pendientes' },
-        400
-      )
     }
 
     let cuotasAProcesar = cuotasPendientes
