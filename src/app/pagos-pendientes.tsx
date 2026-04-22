@@ -16,6 +16,7 @@ type PendingPayment = {
   metodo: string | null
   estado: string | null
   estado_validacion: string | null
+  impactado: boolean | null
   comprobante_url: string | null
   observacion: string | null
   observacion_validacion: string | null
@@ -88,8 +89,8 @@ export default function PagosPendientesScreen() {
 
       const { data, error } = await supabase
         .from('pagos')
-        .select('id,cliente_id,prestamo_id,monto,metodo,estado,estado_validacion,comprobante_url,observacion,observacion_validacion,created_at,clientes(nombre,dni)')
-        .in('estado_validacion', ['pendiente', 'pendiente_aprobacion', 'en_revision'])
+        .select('id,cliente_id,prestamo_id,monto,metodo,estado,estado_validacion,impactado,comprobante_url,observacion,observacion_validacion,created_at,clientes(nombre,dni)')
+        .or('estado.eq.pendiente_aprobacion,estado_validacion.in.(pendiente,pendiente_aprobacion,en_revision)')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -197,7 +198,7 @@ export default function PagosPendientesScreen() {
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
               <Text style={styles.meta}>DNI: {item.clientes?.dni || '—'} · Método: {item.metodo || '—'}</Text>
-              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado_validacion || 'pendiente'}</Text>
+              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || item.estado_validacion || 'pendiente'}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
               {item.comprobante_url ? (
                 <TouchableOpacity onPress={() => Linking.openURL(item.comprobante_url || '')}>

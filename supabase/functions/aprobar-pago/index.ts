@@ -23,6 +23,70 @@ function extraerTokenBearer(authHeader: string | null) {
   return limpio
 }
 
+function redondear(valor: number) {
+  return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100
+}
+
+type PagoPreview = {
+  total_aplicado: number
+  saldo_restante: number
+  cuotas_impactadas: number[]
+}
+
+async function calcularPreviewAplicacion(
+  supabase: ReturnType<typeof createClient>,
+  pago: { id: string; prestamo_id: string | null; cliente_id: string | null; monto: number | null; cuota_id?: string | null },
+) : Promise<PagoPreview> {
+  if (!pago.prestamo_id || !pago.cliente_id) {
+    return { total_aplicado: 0, saldo_restante: 0, cuotas_impactadas: [] }
+  }
+
+  const { data: cuotas, error } = await supabase
+    .from('cuotas')
+    .select('id, numero_cuota, monto_cuota, saldo_pendiente, estado')
+    .eq('prestamo_id', pago.prestamo_id)
+    .eq('cliente_id', pago.cliente_id)
+    .in('estado', ['pendiente', 'parcial'])
+    .order('numero_cuota', { ascending: true })
+
+  if (error || !cuotas) {
+    throw new Error(error?.message || 'No se pudieron leer cuotas para previsualizar pago')
+  }
+
+  const cuotaBase = pago.cuota_id
+    ? cuotas.find((item) => item.id === pago.cuota_id)?.numero_cuota || 1
+    : 1
+
+  let restante = redondear(Number(pago.monto || 0))
+  let totalAplicado = 0
+  const cuotasImpactadas: number[] = []
+
+  const cuotasFiltradas = cuotas.filter((item) => Number(item.numero_cuota || 0) >= cuotaBase)
+  for (const cuota of cuotasFiltradas) {
+    if (restante <= 0) break
+    const saldo = redondear(Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0))
+    if (saldo <= 0) continue
+    const aplicado = Math.min(restante, saldo)
+    if (aplicado <= 0) continue
+    totalAplicado = redondear(totalAplicado + aplicado)
+    restante = redondear(restante - aplicado)
+    cuotasImpactadas.push(Number(cuota.numero_cuota))
+    if (aplicado < saldo) break
+  }
+
+  const saldoOriginal = cuotasFiltradas.reduce(
+    (acc, cuota) => acc + redondear(Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)),
+    0
+  )
+  const saldoRestante = redondear(Math.max(saldoOriginal - totalAplicado, 0))
+
+  return {
+    total_aplicado: totalAplicado,
+    saldo_restante: Math.max(saldoRestante, 0),
+    cuotas_impactadas: cuotasImpactadas,
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -80,7 +144,7 @@ Deno.serve(async (req) => {
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .select('id, estado, impactado, metodo')
+      .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id')
       .eq('id', pagoId)
       .maybeSingle()
 
@@ -141,6 +205,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, estado: 'rechazado', pago_id: pago.id })
     }
 
+    const preview = await calcularPreviewAplicacion(supabase, pago)
+
     const { data: resultado, error: rpcError } = await supabase.rpc('aprobar_pago_pendiente', {
       p_pago_id: pago.id,
       p_actor_id: user.id,
@@ -169,6 +235,22 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: errorMsg }, 409)
       }
       return jsonResponse({ error: errorMsg }, 400)
+    }
+
+    const totalAplicadoReal = Number(resultado?.total_aplicado || 0)
+    const cuotasImpactadasReal = Array.isArray(resultado?.cuotas_impactadas) ? resultado.cuotas_impactadas : []
+    if (
+      Math.abs(totalAplicadoReal - preview.total_aplicado) > 0.01 ||
+      JSON.stringify(cuotasImpactadasReal) !== JSON.stringify(preview.cuotas_impactadas)
+    ) {
+      return jsonResponse(
+        {
+          error: 'La aplicación real del pago no coincide con la previsualización esperada.',
+          preview,
+          resultado,
+        },
+        409
+      )
     }
 
     await supabase.from('notificaciones').insert({
