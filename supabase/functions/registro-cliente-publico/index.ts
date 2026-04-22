@@ -52,6 +52,12 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: false, error: 'Método no permitido' }, 405)
   }
 
+  const rollback = {
+    userId: null as string | null,
+    insertedUsuario: false,
+    clienteId: null as string | null,
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -68,13 +74,11 @@ Deno.serve(async (req) => {
     const telefono = normalizePhoneAR(body?.telefono)
     const clienteId = body?.clienteId ? String(body.clienteId) : null
 
-    console.log('[registro-cliente-publico] input', { dni, nombre, email, telefono, clienteId })
-
     if (dni.length < 7 || dni.length > 8) {
       return jsonResponse({ ok: false, error: 'DNI inválido. Debe tener 7 u 8 dígitos.' }, 400)
     }
     if (!isValidEmail(email)) {
-      return jsonResponse({ ok: false, error: 'Email inválido.' }, 400)
+      return jsonResponse({ ok: false, error: 'Ingresá un correo válido.' }, 400)
     }
     if (password.length < 8) {
       return jsonResponse({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' }, 400)
@@ -104,6 +108,24 @@ Deno.serve(async (req) => {
       cliente = rows.find((row) => normalizeDni(row.dni) === dni) || null
     }
 
+    if (cliente?.usuario_id) {
+      return jsonResponse({ ok: false, error: 'Ese DNI ya pertenece a un cliente.' }, 400)
+    }
+
+    const { data: duplicatedEmail, error: duplicatedEmailError } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (duplicatedEmailError) {
+      throw new Error(duplicatedEmailError.message)
+    }
+
+    if (duplicatedEmail?.id) {
+      return jsonResponse({ ok: false, error: 'Ese correo ya está registrado.' }, 400)
+    }
+
     if (!cliente) {
       const { data: created, error: createClienteError } = await supabase
         .from('clientes')
@@ -116,51 +138,45 @@ Deno.serve(async (req) => {
       }
 
       cliente = created
-      console.log('[registro-cliente-publico] cliente creado', { clienteId: cliente.id })
     }
 
-    if (cliente.usuario_id) {
-      return jsonResponse({ ok: false, error: 'Ese DNI ya tiene una cuenta activa' }, 400)
-    }
-
-    const { data: duplicatedEmail, error: duplicatedEmailError } = await supabase
-      .from('usuarios')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle()
-
-    if (duplicatedEmailError) {
-      throw new Error(duplicatedEmailError.message)
-    }
-    if (duplicatedEmail?.id) {
-      return jsonResponse({ ok: false, error: 'El email ingresado ya está registrado.' }, 400)
-    }
+    rollback.clienteId = cliente.id
 
     const { data: authData, error: createAuthError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
+      user_metadata: {
+        nombre,
+        dni,
+        rol: 'cliente',
+      },
     })
 
     if (createAuthError || !authData.user) {
-      throw new Error(createAuthError?.message || 'No se pudo crear el usuario de autenticación.')
+      const authMessage = String(createAuthError?.message || '').toLowerCase()
+      if (authMessage.includes('already') || authMessage.includes('registered') || authMessage.includes('exists')) {
+        return jsonResponse({ ok: false, error: 'Ese correo ya está registrado.' }, 400)
+      }
+      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.' }, 500)
     }
 
-    const userId = authData.user.id
+    rollback.userId = authData.user.id
 
     const { error: usuarioError } = await supabase.from('usuarios').insert({
-      id: userId,
+      id: authData.user.id,
       nombre,
       email,
       rol: 'cliente',
     })
 
     if (usuarioError) throw new Error(usuarioError.message)
+    rollback.insertedUsuario = true
 
     const { error: clienteUpdateError } = await supabase
       .from('clientes')
       .update({
-        usuario_id: userId,
+        usuario_id: authData.user.id,
         nombre,
         telefono,
         dni,
@@ -169,10 +185,35 @@ Deno.serve(async (req) => {
 
     if (clienteUpdateError) throw new Error(clienteUpdateError.message)
 
-    console.log('[registro-cliente-publico] success', { userId, clienteId: cliente.id })
-    return jsonResponse({ ok: true, userId, clienteId: cliente.id })
+    return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id })
   } catch (error: any) {
     console.error('[registro-cliente-publico] fatal error', error)
-    return jsonResponse({ ok: false, error: error?.message || 'Error inesperado en registro.' }, 500)
+
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      if (supabaseUrl && serviceRoleKey && rollback.userId) {
+        const admin = createClient(supabaseUrl, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+
+        if (rollback.insertedUsuario) {
+          await admin.from('usuarios').delete().eq('id', rollback.userId)
+        }
+
+        if (rollback.clienteId) {
+          await admin
+            .from('clientes')
+            .update({ usuario_id: null })
+            .eq('id', rollback.clienteId)
+        }
+
+        await admin.auth.admin.deleteUser(rollback.userId)
+      }
+    } catch (rollbackError) {
+      console.error('[registro-cliente-publico] rollback error', rollbackError)
+    }
+
+    return jsonResponse({ ok: false, error: error?.message || 'No se pudo crear la cuenta.' }, 500)
   }
 })

@@ -208,44 +208,52 @@ export async function signInWithEmailOrDni(params: {
 }) {
   const rawIdentifier = params.identifier.trim()
   const normalizedMode = params.mode || 'auto'
-  let email = rawIdentifier.toLowerCase()
 
-  const shouldTryDni =
-    normalizedMode === 'dni' ||
-    (normalizedMode === 'auto' && !rawIdentifier.includes('@') && /^\d{7,8}$/.test(normalizeDni(rawIdentifier)))
-
-  if (shouldTryDni) {
-    const dni = normalizeDni(rawIdentifier)
-
-    const { data, error } = await supabase
-      .from('clientes')
-      .select('usuarios(email)')
-      .eq('dni', dni)
-      .maybeSingle()
-
-    if (error) {
-      throw new Error('No se pudo validar el DNI en este momento.')
-    }
-
-    const usuario = Array.isArray(data?.usuarios) ? data?.usuarios[0] : data?.usuarios
-
-    if (!usuario?.email) {
-      throw new Error('Usuario no encontrado para el DNI ingresado.')
-    }
-
-    email = usuario.email
+  if (!rawIdentifier) {
+    throw new Error('Ingresá DNI o correo.')
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password: params.password })
+  if (!params.password.trim()) {
+    throw new Error('Ingresá tu contraseña.')
+  }
+
+  let email = rawIdentifier.toLowerCase()
+
+  const shouldResolveWithBackend =
+    normalizedMode === 'dni' ||
+    (normalizedMode === 'auto' && !rawIdentifier.includes('@'))
+
+  if (shouldResolveWithBackend) {
+    const { data, error } = await supabase.functions.invoke('resolver-identificador-login', {
+      body: { identifier: rawIdentifier },
+    })
+
+    if (error) {
+      throw new Error('No se pudo validar el DNI o correo en este momento.')
+    }
+
+    const payload = data as { ok?: boolean; email?: string; error?: string } | null
+
+    if (!payload?.ok || !payload.email) {
+      throw new Error(payload?.error || 'No se pudo resolver la cuenta para iniciar sesión.')
+    }
+
+    email = payload.email
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password: params.password,
+  })
 
   if (error) {
     const normalized = error.message.toLowerCase()
     if (normalized.includes('invalid login credentials')) {
-      throw new Error('Credenciales incorrectas. Revisá los datos ingresados.')
+      throw new Error('Usuario o contraseña incorrectos.')
     }
-    throw new Error(error.message)
+    throw new Error('No se pudo iniciar sesión. Intentá nuevamente.')
   }
 
-  if (!data.user) throw new Error('Usuario no encontrado.')
+  if (!data.user) throw new Error('No se pudo iniciar sesión. Intentá nuevamente.')
   return data.user
 }
