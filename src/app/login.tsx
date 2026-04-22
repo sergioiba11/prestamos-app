@@ -100,8 +100,15 @@ export default function LoginScreen() {
   }
 
   const handleLogin = async () => {
-    if (!identifier || !password) {
-      setError('Completá DNI o email y contraseña para ingresar.')
+    const trimmedIdentifier = identifier.trim()
+
+    if (!trimmedIdentifier) {
+      setError('Ingresá DNI o correo')
+      return
+    }
+
+    if (!password.trim()) {
+      setError('Ingresá tu contraseña')
       return
     }
 
@@ -111,7 +118,7 @@ export default function LoginScreen() {
 
     try {
       const user = await signInWithEmailOrDni({
-        identifier,
+        identifier: trimmedIdentifier,
         password,
         mode: 'auto',
       })
@@ -119,12 +126,7 @@ export default function LoginScreen() {
       await askEnableBiometricAfterLogin(user.id)
       await goByRole(user.id)
     } catch (err: any) {
-      const message = err?.message || 'No se pudo iniciar sesión.'
-      if (message.toLowerCase().includes('usuario no encontrado')) {
-        setError('No encontramos tu usuario. Revisá tus datos.')
-      } else {
-        setError(message)
-      }
+      setError(err?.message || 'No se pudo iniciar sesión.')
     } finally {
       setLoading(false)
     }
@@ -176,25 +178,6 @@ export default function LoginScreen() {
     }
   }
 
-  const handleForgotPassword = async () => {
-    const raw = identifier.trim()
-
-    if (!raw.includes('@')) {
-      setError('Para recuperar contraseña, ingresá primero tu email en el campo DNI o Email.')
-      return
-    }
-
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(raw.toLowerCase())
-      if (error) throw error
-      setSuccess('Te enviamos un correo para restablecer tu contraseña.')
-      setError('')
-    } catch (err: any) {
-      setError(err?.message || 'No se pudo enviar el correo de recuperación.')
-      setSuccess('')
-    }
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient colors={['#0A1F44', '#123B82', '#1D6FE8']} style={styles.headerGradient}>
@@ -208,13 +191,13 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
             <Text style={styles.title}>Iniciar sesión</Text>
-            <Text style={styles.subtitle}>Entrá con DNI o email para continuar. Si no tenés cuenta, podés crearla por DNI o por email.</Text>
+            <Text style={styles.subtitle}>Ingresá con DNI o correo y tu contraseña.</Text>
 
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={20} color="#6B7A99" />
               <TextInput
                 style={styles.input}
-                placeholder="DNI o Email"
+                placeholder="DNI o correo"
                 placeholderTextColor="#93A0BA"
                 autoCapitalize="none"
                 value={identifier}
@@ -248,7 +231,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity onPress={handleForgotPassword} style={styles.inlineLinkWrap}>
+            <TouchableOpacity onPress={() => router.push('/recover-password' as any)} style={styles.inlineLinkWrap}>
               <Text style={styles.inlineLink}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
 
@@ -259,24 +242,9 @@ export default function LoginScreen() {
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Ingresar</Text>}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.ghostLinkWrap} onPress={() => router.push('/onboarding/dni' as any)}>
-              <Text style={styles.ghostLinkText}>¿No sos vos? Recuperar usuario</Text>
+            <TouchableOpacity style={styles.createAccountButton} onPress={() => router.push('/register' as any)}>
+              <Text style={styles.createAccountText}>Crear cuenta</Text>
             </TouchableOpacity>
-
-            <View style={styles.registerActions}>
-              <TouchableOpacity
-                style={styles.createAccountButton}
-                onPress={() => router.push({ pathname: '/register', params: { mode: 'dni' } } as any)}
-              >
-                <Text style={styles.createAccountText}>Crear cuenta con DNI</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.createAccountButton}
-                onPress={() => router.push({ pathname: '/register', params: { mode: 'email' } } as any)}
-              >
-                <Text style={styles.createAccountText}>Crear cuenta con email</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
           <View style={styles.dividerRow}>
@@ -395,17 +363,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
-  ghostLinkWrap: {
-    alignItems: 'center',
-  },
-  ghostLinkText: {
-    color: '#4B5C7A',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  registerActions: {
-    gap: 8,
-  },
   createAccountButton: {
     minHeight: 52,
     borderRadius: 15,
@@ -448,7 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#93C5FD',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -471,12 +428,5 @@ const styles = StyleSheet.create({
   successText: {
     color: '#16A34A',
     fontSize: 13,
-  },
-  biometricButton: {
-    borderColor: '#93C5FD',
-    backgroundColor: '#EFF6FF',
-  },
-  biometricButtonText: {
-    color: '#1D4ED8',
   },
 })
