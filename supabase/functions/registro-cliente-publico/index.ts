@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.' }, 500)
+      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.', code: 'MISSING_ENV' }, 500)
     }
 
     const body = await req.json().catch(() => ({}))
@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
       if (authMessage.includes('already') || authMessage.includes('registered') || authMessage.includes('exists')) {
         return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
       }
-      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.' }, 500)
+      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.', code: 'AUTH_USER_CREATE_FAILED' }, 500)
     }
 
     rollback.userId = authData.user.id
@@ -218,6 +218,6 @@ Deno.serve(async (req) => {
       console.error('[registro-cliente-publico] rollback error', rollbackError)
     }
 
-    return jsonResponse({ ok: false, error: error?.message || 'No se pudo crear la cuenta.' }, 500)
+    return jsonResponse({ ok: false, error: error?.message || 'No se pudo crear la cuenta.', code: 'INTERNAL_ERROR' }, 500)
   }
 })

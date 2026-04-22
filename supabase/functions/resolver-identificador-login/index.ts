@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.' }, 500)
+      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.', code: 'MISSING_ENV' }, 500)
     }
 
     const body = await req.json().catch(() => ({}))
@@ -91,6 +91,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: true, email, source: 'dni' })
   } catch (error: any) {
     console.error('[resolver-identificador-login] fatal error', error)
-    return jsonResponse({ ok: false, error: error?.message || 'No se pudo resolver el acceso.' }, 500)
+    return jsonResponse({ ok: false, error: error?.message || 'No se pudo resolver el acceso.', code: 'INTERNAL_ERROR' }, 500)
   }
 })
