@@ -20,6 +20,7 @@ import {
   supabaseAnonKey,
   supabaseUrl,
 } from '../lib/supabase'
+import { logActivity } from '../lib/activity'
 
 type Cliente = {
   id: string
@@ -713,6 +714,15 @@ export default function CargarPago() {
       }
 
       if (json?.pendiente) {
+        await logActivity({
+          tipo: 'pago_registrado',
+          clienteId: clienteSeleccionado.id,
+          prestamoId: prestamoSeleccionado.id,
+          pagoId: json?.pago?.id ? String(json.pago.id) : null,
+          descripcion: `Pago pendiente de aprobación (${metodo})`,
+          metadata: { monto: Number(montoAplicado.toFixed(2)), cuota: cuotaSeleccionada.numero_cuota },
+        })
+
         if (metodo === 'mp' && mpData?.preference_id && mpData?.init_point) {
           setMpCheckout({
             preferenceId: mpData.preference_id,
@@ -733,6 +743,15 @@ export default function CargarPago() {
       const saldoRestanteCuota = Number(
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
+
+      await logActivity({
+        tipo: 'pago_registrado',
+        clienteId: clienteSeleccionado.id,
+        prestamoId: prestamoSeleccionado.id,
+        pagoId: json?.pago?.id ? String(json.pago.id) : null,
+        descripcion: `Pago aplicado en cuota #${cuotaSeleccionada.numero_cuota}`,
+        metadata: { monto: Number(montoAplicado.toFixed(2)), metodo },
+      })
 
       router.replace({
         pathname: '/pago-aprobado',

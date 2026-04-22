@@ -1,8 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import {
   authenticateWithBiometrics,
@@ -24,6 +25,16 @@ type MercadoPagoConfig = {
   updated_at: string | null
 }
 
+type LocalSettings = {
+  businessName: string
+  brandingColor: string
+  acceptsCash: boolean
+  acceptsTransfer: boolean
+  compactCards: boolean
+}
+
+const SETTINGS_KEY = 'app_local_settings_v1'
+
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
 
@@ -35,6 +46,14 @@ export default function Configuraciones() {
   const [mpConfig, setMpConfig] = useState<MercadoPagoConfig | null>(null)
   const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>('loading')
   const [updatingBiometric, setUpdatingBiometric] = useState(false)
+  const [savingLocalSettings, setSavingLocalSettings] = useState(false)
+  const [localSettings, setLocalSettings] = useState<LocalSettings>({
+    businessName: '',
+    brandingColor: '#2563EB',
+    acceptsCash: true,
+    acceptsTransfer: true,
+    compactCards: false,
+  })
 
   const loadBiometricStatus = useCallback(async () => {
     if (!session?.user?.id) {
@@ -98,11 +117,36 @@ export default function Configuraciones() {
     setEstadoMp(connected ? 'connected' : 'disconnected')
   }, [session?.user?.id])
 
+  const loadLocalSettings = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(SETTINGS_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as Partial<LocalSettings>
+      setLocalSettings((prev) => ({
+        ...prev,
+        ...parsed,
+      }))
+    } catch {
+      // noop
+    }
+  }, [])
+
+  const saveLocalSettings = useCallback(async () => {
+    try {
+      setSavingLocalSettings(true)
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(localSettings))
+      Alert.alert('Listo', 'Preferencias de negocio guardadas.')
+    } finally {
+      setSavingLocalSettings(false)
+    }
+  }, [localSettings])
+
   useFocusEffect(
     useCallback(() => {
       void cargarEstadoMercadoPago()
       void loadBiometricStatus()
-    }, [cargarEstadoMercadoPago, loadBiometricStatus])
+      void loadLocalSettings()
+    }, [cargarEstadoMercadoPago, loadBiometricStatus, loadLocalSettings])
   )
 
   const handleEnableBiometrics = useCallback(async () => {
@@ -369,17 +413,53 @@ export default function Configuraciones() {
           <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
         </TouchableOpacity>
 
-        <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Cobros y mora</Text>
-          <Text style={styles.cardTextDisabled}>
-            Próximamente vas a poder ajustar días de gracia, mora diaria, castigo y reglas de cobro.
-          </Text>
+        <View style={[styles.card, styles.cardActive]}>
+          <Text style={styles.cardTitleActive}>Datos del negocio y branding</Text>
+          <TextInput
+            value={localSettings.businessName}
+            onChangeText={(businessName) => setLocalSettings((prev) => ({ ...prev, businessName }))}
+            placeholder="Nombre del negocio"
+            placeholderTextColor="#64748B"
+            style={styles.input}
+          />
+          <TextInput
+            value={localSettings.brandingColor}
+            onChangeText={(brandingColor) => setLocalSettings((prev) => ({ ...prev, brandingColor }))}
+            placeholder="#2563EB"
+            placeholderTextColor="#64748B"
+            style={styles.input}
+            autoCapitalize="none"
+          />
+          <View style={styles.switchRow}>
+            <Text style={styles.cardTextActive}>Cobro en efectivo</Text>
+            <Switch
+              value={localSettings.acceptsCash}
+              onValueChange={(acceptsCash) => setLocalSettings((prev) => ({ ...prev, acceptsCash }))}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.cardTextActive}>Cobro por transferencia</Text>
+            <Switch
+              value={localSettings.acceptsTransfer}
+              onValueChange={(acceptsTransfer) => setLocalSettings((prev) => ({ ...prev, acceptsTransfer }))}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.cardTextActive}>Cards compactas en dashboard</Text>
+            <Switch
+              value={localSettings.compactCards}
+              onValueChange={(compactCards) => setLocalSettings((prev) => ({ ...prev, compactCards }))}
+            />
+          </View>
+          <TouchableOpacity style={styles.connectButton} onPress={saveLocalSettings} disabled={savingLocalSettings}>
+            {savingLocalSettings ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar preferencias</Text>}
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Préstamos</Text>
+          <Text style={styles.cardTitleDisabled}>Mercado Pago</Text>
           <Text style={styles.cardTextDisabled}>
-            Próximamente: intereses por cuotas, límites, modalidades y configuraciones rápidas.
+            Integración avanzada (webhooks, conciliación automática y reportes) pendiente de implementación.
           </Text>
         </View>
 
@@ -459,6 +539,23 @@ const styles = StyleSheet.create({
     minHeight: 42,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  input: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#E2E8F0',
+    backgroundColor: '#020817',
+  },
+  switchRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
   },
   connectButtonDisabled: {
     opacity: 0.7,

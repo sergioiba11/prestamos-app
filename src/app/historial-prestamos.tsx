@@ -15,6 +15,7 @@ import {
 } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
+import { prestamoEstadoLabel } from '../lib/status'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
@@ -76,6 +77,8 @@ export default function HistorialPrestamosScreen() {
     setShowMobileMenu(false)
 
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
     if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
@@ -106,7 +109,7 @@ export default function HistorialPrestamosScreen() {
   return (
     <View style={styles.page}>
       {!mobile ? (
-        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+        <AdminSidebar active="historial" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
         <View style={styles.mobileTopBar}>
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
@@ -157,8 +160,11 @@ export default function HistorialPrestamosScreen() {
                   <Text style={styles.itemMeta}>DNI: {item.dni}</Text>
                   <Text style={styles.itemMeta}>Monto: {money(item.monto)} · Interés: {item.interes}%</Text>
                   <Text style={styles.itemMeta}>Total: {money(item.total)} · Pagado: {money(item.pagado)}</Text>
-                  <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {item.estado}</Text>
-                  <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)}</Text>
+                  <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {prestamoEstadoLabel(item.estado)}</Text>
+                  <Text style={styles.itemMeta}>Modalidad: {item.modalidad} · Cuotas: {item.cuotasPlan || '—'}</Text>
+                  <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)} · Mora: {fecha(item.fechaMora)}</Text>
+                  <Text style={styles.itemMeta}>Próxima cuota: {item.proximaCuota}</Text>
+                  <Text style={styles.itemMeta}>Cuotas pagadas: {item.cuotasPagadas} · Pendientes: {item.cuotasPendientes} · Vencidas: {item.cuotasVencidas}</Text>
                 </View>
               ))}
 
@@ -172,7 +178,7 @@ export default function HistorialPrestamosScreen() {
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
           <AdminSidebar
-            active="inicio"
+            active="historial"
             adminName={adminName}
             adminRole={adminRole}
             onNavigate={onNavigate}

@@ -14,6 +14,7 @@ import {
   obtenerPrestamoActivoConDetalle,
   type PrestamoDetalle,
 } from '../lib/prestamos'
+import { cuotaEstadoLabel, pagoEstadoLabel, prestamoEstadoLabel } from '../lib/status'
 import { supabase } from '../lib/supabase'
 
 type Cliente = {
@@ -156,10 +157,12 @@ export default function ClienteDetalle() {
             <Text style={styles.meta}>Modalidad: {detalle.prestamo.modalidad || '—'}</Text>
             <Text style={styles.meta}>Fecha inicio: {date(detalle.prestamo.fecha_inicio)}</Text>
             <Text style={styles.meta}>Fecha límite: {date(detalle.prestamo.fecha_limite)}</Text>
-            <Text style={styles.meta}>Estado general: {detalle.prestamo.estado || 'activo'}</Text>
+            <Text style={styles.meta}>Fecha mora: {date(detalle.prestamo.fecha_inicio_mora)}</Text>
+            <Text style={styles.meta}>Estado general: {prestamoEstadoLabel(detalle.prestamo.estado)}</Text>
             <Text style={styles.meta}>Pagado aprobado: {money(detalle.totalPagadoAprobado)}</Text>
             <Text style={styles.meta}>Pagos pendientes: {money(detalle.totalPendienteRevision)}</Text>
             <Text style={styles.meta}>Mora estimada: {detalle.cuotasVencidas > 0 ? 'Con atraso' : 'Al día'}</Text>
+            {detalle.proximaCuota ? <Text style={styles.meta}>Próxima cuota: #{detalle.proximaCuota.numero_cuota} · {date(detalle.proximaCuota.fecha_vencimiento)}</Text> : null}
           </View>
 
           <View style={styles.card}>
@@ -170,7 +173,7 @@ export default function ClienteDetalle() {
                 <Text style={styles.itemMeta}>Vencimiento: {date(c.fecha_vencimiento)}</Text>
                 <Text style={styles.itemMeta}>Monto cuota: {money(c.monto_cuota || 0)}</Text>
                 <Text style={styles.itemMeta}>Saldo pendiente: {money(c.saldo_pendiente || 0)}</Text>
-                <Text style={styles.itemMeta}>Estado: {c.estado || 'pendiente'}</Text>
+                <Text style={styles.itemMeta}>Estado: {cuotaEstadoLabel(c.estado)}</Text>
               </View>
             ))}
           </View>
@@ -185,7 +188,7 @@ export default function ClienteDetalle() {
                   <Text style={styles.itemTitle}>{date(p.created_at)}</Text>
                   <Text style={styles.itemMeta}>Monto: {money(p.monto || 0)}</Text>
                   <Text style={styles.itemMeta}>Método: {p.metodo || '—'}</Text>
-                  <Text style={styles.itemMeta}>Estado: {p.estado || 'pendiente'}</Text>
+                  <Text style={styles.itemMeta}>Estado: {pagoEstadoLabel(p.estado)}</Text>
                 </View>
               ))
             )}

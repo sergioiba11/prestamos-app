@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
+import { logActivity } from '../lib/activity'
 
 export default function NuevoCliente() {
   const [nombre, setNombre] = useState('')
@@ -114,6 +115,13 @@ console.log('TOKEN FINAL:', tokenAntes)
           'La sesión cambió después de crear el cliente. No debería pasar.'
         )
       }
+
+      await logActivity({
+        tipo: 'cliente_creado',
+        actorId: adminIdAntes,
+        descripcion: `Cliente creado: ${nombreLimpio}`,
+        metadata: { dni: dniLimpio, email: emailLimpio, telefono: telefonoLimpio },
+      })
 
       mostrarMensaje('Éxito', 'Cliente creado correctamente')
 
