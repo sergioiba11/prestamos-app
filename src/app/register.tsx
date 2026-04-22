@@ -25,29 +25,39 @@ export default function RegisterScreen() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const parseErrorPayload = async (raw: any): Promise<{ error?: string } | null> => {
+    if (!raw) return null
+
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        return parsed && typeof parsed === 'object' ? (parsed as { error?: string }) : null
+      } catch {
+        return null
+      }
+    }
+
+    if (typeof raw === 'object') {
+      if (typeof raw.json === 'function') {
+        try {
+          const payload = await raw.clone().json()
+          return payload && typeof payload === 'object' ? (payload as { error?: string }) : null
+        } catch {
+          return null
+        }
+      }
+      return raw as { error?: string }
+    }
+
+    return null
+  }
+
   const extractInvokeErrorMessage = async (invokeError: any): Promise<string> => {
     const fallbackMessage = String(invokeError?.message || 'No se pudo crear la cuenta.')
     const fallbackGeneric = 'Edge Function returned a non-2xx status code'
 
-    const context = invokeError?.context
-
-    if (context && typeof context.json === 'function') {
-      try {
-        const payload = await context.clone().json()
-        if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error
-      } catch {
-        // no-op
-      }
-    }
-
-    if (typeof context === 'string' && context.trim()) {
-      try {
-        const parsed = JSON.parse(context)
-        if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error
-      } catch {
-        // no-op
-      }
-    }
+    const payloadFromContext = await parseErrorPayload(invokeError?.context)
+    if (typeof payloadFromContext?.error === 'string' && payloadFromContext.error.trim()) return payloadFromContext.error
 
     if (fallbackMessage && fallbackMessage !== fallbackGeneric) return fallbackMessage
     return 'No se pudo completar el registro en este momento.'
@@ -135,8 +145,11 @@ export default function RegisterScreen() {
       setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
       setTimeout(() => router.replace('/login' as any), 600)
     } catch (err: any) {
-      const message = String(err?.message || 'No se pudo crear la cuenta.')
-      setError(message)
+      const payload = await parseErrorPayload(err?.context)
+      const payloadMessage = typeof payload?.error === 'string' ? payload.error.trim() : ''
+      const errMessage = String(err?.message || '').trim()
+
+      setError(payloadMessage || errMessage || 'No se pudo completar el registro en este momento.')
     } finally {
       setLoading(false)
     }
