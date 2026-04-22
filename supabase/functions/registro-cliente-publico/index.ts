@@ -205,6 +205,7 @@ serve(async (req) => {
       })
       return businessError('Body inválido. Enviá JSON válido.', 'INVALID_JSON')
     }
+    console.log('BODY_PARSED')
 
     const dni = normalizeDni((body as Record<string, unknown>)?.dni)
     const nombre = String((body as Record<string, unknown>)?.nombre ?? '').trim() || 'Cliente'

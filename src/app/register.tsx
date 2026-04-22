@@ -105,46 +105,59 @@ export default function RegisterScreen() {
         return
       }
 
-      const authUserId = authData.user?.id
-      if (!authUserId) {
-        setError('No se pudo obtener el usuario creado. Intentá nuevamente.')
+      console.log('REGISTER_SUBMIT_START', {
+        functionName: 'registro-cliente-publico',
+        payload: {
+          dni: payload.dni,
+          nombre: payload.nombre,
+          email: payload.email,
+          telefono: payload.telefono,
+          passwordLength: payload.password.length,
+          passwordMasked: '*'.repeat(Math.min(payload.password.length, 12)),
+          clienteId: payload.clienteId,
+        },
+      })
+
+      const { data, error: invokeError } = await supabase.functions.invoke('registro-cliente-publico', {
+        body: payload,
+      })
+
+      console.log('REGISTER_INVOKE_RESPONSE', {
+        hasData: Boolean(data),
+        hasError: Boolean(invokeError),
+      })
+
+      if (invokeError) {
+        console.error('REGISTER_INVOKE_ERROR', {
+          message: invokeError?.message ?? null,
+          name: invokeError?.name ?? null,
+          context: invokeError?.context ?? null,
+        })
+        const detailMessage = await extractInvokeErrorMessage(invokeError)
+        setError(detailMessage)
         return
       }
 
-      const { error: usuarioError } = await supabase.from('usuarios').insert({
-        id: authUserId,
-        nombre: nombreLimpio,
-        email: emailLimpio,
-        rol: 'cliente',
-      })
-
-      if (usuarioError) {
-        setError('No se pudo completar el alta de usuario. Intentá nuevamente.')
-        return
-      }
-
-      const { error: clienteError } = await supabase.from('clientes').insert({
-        usuario_id: authUserId,
-        nombre: nombreLimpio,
-        telefono: phoneNormalizado,
-        dni: dniLimpio,
-      })
-
-      if (clienteError) {
-        const clienteMessage = (clienteError.message || '').toLowerCase()
-        if (clienteMessage.includes('dni')) {
-          setError('Ese DNI ya pertenece a un cliente.')
-          return
-        }
-
-        setError('No se pudo completar el alta del cliente. Intentá nuevamente.')
+      const response = data as { ok?: boolean; error?: string; code?: string } | null
+      console.log('REGISTER_DATA', response)
+      if (!response?.ok) {
+        setError(response?.error || 'No se pudo completar el registro.')
         return
       }
 
       setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
       setTimeout(() => router.replace('/login' as any), 600)
-    } catch {
-      setError('No se pudo completar el registro en este momento.')
+    } catch (err: any) {
+      console.error('REGISTER_INVOKE_ERROR', {
+        message: err?.message ?? null,
+        name: err?.name ?? null,
+        context: err?.context ?? null,
+      })
+      const payload = await parseErrorPayload(err?.context)
+      const payloadMessage = typeof payload?.error === 'string' ? payload.error.trim() : ''
+      const errMessage = String(err?.message || '').trim()
+
+      setError(payloadMessage || errMessage || 'No se pudo completar el registro en este momento.')
     } finally {
       setLoading(false)
     }
