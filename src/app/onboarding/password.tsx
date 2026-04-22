@@ -33,6 +33,7 @@ export default function CreatePasswordScreen() {
       return
     }
 
+    console.log('[onboarding-password] register start', { dni: state.identity.dni, clienteId: state.identity.clienteId, email, phone: state.verifiedPhone })
     setLoading(true)
     setError('')
 
@@ -43,10 +44,13 @@ export default function CreatePasswordScreen() {
         password,
         email,
         phone: state.verifiedPhone,
+        clienteId: state.identity.clienteId,
       })
 
+      console.log('[onboarding-password] register success')
       router.push('/onboarding/biometria' as any)
     } catch (err: any) {
+      console.error('[onboarding-password] register error', err)
       setError(err?.message || 'No se pudo crear la cuenta.')
     } finally {
       setLoading(false)

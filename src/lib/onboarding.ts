@@ -60,9 +60,13 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
     throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
   }
 
+  console.log('[onboarding] iniciar-registro payload', { dni: cleanDni })
+
   const { data, error } = await supabase.functions.invoke('iniciar-registro', {
     body: { dni: cleanDni },
   })
+
+  console.log('[onboarding] iniciar-registro response', data)
 
   if (error) {
     console.error('[onboarding] iniciar-registro invoke error', error)
@@ -162,96 +166,151 @@ export async function registerUserFromOnboarding(params: {
   password: string
   email?: string
   phone: string
+  clienteId?: string | null
+  direccion?: string | null
 }) {
   const dni = normalizeDni(params.dni)
-  const normalizedPhone = normalizePhoneAR(params.phone)
+  const nombre = params.nombre?.trim() || 'Cliente'
   const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
-  const displayName = params.nombre?.trim() || 'Cliente'
+  const telefono = normalizePhoneAR(params.phone)
+  const clienteId = params.clienteId || null
+  const direccion = params.direccion?.trim() || null
 
-  if (!normalizedPhone) throw new Error('El teléfono verificado no es válido.')
+  if (dni.length < 7 || dni.length > 8) throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
+  if (!nombre) throw new Error('Falta el nombre del cliente.')
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Ingresá un email válido.')
+  if (!telefono) throw new Error('Ingresá un teléfono válido de Argentina (+549...).')
+  if (!params.password || params.password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.')
 
-  const { data: clienteByDni, error: clienteError } = await supabase
-    .from('clientes')
-    .select('id, dni, telefono, usuario_id')
-    .eq('dni', dni)
-    .maybeSingle()
+  const payload = { dni, nombre, email, telefono, clienteId, direccion }
+  console.log('[onboarding] registerUserFromOnboarding payload', payload)
 
-  if (clienteError || !clienteByDni) {
-    throw new Error('No encontramos un registro para el DNI ingresado.')
-  }
+  try {
+    const { data: clienteByDni, error: clienteError } = await supabase
+      .from('clientes')
+      .select('id, dni, usuario_id')
+      .eq('dni', dni)
+      .maybeSingle()
 
-  if (clienteByDni.usuario_id) {
-    throw new Error('Este DNI ya tiene una cuenta activa. Iniciá sesión o recuperá tu cuenta.')
-  }
+    if (clienteError) {
+      console.error('[onboarding] error buscando cliente por dni', clienteError)
+      throw new Error('No se pudo validar el DNI en este momento.')
+    }
 
-  const {
-    data: { user: currentUser },
-  } = await supabase.auth.getUser()
+    if (clienteByDni?.usuario_id) {
+      throw new Error('Ese DNI ya tiene una cuenta activa')
+    }
 
-  let authUserId = currentUser?.id || null
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser()
 
-  if (!authUserId) {
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password: params.password,
-      phone: normalizedPhone,
-      options: {
+    let authUserId = currentUser?.id || null
+
+    if (!authUserId) {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: params.password,
+        phone: telefono,
+        options: {
+          data: {
+            dni,
+            role: 'cliente',
+            full_name: nombre,
+          },
+        },
+      })
+
+      console.log('[onboarding] signUp response', { userId: signUpData.user?.id })
+
+      if (signUpError || !signUpData.user?.id) {
+        console.error('[onboarding] signUp error', signUpError)
+        const msg = signUpError?.message?.toLowerCase() || ''
+        if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('email')) {
+          throw new Error('El email ya está registrado.')
+        }
+        if (msg.includes('password')) {
+          throw new Error('Error de auth: la contraseña no cumple los requisitos.')
+        }
+        throw new Error(signUpError?.message || 'Error de auth al crear el usuario.')
+      }
+
+      authUserId = signUpData.user.id
+    } else {
+      const { error: authUpdateError } = await supabase.auth.updateUser({
+        email,
+        password: params.password,
         data: {
           dni,
           role: 'cliente',
-          full_name: displayName,
+          full_name: nombre,
         },
-      },
-    })
+      })
 
-    if (signUpError || !signUpData.user) {
-      throw new Error(signUpError?.message || 'No se pudo crear la cuenta de autenticación.')
-    }
-
-    authUserId = signUpData.user.id
-  } else {
-    const { error: updateAuthError } = await supabase.auth.updateUser({
-      email,
-      password: params.password,
-      data: {
-        dni,
-        role: 'cliente',
-        full_name: displayName,
-      },
-    })
-
-    if (updateAuthError) {
-      if (updateAuthError.message.toLowerCase().includes('already')) {
-        throw new Error('El email ingresado ya está registrado.')
+      if (authUpdateError) {
+        console.error('[onboarding] updateUser error', authUpdateError)
+        const msg = authUpdateError.message.toLowerCase()
+        if (msg.includes('already')) throw new Error('El email ya está registrado.')
+        throw new Error(authUpdateError.message || 'Error de auth al actualizar el usuario.')
       }
-      throw updateAuthError
     }
+
+    if (!authUserId) {
+      throw new Error('Error de auth: no se pudo obtener el usuario creado.')
+    }
+
+    const { error: usuarioError } = await supabase.from('usuarios').upsert({
+      id: authUserId,
+      nombre,
+      email,
+      rol: 'cliente',
+    })
+
+    if (usuarioError) {
+      console.error('[onboarding] usuarios upsert error', usuarioError)
+      if (usuarioError.message.toLowerCase().includes('duplicate')) {
+        throw new Error('El email ya está registrado.')
+      }
+      throw new Error('Error al guardar en usuarios.')
+    }
+
+    const targetClienteId = clienteId || clienteByDni?.id || null
+
+    const clientePayload: Record<string, unknown> = {
+      usuario_id: authUserId,
+      nombre,
+      telefono,
+      dni,
+    }
+
+    if (direccion) clientePayload.direccion = direccion
+
+    if (targetClienteId) {
+      const { error: updateClienteError } = await supabase
+        .from('clientes')
+        .update(clientePayload)
+        .eq('id', targetClienteId)
+
+      if (updateClienteError) {
+        console.error('[onboarding] clientes update error', updateClienteError)
+        throw new Error('Error al guardar en clientes.')
+      }
+    } else {
+      const { error: createClienteError } = await supabase.from('clientes').insert(clientePayload)
+
+      if (createClienteError) {
+        console.error('[onboarding] clientes insert error', createClienteError)
+        throw new Error('Error al guardar en clientes.')
+      }
+    }
+
+    const result = { ok: true, userId: authUserId }
+    console.log('[onboarding] registerUserFromOnboarding response', result)
+    return result
+  } catch (error: any) {
+    console.error('[onboarding] registerUserFromOnboarding error', error)
+    throw new Error(error?.message || 'No se pudo completar el registro.')
   }
-
-  const { data: samePhoneClients, error: phoneError } = await supabase
-    .from('clientes')
-    .select('id, dni')
-    .eq('telefono', normalizedPhone)
-
-  if (phoneError) throw new Error('No pudimos validar el teléfono en este momento.')
-
-  const isPhoneUsedByAnotherDni = (samePhoneClients || []).some((row) => normalizeDni(row.dni) !== dni)
-  if (isPhoneUsedByAnotherDni) throw new Error('El teléfono ya está asociado a otro cliente.')
-
-  const { error: usuarioError } = await supabase
-    .from('usuarios')
-    .upsert({ id: authUserId, nombre: displayName, email, rol: 'cliente' })
-
-  if (usuarioError) throw usuarioError
-
-  const { error: clienteUpdateError } = await supabase
-    .from('clientes')
-    .update({ usuario_id: authUserId, telefono: normalizedPhone })
-    .eq('id', clienteByDni.id)
-
-  if (clienteUpdateError) throw clienteUpdateError
-
-  return { userId: authUserId, email }
 }
 
 export async function signInWithEmailOrDni(params: {
