@@ -66,3 +66,34 @@ export function badgePago(estado?: string | null) {
   } as const
   return map[normalized]
 }
+
+type CuotaLike = {
+  fecha_vencimiento?: string | null
+  saldo_pendiente?: number | null
+  estado?: string | null
+}
+
+export function saldoPrestamoDesdeCuotas(cuotas: CuotaLike[]) {
+  return Math.max(
+    0,
+    cuotas.reduce((acc, cuota) => acc + Number(cuota.saldo_pendiente || 0), 0)
+  )
+}
+
+export function estadoCuotaCalculado(cuota: CuotaLike, todayKey: string) {
+  const saldo = Number(cuota.saldo_pendiente || 0)
+  if (saldo <= 0) return 'pagada'
+  const estado = normalizarEstadoCuota(cuota.estado)
+  if (estado === 'parcial') return 'parcial'
+  const fecha = String(cuota.fecha_vencimiento || '').slice(0, 10)
+  if (fecha && fecha < todayKey) return 'vencida'
+  return 'pendiente'
+}
+
+export function estadoPrestamoDesdeCuotas(cuotas: CuotaLike[], todayKey: string) {
+  if (!cuotas.length) return 'activo'
+  const saldo = saldoPrestamoDesdeCuotas(cuotas)
+  if (saldo <= 0) return 'pagado'
+  const tieneVencidas = cuotas.some((cuota) => estadoCuotaCalculado(cuota, todayKey) === 'vencida')
+  return tieneVencidas ? 'atrasado' : 'activo'
+}

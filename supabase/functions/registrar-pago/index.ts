@@ -22,6 +22,20 @@ function esMontoCerrado(valor: number) {
   return Math.abs(Number(valor || 0)) <= 0.009
 }
 
+function fechaKeyHoy() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function estadoCuotaCalculado(cuota: { estado?: string | null; fecha_vencimiento?: string | null; saldo_pendiente?: number | null }) {
+  const saldo = Number(cuota.saldo_pendiente || 0)
+  if (saldo <= 0) return 'pagada'
+  const estado = String(cuota.estado || '').toLowerCase()
+  if (estado === 'parcial') return 'parcial'
+  const fecha = String(cuota.fecha_vencimiento || '').slice(0, 10)
+  if (fecha && fecha < fechaKeyHoy()) return 'vencida'
+  return 'pendiente'
+}
+
 function normalizarMetodoPago(metodo: unknown) {
   const valor = String(metodo || '').trim().toLowerCase()
 
@@ -449,6 +463,31 @@ Deno.serve(async (req) => {
     }
 
     if (metodo === 'transferencia' || metodo === 'mercado_pago') {
+      const { data: cuotasPendientesValidacion, error: cuotasPendientesValidacionError } = await supabase
+        .from('cuotas')
+        .select('saldo_pendiente,monto_cuota,estado')
+        .eq('prestamo_id', prestamo_id)
+        .eq('cliente_id', cliente_id)
+        .in('estado', ['pendiente', 'parcial'])
+
+      if (cuotasPendientesValidacionError) {
+        return jsonResponse({ error: cuotasPendientesValidacionError.message }, 500)
+      }
+
+      const saldoTotalPendiente = redondear(
+        (cuotasPendientesValidacion || []).reduce(
+          (acc, cuota) => acc + Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0),
+          0
+        )
+      )
+
+      if (montoEntregado > saldoTotalPendiente) {
+        return jsonResponse(
+          { error: 'El monto supera el saldo total pendiente del préstamo' },
+          400
+        )
+      }
+
       const { data: pagoPendiente, error: pagoPendienteError } = await supabase
         .from('pagos')
         .insert({
@@ -722,14 +761,9 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: cuotasRestantesError.message }, 500)
     }
 
-    const saldoRestante = redondear(
-      (cuotasRestantes || []).reduce(
-        (acc, item) => acc + Number(item.saldo_pendiente || 0),
-        0
-      )
-    )
-
-    const nuevoEstadoPrestamo = saldoRestante <= 0 ? 'pagado' : 'activo'
+    const saldoRestante = redondear((cuotasRestantes || []).reduce((acc, item) => acc + Number(item.saldo_pendiente || 0), 0))
+    const hayVencidasImpagas = (cuotasRestantes || []).some((cuota) => estadoCuotaCalculado(cuota) === 'vencida')
+    const nuevoEstadoPrestamo = saldoRestante <= 0 ? 'pagado' : hayVencidasImpagas ? 'atrasado' : 'activo'
 
     const { error: updatePrestamoError } = await supabase
       .from('prestamos')

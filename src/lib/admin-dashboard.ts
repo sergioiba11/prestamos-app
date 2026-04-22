@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { estadoCuotaCalculado, estadoPrestamoDesdeCuotas, saldoPrestamoDesdeCuotas } from './statuses'
 
 type ClienteRow = {
   id: string
@@ -157,7 +158,6 @@ export type AdminDashboardData = {
 
 const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
-const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
 const PENDING_VALIDATION_STATES = new Set(['pendiente', 'pendiente_aprobacion', 'en_revision'])
 const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado', 'pagado'])
 const TRANSFER_PENDING_METHODS = new Set(['transferencia', 'alias', 'mp_transferencia'])
@@ -459,8 +459,8 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const todayKey = today.toISOString().slice(0, 10)
 
   const cobrarHoy = cuotas.reduce((acc, cuota) => {
-    const estado = low(cuota.estado)
-    if (!PENDING_QUOTA_STATES.has(estado)) return acc
+    const estado = estadoCuotaCalculado(cuota, todayKey)
+    if (!['pendiente', 'parcial'].includes(estado)) return acc
     if ((cuota.fecha_vencimiento || '').slice(0, 10) !== todayKey) return acc
 
     const saldoPendiente = toNumber(cuota.saldo_pendiente)
@@ -488,11 +488,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     }
   })
 
-  const activos = clientesListado.filter(hasActiveLoan)
-  const activosCards = activos.map(toActivoCard)
-
   console.log('[admin-dashboard] clientesListado', clientesListado)
-  console.log('[admin-dashboard] activos', activos)
   console.log('[admin-dashboard] pagosPendientesRaw', pagosPendientesRaw)
 
   const pagosByPrestamo = new Map<string, number>()
@@ -513,15 +509,16 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
 
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = toNumber(prestamo.total_a_pagar)
-    const pagado = toNumber(pagosByPrestamo.get(prestamo.id))
-    const restante = Math.max(total - pagado, 0)
     const cliente = clientesById.get(prestamo.cliente_id)
     const cuotasPrestamo = cuotasByPrestamo.get(prestamo.id) || []
-    const cuotasPagadas = cuotasPrestamo.filter((c) => low(c.estado) === 'pagada' || toNumber(c.saldo_pendiente) <= 0).length
-    const cuotasPendientes = cuotasPrestamo.filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0).length
+    const restante = cuotasPrestamo.length ? saldoPrestamoDesdeCuotas(cuotasPrestamo) : Math.max(total - toNumber(pagosByPrestamo.get(prestamo.id)), 0)
+    const pagado = Math.max(total - restante, 0)
+    const cuotasPagadas = cuotasPrestamo.filter((c) => estadoCuotaCalculado(c, todayKey) === 'pagada').length
+    const cuotasPendientes = cuotasPrestamo.filter((c) => ['pendiente', 'parcial', 'vencida'].includes(estadoCuotaCalculado(c, todayKey))).length
     const proximaCuota = cuotasPrestamo
-      .filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0)
+      .filter((c) => ['pendiente', 'parcial', 'vencida'].includes(estadoCuotaCalculado(c, todayKey)))
       .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')))[0]
+    const estadoCalculado = cuotasPrestamo.length ? estadoPrestamoDesdeCuotas(cuotasPrestamo, todayKey) : (low(prestamo.estado) || 'activo')
 
     return {
       prestamoId: prestamo.id,
@@ -535,7 +532,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       restante,
       modalidad: prestamo.modalidad || null,
       cuotasPlan: toNumber(prestamo.cuotas),
-      estado: low(prestamo.estado) || 'activo',
+      estado: estadoCalculado,
       fechaInicio: ymd(prestamo.fecha_inicio),
       fechaLimite: ymd(prestamo.fecha_limite),
       fechaMora: ymd(prestamo.fecha_inicio_mora || prestamo.fecha_limite),
@@ -547,15 +544,22 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   })
 
   const prestamosVencidosByPrestamo = prestamos.filter((prestamo) => {
-    const estado = low(prestamo.estado)
-    if (OVERDUE_STATES.has(estado)) return true
-    const fechaLimite = (prestamo.fecha_limite || '').slice(0, 10)
-    return Boolean(fechaLimite) && fechaLimite < todayKey && estado !== 'pagado' && estado !== 'cancelado'
+    const cuotasPrestamo = cuotasByPrestamo.get(prestamo.id) || []
+    if (!cuotasPrestamo.length) return false
+    return cuotasPrestamo.some((cuota) => estadoCuotaCalculado(cuota, todayKey) === 'vencida')
   }).length
 
   const prestamosVencidosListado = clientesListado.filter(hasOverdueLoan).length
 
   console.log('[admin-dashboard] historial size', historial.length)
+
+  const clientesActivosIds = new Set(
+    historial
+      .filter((item) => item.restante > 0 && item.estado !== 'pagado' && item.estado !== 'cancelado')
+      .map((item) => item.clienteId)
+  )
+  const activos = clientesListado.filter((cliente) => clientesActivosIds.has(cliente.clienteId) || hasActiveLoan(cliente))
+  const activosCards = activos.map(toActivoCard)
 
   const kpis: AdminKpis = {
     cobrarHoy,
