@@ -12,6 +12,7 @@ import {
 import {
   obtenerClientePorUsuario,
   obtenerPrestamoActivoConDetalle,
+  obtenerPrestamoConDetallePorId,
   type PrestamoDetalle,
 } from '../lib/prestamos'
 import { badgeCuota, badgePago, badgePrestamo } from '../lib/statuses'
@@ -45,6 +46,12 @@ export default function ClienteDetalle() {
     return typeof raw === 'string' ? raw : ''
   }, [params])
 
+
+  const prestamoIdParam = useMemo(() => {
+    const raw = params.prestamo_id
+    if (Array.isArray(raw)) return raw[0]
+    return typeof raw === 'string' ? raw : ''
+  }, [params])
   const [loading, setLoading] = useState(true)
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [detalle, setDetalle] = useState<PrestamoDetalle | null>(null)
@@ -97,14 +104,21 @@ export default function ClienteDetalle() {
         setCliente(data as Cliente)
       }
 
-      const d = await obtenerPrestamoActivoConDetalle(clienteId)
+      const d = prestamoIdParam
+        ? await obtenerPrestamoConDetallePorId(prestamoIdParam)
+        : await obtenerPrestamoActivoConDetalle(clienteId)
+
+      if (d && d.prestamo.cliente_id !== clienteId) {
+        throw new Error('El préstamo indicado no corresponde al cliente seleccionado.')
+      }
+
       setDetalle(d)
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo cargar el detalle')
     } finally {
       setLoading(false)
     }
-  }, [clienteIdParam])
+  }, [clienteIdParam, prestamoIdParam])
 
   useFocusEffect(
     useCallback(() => {
@@ -144,7 +158,7 @@ export default function ClienteDetalle() {
 
       {!detalle ? (
         <View style={styles.card}>
-          <Text style={styles.empty}>No tenés préstamos activos.</Text>
+          <Text style={styles.empty}>{prestamoIdParam ? 'No se encontró el préstamo solicitado.' : 'No tenés préstamos activos.'}</Text>
         </View>
       ) : (
         <>
