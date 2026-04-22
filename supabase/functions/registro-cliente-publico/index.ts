@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       message: 'Preflight OPTIONS respondido',
       code: 'OPTIONS_OK',
     })
-    return jsonResponse({ ok: true, code: 'OPTIONS_OK' })
+    return jsonResponse({ ok: true, code: 'OPTIONS_OK' }, 200)
   }
 
   if (req.method !== 'POST') {
@@ -514,11 +514,11 @@ Deno.serve(async (req) => {
       code: 'REGISTER_OK',
     })
     return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id })
-  } catch (error: any) {
-    console.error('ERROR_REGISTRO', error)
+  } catch (err: any) {
+    console.error('ERROR_REGISTRO', err)
     console.error('REGISTRO_CLIENTE_PUBLICO_UNHANDLED', {
-      message: error?.message || 'Unhandled error',
-      stack: error?.stack || null,
+      message: err?.message || 'Unhandled error',
+      stack: err?.stack || null,
     })
 
     try {
