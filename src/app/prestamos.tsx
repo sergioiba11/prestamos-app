@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
+import { badgePrestamo } from '../lib/statuses'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
@@ -14,13 +15,6 @@ function formatDate(value?: string) {
   if (!value || value === '—') return '—'
   const [y, m, d] = value.split('-')
   return y && m && d ? `${d}/${m}/${y}` : value
-}
-
-function moraDate(fechaLimite?: string, estado?: string) {
-  if (!fechaLimite || fechaLimite === '—') return '—'
-  const isMora = ['vencido', 'en_mora', 'atrasado'].includes(String(estado || '').toLowerCase())
-  if (!isMora) return '—'
-  return formatDate(fechaLimite)
 }
 
 export default function PrestamosScreen() {
@@ -129,25 +123,33 @@ export default function PrestamosScreen() {
               </View>
             </View>
 
-            {filtered.map((loan) => (
-              <TouchableOpacity key={loan.prestamoId} style={styles.loanCard} onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: loan.clienteId } } as any)}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.loanTitle}>{loan.cliente}</Text>
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{loan.estado}</Text>
+            {filtered.map((loan) => {
+              const badge = badgePrestamo(loan.estado)
+              return (
+                <TouchableOpacity key={loan.prestamoId} style={styles.loanCard} onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: loan.clienteId } } as any)}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.loanTitle}>{loan.cliente}</Text>
+                    <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                      <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                    </View>
                   </View>
-                </View>
-                <Text style={styles.meta}>Cliente DNI: {loan.dni}</Text>
-                <Text style={styles.meta}>Monto: {money(loan.monto)} · Interés: {loan.interes}%</Text>
-                <Text style={styles.meta}>Total a pagar: {money(loan.total)} · Restante: {money(loan.restante)}</Text>
-                <Text style={styles.meta}>Cuotas: modalidad operativa · Fecha inicio: {formatDate(loan.fechaInicio)}</Text>
-                <Text style={styles.meta}>Fecha límite: {formatDate(loan.fechaLimite)} · Fecha mora: {moraDate(loan.fechaLimite, loan.estado)}</Text>
-                <View style={styles.cardLinkRow}>
-                  <Ionicons name="open-outline" size={14} color="#93C5FD" />
-                  <Text style={styles.cardLinkText}>Ver detalle del cliente / préstamo</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <Text style={styles.meta}>Cliente DNI: {loan.dni}</Text>
+                  <Text style={styles.meta}>Monto: {money(loan.monto)} · Interés: {loan.interes}%</Text>
+                  <Text style={styles.meta}>Total a pagar: {money(loan.total)} · Restante: {money(loan.restante)}</Text>
+                  <Text style={styles.meta}>
+                    Modalidad: {loan.modalidad === 'diario' ? 'Diario' : loan.modalidad === 'mensual' ? 'Mensual' : '—'} · Cuotas: {loan.cuotasPlan || '—'}
+                  </Text>
+                  <Text style={styles.meta}>Fecha inicio: {formatDate(loan.fechaInicio)} · Fecha límite: {formatDate(loan.fechaLimite)} · Fecha mora: {formatDate(loan.fechaMora)}</Text>
+                  <Text style={styles.meta}>
+                    Cuotas pagadas: {loan.cuotasPagadas} · Pendientes: {loan.cuotasPendientes} · Próxima: {loan.proximaCuotaNumero ? `#${loan.proximaCuotaNumero} (${formatDate(loan.proximaCuotaVencimiento)})` : '—'}
+                  </Text>
+                  <View style={styles.cardLinkRow}>
+                    <Ionicons name="open-outline" size={14} color="#93C5FD" />
+                    <Text style={styles.cardLinkText}>Ver detalle del cliente / préstamo</Text>
+                  </View>
+                </TouchableOpacity>
+              )
+            })}
 
             {filtered.length === 0 ? <Text style={styles.empty}>No se encontraron préstamos para el filtro actual.</Text> : null}
           </ScrollView>

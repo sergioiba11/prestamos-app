@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { estadoCuotaCalculado, estadoPrestamoDesdeCuotas, saldoPrestamoDesdeCuotas } from './statuses'
 
 export type PrestamoBase = {
   id: string
@@ -147,18 +148,31 @@ export async function obtenerPrestamoActivoConDetalle(clienteId: string): Promis
     .filter((p) => normalizarEstado(p.estado) === 'rechazado')
     .reduce((acc, p) => acc + Number(p.monto || 0), 0)
 
-  const saldoCuotas = cuotas.reduce((acc, c) => acc + Number(c.saldo_pendiente || 0), 0)
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const cuotasNormalizadas = cuotas.map((cuota) => ({
+    ...cuota,
+    estado: estadoCuotaCalculado(cuota, todayKey),
+  }))
+
+  const saldoCuotas = saldoPrestamoDesdeCuotas(cuotasNormalizadas)
   const saldoDesdePrestamo = Number(prestamoData.saldo_pendiente || 0)
   const saldoCalculado = saldoCuotas > 0 ? saldoCuotas : saldoDesdePrestamo
 
-  const proximaCuota = cuotas.find((cuota) => {
+  const proximaCuota = cuotasNormalizadas.find((cuota) => {
     const estado = normalizarEstado(cuota.estado)
     return estado === 'pendiente' || estado === 'parcial' || estado === 'vencida'
   }) || null
 
+  const estadoPrestamo = estadoPrestamoDesdeCuotas(cuotasNormalizadas, todayKey)
+  const prestamoNormalizado: PrestamoBase = {
+    ...(prestamoData as PrestamoBase),
+    estado: estadoPrestamo,
+    saldo_pendiente: saldoCalculado,
+  }
+
   return {
-    prestamo: prestamoData as PrestamoBase,
-    cuotas,
+    prestamo: prestamoNormalizado,
+    cuotas: cuotasNormalizadas as CuotaPrestamo[],
     pagos,
     totalPagadoAprobado,
     totalPendienteRevision,
