@@ -1,7 +1,12 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
     "strict": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
     "paths": {
       "@/*": [
         "./src/*"
@@ -12,9 +17,13 @@
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "assets/**",
+    "supabase/**",
+    "node_modules"
   ]
 }

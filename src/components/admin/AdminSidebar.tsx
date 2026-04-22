@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-nativ
 
 export type AdminNavKey =
   | 'inicio'
+  | 'prestamos'
   | 'historial'
   | 'pagos-pendientes'
   | 'nuevo-prestamo'
@@ -10,6 +11,7 @@ export type AdminNavKey =
   | 'clientes'
   | 'crear-cliente'
   | 'crear-empleado'
+  | 'actividad'
   | 'config'
 
 type Props = {
@@ -24,6 +26,7 @@ type Props = {
 
 const navItems: Array<{ key: AdminNavKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'inicio', label: 'Inicio', icon: 'home-outline' },
+  { key: 'prestamos', label: 'Préstamos', icon: 'document-text-outline' },
   { key: 'historial', label: 'Historial', icon: 'time-outline' },
   { key: 'pagos-pendientes', label: 'Pagos pendientes', icon: 'hourglass-outline' },
   { key: 'nuevo-prestamo', label: 'Nuevo préstamo', icon: 'wallet-outline' },
@@ -31,10 +34,18 @@ const navItems: Array<{ key: AdminNavKey; label: string; icon: keyof typeof Ioni
   { key: 'clientes', label: 'Ver clientes', icon: 'people-outline' },
   { key: 'crear-cliente', label: 'Crear cliente', icon: 'person-circle-outline' },
   { key: 'crear-empleado', label: 'Crear empleado', icon: 'person-add-outline' },
+  { key: 'actividad', label: 'Actividad', icon: 'pulse-outline' },
   { key: 'config', label: 'Configuración', icon: 'settings-outline' },
 ]
 
 export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogout, mobile, onCloseMobile }: Props) {
+  const role = String(adminRole || '').toLowerCase()
+  const visibleItems = navItems.filter((item) => {
+    if (role === 'admin') return true
+    if (role === 'empleado') return item.key !== 'crear-empleado' && item.key !== 'config'
+    return item.key === 'inicio' || item.key === 'config'
+  })
+
   return (
     <View style={[styles.sidebar, mobile && styles.sidebarMobile]}>
       <View>
@@ -54,7 +65,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
         </View>
 
         <View style={styles.navList}>
-          {navItems.map((item) => (
+          {visibleItems.map((item) => (
             <Pressable
               key={item.key}
               style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover]}
