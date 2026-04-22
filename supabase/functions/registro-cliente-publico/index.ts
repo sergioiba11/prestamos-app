@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -83,7 +84,7 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   let logEmail: string | null = null
   let logDni: string | null = null
 
@@ -173,6 +174,8 @@ Deno.serve(async (req) => {
     }
   }
 
+  console.log('FUNCTION_START')
+
   try {
     logInfo({ step: 'FUNCTION_START', message: 'Inicio de registro-cliente-publico', email: null, dni: null })
 
@@ -202,6 +205,7 @@ Deno.serve(async (req) => {
       })
       return businessError('Body inválido. Enviá JSON válido.', 'INVALID_JSON')
     }
+    console.log('BODY_PARSED')
 
     const dni = normalizeDni((body as Record<string, unknown>)?.dni)
     const nombre = String((body as Record<string, unknown>)?.nombre ?? '').trim() || 'Cliente'

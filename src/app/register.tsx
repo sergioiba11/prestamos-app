@@ -126,17 +126,41 @@ export default function RegisterScreen() {
         clienteId: null,
       }
 
+      console.log('REGISTER_SUBMIT_START', {
+        functionName: 'registro-cliente-publico',
+        payload: {
+          dni: payload.dni,
+          nombre: payload.nombre,
+          email: payload.email,
+          telefono: payload.telefono,
+          passwordLength: payload.password.length,
+          passwordMasked: '*'.repeat(Math.min(payload.password.length, 12)),
+          clienteId: payload.clienteId,
+        },
+      })
+
       const { data, error: invokeError } = await supabase.functions.invoke('registro-cliente-publico', {
         body: payload,
       })
 
+      console.log('REGISTER_INVOKE_RESPONSE', {
+        hasData: Boolean(data),
+        hasError: Boolean(invokeError),
+      })
+
       if (invokeError) {
+        console.error('REGISTER_INVOKE_ERROR', {
+          message: invokeError?.message ?? null,
+          name: invokeError?.name ?? null,
+          context: invokeError?.context ?? null,
+        })
         const detailMessage = await extractInvokeErrorMessage(invokeError)
         setError(detailMessage)
         return
       }
 
       const response = data as { ok?: boolean; error?: string; code?: string } | null
+      console.log('REGISTER_DATA', response)
       if (!response?.ok) {
         setError(response?.error || 'No se pudo completar el registro.')
         return
@@ -145,6 +169,11 @@ export default function RegisterScreen() {
       setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
       setTimeout(() => router.replace('/login' as any), 600)
     } catch (err: any) {
+      console.error('REGISTER_INVOKE_ERROR', {
+        message: err?.message ?? null,
+        name: err?.name ?? null,
+        context: err?.context ?? null,
+      })
       const payload = await parseErrorPayload(err?.context)
       const payloadMessage = typeof payload?.error === 'string' ? payload.error.trim() : ''
       const errMessage = String(err?.message || '').trim()
