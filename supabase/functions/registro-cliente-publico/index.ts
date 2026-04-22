@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!supabaseUrl || !serviceRoleKey || !state.userId) {
+    if (!supabaseUrl || !serviceRoleKey) {
       logError({
         step: 'ROLLBACK_ERROR',
         message: `Rollback omitido (${context}) por estado incompleto`,
@@ -139,8 +139,10 @@ Deno.serve(async (req) => {
         }
       }
 
-      const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
-      if (deleteAuthError) throw deleteAuthError
+      if (state.userId) {
+        const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
+        if (deleteAuthError) throw deleteAuthError
+      }
 
       logInfo({
         step: 'ROLLBACK_OK',
@@ -426,6 +428,7 @@ Deno.serve(async (req) => {
         dni: logDni,
         code: 'AUTH_CREATE_FAILED',
       })
+      await runRollback('AUTH_CREATE_ERROR', rollback)
       return businessError('No se pudo crear la cuenta.', 'AUTH_CREATE_FAILED')
     }
 
@@ -489,9 +492,12 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id }, 200)
   } catch (err: any) {
-    console.error('FUNCTION_UNHANDLED_ERROR', {
+    logError({
+      step: 'FUNCTION_UNHANDLED_ERROR',
       message: err?.message ?? String(err),
-      stack: err?.stack ?? null,
+      email: logEmail,
+      dni: logDni,
+      code: 'INTERNAL_ERROR',
     })
 
     await runRollback('FUNCTION_UNHANDLED_ERROR', rollback)
