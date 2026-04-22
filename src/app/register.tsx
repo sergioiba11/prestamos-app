@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
 } from 'react-native'
 import { normalizeDni, normalizePhoneAR } from '../lib/onboarding'
 import { supabase } from '../lib/supabase'
@@ -25,42 +24,14 @@ export default function RegisterScreen() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const parseErrorPayload = async (raw: any): Promise<{ error?: string } | null> => {
-    if (!raw) return null
-
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw)
-        return parsed && typeof parsed === 'object' ? (parsed as { error?: string }) : null
-      } catch {
-        return null
-      }
-    }
-
-    if (typeof raw === 'object') {
-      if (typeof raw.json === 'function') {
-        try {
-          const payload = await raw.clone().json()
-          return payload && typeof payload === 'object' ? (payload as { error?: string }) : null
-        } catch {
-          return null
-        }
-      }
-      return raw as { error?: string }
-    }
-
-    return null
-  }
-
-  const extractInvokeErrorMessage = async (invokeError: any): Promise<string> => {
-    const fallbackMessage = String(invokeError?.message || 'No se pudo crear la cuenta.')
-    const fallbackGeneric = 'Edge Function returned a non-2xx status code'
-
-    const payloadFromContext = await parseErrorPayload(invokeError?.context)
-    if (typeof payloadFromContext?.error === 'string' && payloadFromContext.error.trim()) return payloadFromContext.error
-
-    if (fallbackMessage && fallbackMessage !== fallbackGeneric) return fallbackMessage
-    return 'No se pudo completar el registro en este momento.'
+  const isEmailAlreadyRegisteredError = (rawMessage: string): boolean => {
+    const message = rawMessage.toLowerCase()
+    return (
+      message.includes('user already registered') ||
+      message.includes('already registered') ||
+      message.includes('already exists') ||
+      message.includes('email exists')
+    )
   }
 
   const submit = async () => {
@@ -75,13 +46,8 @@ export default function RegisterScreen() {
     setError('')
     setSuccess('')
 
-    if (!nombreLimpio) {
-      setError('Ingresá tu nombre.')
-      return
-    }
-
-    if (!dniLimpio) {
-      setError('Ingresá tu DNI.')
+    if (!nombreLimpio || !dniLimpio || !emailLimpio || !telefono.trim() || !passwordLimpia) {
+      setError('Faltan datos obligatorios.')
       return
     }
 
@@ -90,23 +56,13 @@ export default function RegisterScreen() {
       return
     }
 
-    if (!emailLimpio) {
-      setError('Ingresá tu correo.')
-      return
-    }
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpio)) {
       setError('Ingresá un correo válido.')
       return
     }
 
-    if (!telefono.trim() || !phoneNormalizado) {
+    if (!phoneNormalizado) {
       setError('Ingresá un teléfono válido de Argentina. Ejemplo: +54 9 11 1234 5678.')
-      return
-    }
-
-    if (!passwordLimpia) {
-      setError('Ingresá una contraseña.')
       return
     }
 
@@ -117,39 +73,78 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true)
-      const payload = {
-        dni: dniLimpio,
-        nombre: nombreLimpio,
-        email: emailLimpio,
-        telefono: phoneNormalizado,
-        password: passwordLimpia,
-        clienteId: null,
-      }
 
-      const { data, error: invokeError } = await supabase.functions.invoke('registro-cliente-publico', {
-        body: payload,
-      })
+      const { data: clienteExistente, error: dniCheckError } = await supabase
+        .from('clientes')
+        .select('id')
+        .eq('dni', dniLimpio)
+        .maybeSingle()
 
-      if (invokeError) {
-        const detailMessage = await extractInvokeErrorMessage(invokeError)
-        setError(detailMessage)
+      if (dniCheckError) {
+        setError('No se pudo validar el DNI. Intentá nuevamente.')
         return
       }
 
-      const response = data as { ok?: boolean; error?: string; code?: string } | null
-      if (!response?.ok) {
-        setError(response?.error || 'No se pudo completar el registro.')
+      if (clienteExistente) {
+        setError('Ese DNI ya pertenece a un cliente.')
+        return
+      }
+
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: emailLimpio,
+        password: passwordLimpia,
+      })
+
+      if (signUpError) {
+        if (isEmailAlreadyRegisteredError(signUpError.message || '')) {
+          setError('Ese correo ya está registrado.')
+          return
+        }
+
+        setError('No se pudo crear la cuenta con ese correo.')
+        return
+      }
+
+      const authUserId = authData.user?.id
+      if (!authUserId) {
+        setError('No se pudo obtener el usuario creado. Intentá nuevamente.')
+        return
+      }
+
+      const { error: usuarioError } = await supabase.from('usuarios').insert({
+        id: authUserId,
+        nombre: nombreLimpio,
+        email: emailLimpio,
+        rol: 'cliente',
+      })
+
+      if (usuarioError) {
+        setError('No se pudo completar el alta de usuario. Intentá nuevamente.')
+        return
+      }
+
+      const { error: clienteError } = await supabase.from('clientes').insert({
+        usuario_id: authUserId,
+        nombre: nombreLimpio,
+        telefono: phoneNormalizado,
+        dni: dniLimpio,
+      })
+
+      if (clienteError) {
+        const clienteMessage = (clienteError.message || '').toLowerCase()
+        if (clienteMessage.includes('dni')) {
+          setError('Ese DNI ya pertenece a un cliente.')
+          return
+        }
+
+        setError('No se pudo completar el alta del cliente. Intentá nuevamente.')
         return
       }
 
       setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
       setTimeout(() => router.replace('/login' as any), 600)
-    } catch (err: any) {
-      const payload = await parseErrorPayload(err?.context)
-      const payloadMessage = typeof payload?.error === 'string' ? payload.error.trim() : ''
-      const errMessage = String(err?.message || '').trim()
-
-      setError(payloadMessage || errMessage || 'No se pudo completar el registro en este momento.')
+    } catch {
+      setError('No se pudo completar el registro en este momento.')
     } finally {
       setLoading(false)
     }
