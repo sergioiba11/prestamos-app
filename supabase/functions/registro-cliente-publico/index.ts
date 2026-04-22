@@ -117,13 +117,19 @@ Deno.serve(async (req) => {
     try {
       if (state.insertedUsuario) {
         const { error: deleteUsuarioError } = await admin.from('usuarios').delete().eq('id', state.userId)
-        if (deleteUsuarioError) throw deleteUsuarioError
+        if (deleteUsuarioError) {
+          console.error('ROLLBACK_DELETE_USUARIO_ERROR', deleteUsuarioError)
+          throw deleteUsuarioError
+        }
       }
 
       if (state.clienteId) {
         if (state.createdCliente) {
           const { error: deleteClienteError } = await admin.from('clientes').delete().eq('id', state.clienteId)
-          if (deleteClienteError) throw deleteClienteError
+          if (deleteClienteError) {
+            console.error('ROLLBACK_DELETE_CLIENTE_ERROR', deleteClienteError)
+            throw deleteClienteError
+          }
         } else {
           const { error: restoreClienteError } = await admin
             .from('clientes')
@@ -135,13 +141,19 @@ Deno.serve(async (req) => {
             })
             .eq('id', state.clienteId)
 
-          if (restoreClienteError) throw restoreClienteError
+          if (restoreClienteError) {
+            console.error('ROLLBACK_RESTORE_CLIENTE_ERROR', restoreClienteError)
+            throw restoreClienteError
+          }
         }
       }
 
       if (state.userId) {
         const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
-        if (deleteAuthError) throw deleteAuthError
+        if (deleteAuthError) {
+          console.error('ROLLBACK_DELETE_AUTH_ERROR', deleteAuthError)
+          throw deleteAuthError
+        }
       }
 
       logInfo({
@@ -285,13 +297,19 @@ Deno.serve(async (req) => {
           .select('id,dni,nombre,telefono,usuario_id')
           .eq('id', clienteId)
           .maybeSingle<ClienteRow>()
-        if (error) throw error
+        if (error) {
+          console.error('DUPLICATE_DNI_STEP_ERROR', error)
+          throw error
+        }
         if (data && normalizeDni(data.dni) === dni) cliente = data
       }
 
       if (!cliente) {
         const { data, error } = await supabase.from('clientes').select('id,dni,nombre,telefono,usuario_id').not('dni', 'is', null)
-        if (error) throw error
+        if (error) {
+          console.error('DUPLICATE_DNI_STEP_ERROR', error)
+          throw error
+        }
         const rows = (data || []) as ClienteRow[]
         cliente = rows.find((row) => normalizeDni(row.dni) === dni) || null
       }
@@ -331,7 +349,10 @@ Deno.serve(async (req) => {
         .eq('email', email)
         .maybeSingle()
 
-      if (duplicatedEmailError) throw duplicatedEmailError
+      if (duplicatedEmailError) {
+        console.error('DUPLICATE_EMAIL_STEP_ERROR', duplicatedEmailError)
+        throw duplicatedEmailError
+      }
 
       if (duplicatedEmail?.id) {
         logError({
@@ -345,7 +366,10 @@ Deno.serve(async (req) => {
       }
 
       const { data: authDuplicatedEmail, error: authDuplicatedEmailError } = await supabase.auth.admin.getUserByEmail(email)
-      if (authDuplicatedEmailError) throw authDuplicatedEmailError
+      if (authDuplicatedEmailError) {
+        console.error('DUPLICATE_EMAIL_STEP_ERROR', authDuplicatedEmailError)
+        throw authDuplicatedEmailError
+      }
 
       if (authDuplicatedEmail?.user?.id) {
         logError({
@@ -383,6 +407,7 @@ Deno.serve(async (req) => {
         .maybeSingle<ClienteRow>()
 
       if (createClienteError || !created) {
+        console.error('CREATE_CLIENTE_ERROR', createClienteError)
         logError({
           step: 'CLIENTE_INSERT_ERROR',
           message: createClienteError?.message || 'No se pudo crear cliente base',
@@ -421,6 +446,7 @@ Deno.serve(async (req) => {
     })
 
     if (createAuthError || !authData.user) {
+      console.error('CREATE_AUTH_ERROR', createAuthError)
       logError({
         step: 'AUTH_CREATE_ERROR',
         message: createAuthError?.message || 'No se pudo crear cuenta auth',
@@ -435,6 +461,13 @@ Deno.serve(async (req) => {
     rollback.userId = authData.user.id
     logInfo({ step: 'AUTH_CREATE_OK', message: 'Usuario auth creado', email: logEmail, dni: logDni })
 
+    console.log('INSERT_USUARIO_DATA', {
+      id: authData.user.id,
+      nombre,
+      email,
+      rol: 'cliente',
+    })
+
     const { error: usuarioError } = await supabase.from('usuarios').insert({
       id: authData.user.id,
       nombre,
@@ -443,6 +476,7 @@ Deno.serve(async (req) => {
     })
 
     if (usuarioError) {
+      console.error('USUARIO_ERROR', usuarioError)
       logError({
         step: 'USUARIO_INSERT_ERROR',
         message: usuarioError.message,
@@ -465,6 +499,11 @@ Deno.serve(async (req) => {
     logInfo({ step: 'USUARIO_INSERT_OK', message: 'Usuario interno creado', email: logEmail, dni: logDni })
     logInfo({ step: 'ROL_ASSIGN_OK', message: 'Rol cliente asignado', email: logEmail, dni: logDni })
 
+    console.log('UPDATE_CLIENTE', {
+      clienteId: cliente.id,
+      userId: authData.user.id,
+    })
+
     const { error: clienteUpdateError } = await supabase
       .from('clientes')
       .update({
@@ -476,6 +515,7 @@ Deno.serve(async (req) => {
       .eq('id', cliente.id)
 
     if (clienteUpdateError) {
+      console.error('CLIENTE_UPDATE_ERROR', clienteUpdateError)
       logError({
         step: 'CLIENTE_INSERT_ERROR',
         message: clienteUpdateError.message,
@@ -504,8 +544,8 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       ok: false,
-      error: 'No se pudo completar el registro',
+      error: err?.message || 'Error interno',
       code: 'INTERNAL_ERROR',
-    }, 500)
+    }, 200)
   }
 })
