@@ -14,6 +14,7 @@ import {
   obtenerPrestamoActivoConDetalle,
   type PrestamoDetalle,
 } from '../lib/prestamos'
+import { badgeCuota, badgePago, badgePrestamo } from '../lib/statuses'
 import { supabase } from '../lib/supabase'
 
 type Cliente = {
@@ -156,7 +157,14 @@ export default function ClienteDetalle() {
             <Text style={styles.meta}>Modalidad: {detalle.prestamo.modalidad || '—'}</Text>
             <Text style={styles.meta}>Fecha inicio: {date(detalle.prestamo.fecha_inicio)}</Text>
             <Text style={styles.meta}>Fecha límite: {date(detalle.prestamo.fecha_limite)}</Text>
-            <Text style={styles.meta}>Estado general: {detalle.prestamo.estado || 'activo'}</Text>
+            {(() => {
+              const badge = badgePrestamo(detalle.prestamo.estado)
+              return (
+                <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                  <Text style={[styles.statusBadgeText, { color: badge.text }]}>Préstamo: {badge.label}</Text>
+                </View>
+              )
+            })()}
             <Text style={styles.meta}>Pagado aprobado: {money(detalle.totalPagadoAprobado)}</Text>
             <Text style={styles.meta}>Pagos pendientes: {money(detalle.totalPendienteRevision)}</Text>
             <Text style={styles.meta}>Mora estimada: {detalle.cuotasVencidas > 0 ? 'Con atraso' : 'Al día'}</Text>
@@ -172,7 +180,14 @@ export default function ClienteDetalle() {
                 <Text style={styles.meta}>Vencimiento: {date(detalle.proximaCuota.fecha_vencimiento)}</Text>
                 <Text style={styles.meta}>Monto: {money(detalle.proximaCuota.monto_cuota || 0)}</Text>
                 <Text style={styles.meta}>Saldo pendiente: {money(detalle.proximaCuota.saldo_pendiente || 0)}</Text>
-                <Text style={styles.meta}>Estado: {detalle.proximaCuota.estado || 'pendiente'}</Text>
+                {(() => {
+                  const badge = badgeCuota(detalle.proximaCuota.estado)
+                  return (
+                    <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                      <Text style={[styles.statusBadgeText, { color: badge.text }]}>Estado: {badge.label}</Text>
+                    </View>
+                  )
+                })()}
               </>
             )}
           </View>
@@ -185,7 +200,14 @@ export default function ClienteDetalle() {
                 <Text style={styles.itemMeta}>Vencimiento: {date(c.fecha_vencimiento)}</Text>
                 <Text style={styles.itemMeta}>Monto cuota: {money(c.monto_cuota || 0)}</Text>
                 <Text style={styles.itemMeta}>Saldo pendiente: {money(c.saldo_pendiente || 0)}</Text>
-                <Text style={styles.itemMeta}>Estado: {c.estado || 'pendiente'}</Text>
+                {(() => {
+                  const badge = badgeCuota(c.estado)
+                  return (
+                    <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                      <Text style={[styles.statusBadgeText, { color: badge.text }]}>Estado: {badge.label}</Text>
+                    </View>
+                  )
+                })()}
               </View>
             ))}
           </View>
@@ -200,7 +222,14 @@ export default function ClienteDetalle() {
                   <Text style={styles.itemTitle}>{date(p.created_at)}</Text>
                   <Text style={styles.itemMeta}>Monto: {money(p.monto || 0)}</Text>
                   <Text style={styles.itemMeta}>Método: {p.metodo || '—'}</Text>
-                  <Text style={styles.itemMeta}>Estado: {p.estado || 'pendiente'}</Text>
+                  {(() => {
+                    const badge = badgePago(p.estado)
+                    return (
+                      <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                        <Text style={[styles.statusBadgeText, { color: badge.text }]}>Estado: {badge.label}</Text>
+                      </View>
+                    )
+                  })()}
                 </View>
               ))
             )}
@@ -243,6 +272,8 @@ const styles = StyleSheet.create({
   item: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#1F2937', borderRadius: 10, padding: 10, marginBottom: 8 },
   itemTitle: { color: '#fff', fontWeight: '700' },
   itemMeta: { color: '#94A3B8', fontSize: 12, marginTop: 3 },
+  statusBadge: { marginTop: 6, alignSelf: 'flex-start', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  statusBadgeText: { fontSize: 11, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 8 },
   primaryBtn: { backgroundColor: '#1D4ED8', paddingVertical: 12, borderRadius: 8, alignItems: 'center', flex: 1 },
   primaryText: { color: '#fff', fontWeight: '700' },

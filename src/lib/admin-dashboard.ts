@@ -23,8 +23,11 @@ type PrestamoRow = {
   total_a_pagar: number | null
   saldo_pendiente: number | null
   estado: string | null
+  modalidad: 'mensual' | 'diario' | null
+  cuotas: number | null
   fecha_inicio: string | null
   fecha_limite: string | null
+  fecha_inicio_mora: string | null
 }
 
 type PagoRow = {
@@ -40,6 +43,7 @@ type PagoRow = {
 
 type CuotaRow = {
   prestamo_id: string
+  numero_cuota?: number | null
   fecha_vencimiento: string | null
   monto_cuota: number | null
   monto_pagado: number | null
@@ -131,9 +135,16 @@ export type HistorialPrestamoItem = {
   total: number
   pagado: number
   restante: number
+  modalidad: 'mensual' | 'diario' | null
+  cuotasPlan: number
   estado: string
   fechaInicio: string
   fechaLimite: string
+  fechaMora: string
+  cuotasPagadas: number
+  cuotasPendientes: number
+  proximaCuotaNumero: number | null
+  proximaCuotaVencimiento: string
 }
 
 export type AdminDashboardData = {
@@ -277,7 +288,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: prestamosRaw, error: prestamosError } = await supabase
     .from('prestamos')
-    .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+    .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,modalidad,cuotas,fecha_inicio,fecha_limite,fecha_inicio_mora')
 
   if (prestamosError) {
     console.error('[admin-dashboard] prestamos fallback error', prestamosError)
@@ -412,14 +423,14 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const [cuotasResult, pagosResult, prestamosResult] = await Promise.allSettled([
     supabase
       .from('cuotas')
-      .select('prestamo_id,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
+      .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
       .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado_validacion')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
-      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,fecha_inicio,fecha_limite')
+      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,modalidad,cuotas,fecha_inicio,fecha_limite,fecha_inicio_mora')
       .order('fecha_inicio', { ascending: false }),
   ])
 
@@ -492,11 +503,25 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     pagosByPrestamo.set(pago.prestamo_id, current + toNumber(pago.monto))
   }
 
+  const cuotasByPrestamo = new Map<string, CuotaRow[]>()
+  for (const cuota of cuotas) {
+    if (!cuota.prestamo_id) continue
+    const list = cuotasByPrestamo.get(cuota.prestamo_id) || []
+    list.push(cuota)
+    cuotasByPrestamo.set(cuota.prestamo_id, list)
+  }
+
   const historial: HistorialPrestamoItem[] = prestamos.map((prestamo) => {
     const total = toNumber(prestamo.total_a_pagar)
     const pagado = toNumber(pagosByPrestamo.get(prestamo.id))
     const restante = Math.max(total - pagado, 0)
     const cliente = clientesById.get(prestamo.cliente_id)
+    const cuotasPrestamo = cuotasByPrestamo.get(prestamo.id) || []
+    const cuotasPagadas = cuotasPrestamo.filter((c) => low(c.estado) === 'pagada' || toNumber(c.saldo_pendiente) <= 0).length
+    const cuotasPendientes = cuotasPrestamo.filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0).length
+    const proximaCuota = cuotasPrestamo
+      .filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0)
+      .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')))[0]
 
     return {
       prestamoId: prestamo.id,
@@ -508,9 +533,16 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       total,
       pagado,
       restante,
+      modalidad: prestamo.modalidad || null,
+      cuotasPlan: toNumber(prestamo.cuotas),
       estado: low(prestamo.estado) || 'activo',
       fechaInicio: ymd(prestamo.fecha_inicio),
       fechaLimite: ymd(prestamo.fecha_limite),
+      fechaMora: ymd(prestamo.fecha_inicio_mora || prestamo.fecha_limite),
+      cuotasPagadas,
+      cuotasPendientes,
+      proximaCuotaNumero: proximaCuota?.numero_cuota ? toNumber(proximaCuota.numero_cuota) : null,
+      proximaCuotaVencimiento: ymd(proximaCuota?.fecha_vencimiento || null),
     }
   })
 
