@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import {
   authenticateWithBiometrics,
@@ -35,6 +35,12 @@ export default function Configuraciones() {
   const [mpConfig, setMpConfig] = useState<MercadoPagoConfig | null>(null)
   const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>('loading')
   const [updatingBiometric, setUpdatingBiometric] = useState(false)
+  const [negocioNombre, setNegocioNombre] = useState('')
+  const [negocioTelefono, setNegocioTelefono] = useState('')
+  const [negocioAlias, setNegocioAlias] = useState('')
+  const [brandingPrimario, setBrandingPrimario] = useState('#2563EB')
+  const [preferenciaComprobanteSms, setPreferenciaComprobanteSms] = useState(true)
+  const [savingBusinessData, setSavingBusinessData] = useState(false)
 
   const loadBiometricStatus = useCallback(async () => {
     if (!session?.user?.id) {
@@ -95,8 +101,36 @@ export default function Configuraciones() {
       alias_cuenta: data?.alias_cuenta ? String(data.alias_cuenta) : null,
       updated_at: data?.updated_at ? String(data.updated_at) : null,
     })
+    setNegocioNombre(String((data as any)?.nombre_negocio || 'CrediTodo'))
+    setNegocioTelefono(String((data as any)?.telefono_negocio || ''))
+    setNegocioAlias(String(data?.alias_cuenta || ''))
     setEstadoMp(connected ? 'connected' : 'disconnected')
   }, [session?.user?.id])
+
+  const guardarDatosNegocio = useCallback(async () => {
+    if (!session?.user?.id || savingBusinessData) return
+    setSavingBusinessData(true)
+    try {
+      const { error } = await supabase
+        .from('admin_settings')
+        .upsert({
+          user_id: session.user.id,
+          nombre_negocio: negocioNombre.trim() || 'CrediTodo',
+          telefono_negocio: negocioTelefono.trim() || null,
+          alias_cuenta: negocioAlias.trim() || null,
+          branding_primario: brandingPrimario.trim() || '#2563EB',
+          preferencia_comprobante_sms: preferenciaComprobanteSms,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+
+      if (error) throw error
+      Alert.alert('Listo', 'Configuración del negocio guardada.')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo guardar configuración')
+    } finally {
+      setSavingBusinessData(false)
+    }
+  }, [brandingPrimario, negocioAlias, negocioNombre, negocioTelefono, preferenciaComprobanteSms, savingBusinessData, session?.user?.id])
 
   useFocusEffect(
     useCallback(() => {
@@ -369,11 +403,19 @@ export default function Configuraciones() {
           <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
         </TouchableOpacity>
 
-        <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Cobros y mora</Text>
-          <Text style={styles.cardTextDisabled}>
-            Próximamente vas a poder ajustar días de gracia, mora diaria, castigo y reglas de cobro.
-          </Text>
+        <View style={[styles.card, styles.cardActive]}>
+          <Text style={styles.cardTitleActive}>Datos del negocio y branding</Text>
+          <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
+          <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
+          <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
+          <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
+          <View style={styles.preferenceRow}>
+            <Text style={styles.cardTextActive}>Enviar comprobante por SMS</Text>
+            <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
+          </View>
+          <TouchableOpacity style={styles.connectButton} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
+            {savingBusinessData ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar configuración</Text>}
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.card, styles.cardDisabled]}>
@@ -391,9 +433,9 @@ export default function Configuraciones() {
         </View>
 
         <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Marca y panel</Text>
+          <Text style={styles.cardTitleDisabled}>Integración Mercado Pago</Text>
           <Text style={styles.cardTextDisabled}>
-            Próximamente: logo, colores, textos del negocio y accesos rápidos personalizados.
+            Próximamente: conciliación automática, webhook de estados y reportes por canal de cobro.
           </Text>
         </View>
       </ScrollView>
@@ -544,6 +586,22 @@ const styles = StyleSheet.create({
   cardTextActive: {
     color: '#CBD5E1',
     fontSize: 14,
+  },
+  input: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#020817',
+    color: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  preferenceRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cardDisabled: {
     backgroundColor: '#0F172A',

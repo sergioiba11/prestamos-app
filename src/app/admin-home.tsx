@@ -111,6 +111,7 @@ export default function AdminHome() {
   const onNavigate = (key: AdminNavKey) => {
     setMenuOpen(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
     if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
@@ -118,6 +119,7 @@ export default function AdminHome() {
     if (key === 'clientes') return router.push('/clientes' as any)
     if (key === 'crear-cliente') return router.push('/nuevo-cliente' as any)
     if (key === 'crear-empleado') return router.push('/nuevo-empleado' as any)
+    if (key === 'actividad') return router.push('/actividad' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
@@ -220,7 +222,7 @@ export default function AdminHome() {
           </View>
 
           <View style={styles.kpiGrid}>
-            <AdminStatCard label="A cobrar hoy" subtitle="Sin vencimientos hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+            <AdminStatCard label="A cobrar hoy" subtitle={kpis.cobrarHoy > 0 ? 'Cuotas con vencimiento hoy' : 'Sin vencimientos hoy'} value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
             <AdminStatCard label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
             <AdminStatCard label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
             <AdminStatCard label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
@@ -233,9 +235,25 @@ export default function AdminHome() {
               <AdminQuickAction label="Registrar pago" subtitle="Registrar abono" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
               <AdminQuickAction label="Nuevo cliente" subtitle="Agregar cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
               <AdminQuickAction label="Ver clientes" subtitle="Lista completa" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
+              <AdminQuickAction label="Ver préstamos" subtitle="Estado completo" icon="document-text-outline" onPress={() => router.push('/prestamos' as any)} />
               <AdminQuickAction label="Pagos pendientes" subtitle="Aprobación/rechazo" icon="hourglass-outline" onPress={() => router.push('/pagos-pendientes' as any)} />
               <AdminQuickAction label="Historial" subtitle="Préstamos históricos" icon="time-outline" onPress={() => router.push('/historial-prestamos' as any)} />
+              <AdminQuickAction label="Actividad" subtitle="Auditoría base" icon="pulse-outline" onPress={() => router.push('/actividad' as any)} />
             </View>
+          </View>
+
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>Resumen del sistema</Text>
+              <Text style={styles.summaryItem}>Clientes activos: {kpis.clientesActivos}</Text>
+              <Text style={styles.summaryItem}>Préstamos vencidos: {kpis.prestamosVencidos}</Text>
+              <Text style={styles.summaryItem}>Pagos pendientes: {kpis.pagosPendientes}</Text>
+            </View>
+            <TouchableOpacity style={[styles.summaryCard, styles.summaryClickable]} onPress={() => router.push('/configuraciones' as any)}>
+              <Text style={styles.summaryTitle}>Configuración y branding</Text>
+              <Text style={styles.summaryItem}>Accedé a negocio, medios de cobro y preferencias.</Text>
+              <Text style={styles.historyLink}>Abrir configuración</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.twoColumns}>
@@ -379,6 +397,11 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
   actionsGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   twoColumns: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  summaryCard: { flex: 1, minWidth: 280, borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', padding: 14, backgroundColor: '#0B1220' },
+  summaryClickable: { justifyContent: 'space-between' },
+  summaryTitle: { color: '#E2E8F0', fontWeight: '800', marginBottom: 8 },
+  summaryItem: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
   pendingSection: { flex: 2, minWidth: 320 },
   pendingEmptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 22 },
   pendingSuccessIcon: {

@@ -163,6 +163,21 @@ export default function ClienteDetalle() {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Próxima cuota pendiente</Text>
+            {!detalle.proximaCuota ? (
+              <Text style={styles.empty}>No hay cuotas pendientes.</Text>
+            ) : (
+              <>
+                <Text style={styles.meta}>Cuota #{detalle.proximaCuota.numero_cuota}</Text>
+                <Text style={styles.meta}>Vencimiento: {date(detalle.proximaCuota.fecha_vencimiento)}</Text>
+                <Text style={styles.meta}>Monto: {money(detalle.proximaCuota.monto_cuota || 0)}</Text>
+                <Text style={styles.meta}>Saldo pendiente: {money(detalle.proximaCuota.saldo_pendiente || 0)}</Text>
+                <Text style={styles.meta}>Estado: {detalle.proximaCuota.estado || 'pendiente'}</Text>
+              </>
+            )}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Cuotas</Text>
             {detalle.cuotas.map((c) => (
               <View key={c.id} style={styles.item}>
@@ -192,12 +207,20 @@ export default function ClienteDetalle() {
           </View>
 
           {!esClienteFinal && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => router.push({ pathname: '/cargar-pago', params: { cliente_id: cliente.id } } as any)}
-            >
-              <Text style={styles.primaryText}>Registrar pago</Text>
-            </TouchableOpacity>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => router.push({ pathname: '/cargar-pago', params: { cliente_id: cliente.id } } as any)}
+              >
+                <Text style={styles.primaryText}>Registrar pago</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => router.push({ pathname: '/historial-prestamos', params: { cliente_id: cliente.id } } as any)}
+              >
+                <Text style={styles.secondaryText}>Ver historial</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </>
       )}
@@ -220,6 +243,9 @@ const styles = StyleSheet.create({
   item: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#1F2937', borderRadius: 10, padding: 10, marginBottom: 8 },
   itemTitle: { color: '#fff', fontWeight: '700' },
   itemMeta: { color: '#94A3B8', fontSize: 12, marginTop: 3 },
-  primaryBtn: { backgroundColor: '#1D4ED8', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  actionsRow: { flexDirection: 'row', gap: 8 },
+  primaryBtn: { backgroundColor: '#1D4ED8', paddingVertical: 12, borderRadius: 8, alignItems: 'center', flex: 1 },
   primaryText: { color: '#fff', fontWeight: '700' },
+  secondaryBtn: { backgroundColor: '#1E293B', paddingVertical: 12, borderRadius: 8, alignItems: 'center', flex: 1 },
+  secondaryText: { color: '#E2E8F0', fontWeight: '700' },
 })

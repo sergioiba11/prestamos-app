@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import * as Linking from 'expo-linking'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { logActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
@@ -51,6 +52,7 @@ export default function PagosPendientesScreen() {
   const onNavigate = (key: AdminNavKey) => {
     setMobileMenu(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
     if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
@@ -58,6 +60,7 @@ export default function PagosPendientesScreen() {
     if (key === 'clientes') return router.push('/clientes' as any)
     if (key === 'crear-cliente') return router.push('/nuevo-cliente' as any)
     if (key === 'crear-empleado') return router.push('/nuevo-empleado' as any)
+    if (key === 'actividad') return router.push('/actividad' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
@@ -196,7 +199,11 @@ export default function PagosPendientesScreen() {
               <Text style={styles.meta}>DNI: {item.clientes?.dni || '—'} · Método: {item.metodo || '—'}</Text>
               <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado_validacion || 'pendiente'}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
-              {item.comprobante_url ? <Text style={styles.meta}>Comprobante: {item.comprobante_url}</Text> : null}
+              {item.comprobante_url ? (
+                <TouchableOpacity onPress={() => Linking.openURL(item.comprobante_url || '')}>
+                  <Text style={[styles.meta, styles.linkText]}>Ver comprobante</Text>
+                </TouchableOpacity>
+              ) : null}
               {item.observacion ? <Text style={styles.meta}>Obs. carga: {item.observacion}</Text> : null}
 
               <View style={styles.actions}>
@@ -257,6 +264,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   amount: { color: '#60A5FA', fontWeight: '800', fontSize: 16 },
   meta: { color: '#94A3B8', fontSize: 12 },
+  linkText: { color: '#93C5FD', textDecorationLine: 'underline' },
   actions: { marginTop: 6, flexDirection: 'row', gap: 8 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   approveBtn: { borderColor: '#166534', backgroundColor: '#052E16' },

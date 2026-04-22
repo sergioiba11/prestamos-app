@@ -76,6 +76,7 @@ export default function HistorialPrestamosScreen() {
     setShowMobileMenu(false)
 
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
     if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
@@ -83,6 +84,7 @@ export default function HistorialPrestamosScreen() {
     if (key === 'clientes') return router.push('/clientes' as any)
     if (key === 'crear-cliente') return router.push('/nuevo-cliente' as any)
     if (key === 'crear-empleado') return router.push('/nuevo-empleado' as any)
+    if (key === 'actividad') return router.push('/actividad' as any)
     if (key === 'config') return router.push('/configuraciones' as any)
   }
 
