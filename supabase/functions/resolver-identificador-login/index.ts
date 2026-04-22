@@ -13,6 +13,10 @@ function jsonResponse(payload: Record<string, unknown>, status = 200) {
   })
 }
 
+function businessError(error: string, code: string, status = 200) {
+  return jsonResponse({ ok: false, error, code }, status)
+}
+
 function normalizeDni(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '')
 }
@@ -27,7 +31,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ ok: false, error: 'Método no permitido.' }, 405)
+    return jsonResponse({ ok: false, error: 'Método no permitido.', code: 'METHOD_NOT_ALLOWED' }, 405)
   }
 
   try {
@@ -42,7 +46,7 @@ Deno.serve(async (req) => {
     const identifier = String(body?.identifier ?? '').trim()
 
     if (!identifier) {
-      return jsonResponse({ ok: false, error: 'Ingresá DNI o correo.' }, 400)
+      return businessError('Ingresá DNI o correo.', 'IDENTIFIER_REQUIRED')
     }
 
     if (isEmail(identifier)) {
@@ -51,7 +55,7 @@ Deno.serve(async (req) => {
 
     const dni = normalizeDni(identifier)
     if (!/^\d{7,8}$/.test(dni)) {
-      return jsonResponse({ ok: false, error: 'Ingresá un DNI válido de 7 u 8 dígitos o un correo válido.' }, 400)
+      return businessError('Ingresá un DNI válido de 7 u 8 dígitos o un correo válido.', 'IDENTIFIER_INVALID')
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -68,7 +72,7 @@ Deno.serve(async (req) => {
     const match = (clientes || []).find((row: any) => normalizeDni(row?.dni) === dni)
 
     if (!match?.usuario_id) {
-      return jsonResponse({ ok: false, error: 'No encontramos una cuenta asociada a ese DNI.' }, 404)
+      return businessError('No encontramos una cuenta asociada a ese DNI.', 'DNI_NOT_FOUND')
     }
 
     const { data: usuario, error: usuarioError } = await supabase
@@ -81,7 +85,7 @@ Deno.serve(async (req) => {
 
     const email = String(usuario?.email ?? '').trim().toLowerCase()
     if (!email || !isEmail(email)) {
-      return jsonResponse({ ok: false, error: 'La cuenta asociada al DNI no tiene un correo válido.' }, 404)
+      return businessError('La cuenta asociada al DNI no tiene un correo válido.', 'EMAIL_NOT_AVAILABLE')
     }
 
     return jsonResponse({ ok: true, email, source: 'dni' })
