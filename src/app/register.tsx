@@ -11,7 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
 } from 'react-native'
-import { normalizeDni, normalizePhoneAR } from '../lib/onboarding'
+import { normalizeDni } from '../lib/onboarding'
 import { supabase } from '../lib/supabase'
 
 export default function RegisterScreen() {
@@ -24,14 +24,30 @@ export default function RegisterScreen() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const isEmailAlreadyRegisteredError = (rawMessage: string): boolean => {
+  const mapSignUpErrorMessage = (rawMessage: string): string => {
     const message = rawMessage.toLowerCase()
-    return (
+
+    if (
       message.includes('user already registered') ||
       message.includes('already registered') ||
       message.includes('already exists') ||
       message.includes('email exists')
-    )
+    ) {
+      return 'Ese correo ya está registrado.'
+    }
+
+    if (message.includes('invalid email') || message.includes('email address')) {
+      return 'Ingresá un correo válido.'
+    }
+
+    if (
+      message.includes('password') &&
+      (message.includes('at least 6') || message.includes('weak') || message.includes('invalid'))
+    ) {
+      return 'La contraseña debe tener al menos 6 caracteres.'
+    }
+
+    return 'No se pudo crear la cuenta. Intentá nuevamente.'
   }
 
   const submit = async () => {
@@ -40,19 +56,14 @@ export default function RegisterScreen() {
     const nombreLimpio = nombre.trim()
     const dniLimpio = normalizeDni(dni)
     const emailLimpio = email.trim().toLowerCase()
-    const phoneNormalizado = normalizePhoneAR(telefono)
+    const telefonoLimpio = telefono.trim()
     const passwordLimpia = password.trim()
 
     setError('')
     setSuccess('')
 
-    if (!nombreLimpio || !dniLimpio || !emailLimpio || !telefono.trim() || !passwordLimpia) {
-      setError('Faltan datos obligatorios.')
-      return
-    }
-
-    if (!/^\d{7,8}$/.test(dniLimpio)) {
-      setError('Ingresá un DNI válido de 7 u 8 dígitos.')
+    if (!nombreLimpio || !dniLimpio || !emailLimpio || !telefonoLimpio || !passwordLimpia) {
+      setError('Completá todos los campos.')
       return
     }
 
@@ -61,13 +72,8 @@ export default function RegisterScreen() {
       return
     }
 
-    if (!phoneNormalizado) {
-      setError('Ingresá un teléfono válido de Argentina. Ejemplo: +54 9 11 1234 5678.')
-      return
-    }
-
-    if (passwordLimpia.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres.')
+    if (passwordLimpia.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.')
       return
     }
 
@@ -96,18 +102,13 @@ export default function RegisterScreen() {
       })
 
       if (signUpError) {
-        if (isEmailAlreadyRegisteredError(signUpError.message || '')) {
-          setError('Ese correo ya está registrado.')
-          return
-        }
-
-        setError('No se pudo crear la cuenta con ese correo.')
+        setError(mapSignUpErrorMessage(signUpError.message || ''))
         return
       }
 
       const authUserId = authData.user?.id
       if (!authUserId) {
-        setError('No se pudo obtener el usuario creado. Intentá nuevamente.')
+        setError('No se pudo crear la cuenta. Intentá nuevamente.')
         return
       }
 
@@ -119,14 +120,14 @@ export default function RegisterScreen() {
       })
 
       if (usuarioError) {
-        setError('No se pudo completar el alta de usuario. Intentá nuevamente.')
+        setError('No se pudo completar el alta en usuarios.')
         return
       }
 
       const { error: clienteError } = await supabase.from('clientes').insert({
         usuario_id: authUserId,
         nombre: nombreLimpio,
-        telefono: phoneNormalizado,
+        telefono: telefonoLimpio,
         dni: dniLimpio,
       })
 
@@ -137,7 +138,7 @@ export default function RegisterScreen() {
           return
         }
 
-        setError('No se pudo completar el alta del cliente. Intentá nuevamente.')
+        setError('No se pudo completar el alta en clientes.')
         return
       }
 
