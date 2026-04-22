@@ -32,10 +32,12 @@ entrypoint = "./functions/webhook-mp/index.ts"
 
 [functions.registro-cliente-publico]
 enabled = true
+# Public endpoint: used before user authentication.
 verify_jwt = false
 entrypoint = "./functions/registro-cliente-publico/index.ts"
 
 [functions.resolver-identificador-login]
 enabled = true
+# Public endpoint: resolves login identifier prior to session creation.
 verify_jwt = false
 entrypoint = "./functions/resolver-identificador-login/index.ts"
