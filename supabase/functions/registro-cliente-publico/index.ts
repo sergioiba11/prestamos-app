@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
         message: 'Variables de entorno faltantes',
         code: 'MISSING_ENV',
       })
-      return jsonResponse({ ok: false, error: 'Faltan variables de entorno de Supabase.', code: 'MISSING_ENV' }, 500)
+      return businessError('Faltan variables de entorno de Supabase.', 'MISSING_ENV')
     }
 
     const body = await req.json().catch(() => ({}))
