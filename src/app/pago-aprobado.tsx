@@ -148,11 +148,10 @@ export default function PagoAprobado() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const receiptRef = useRef<View | null>(null)
 
-  const montoPagado = getParamNumber(params.monto)
-  const montoEntregado = getParamNumber(params.monto_ingresado)
-  const vuelto = getParamNumber(params.vuelto)
+  const montoAplicado = getParamNumber(params.monto)
+  const montoIngresado = getParamNumber(params.monto_ingresado, montoAplicado)
   const saldoRestante = getParamNumber(params.saldo_restante)
-  const montoCuota = getParamNumber(params.monto_cuota, montoPagado)
+  const saldoRestanteCuota = getParamNumber(params.saldo_restante_cuota)
 
   const metodo = getParamString(params.metodo, 'No informado')
   const prestamoId = getParamString(params.prestamo_id)
@@ -183,14 +182,55 @@ export default function PagoAprobado() {
   const clienteTelefono = getParamString(params.cliente_telefono)
   const observaciones = getParamString(params.observaciones)
 
+  const isEfectivo = metodo.toLowerCase() === 'efectivo'
+  const paymentMethodLabel =
+    metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
+      ? 'Mercado Pago'
+      : metodo[0]?.toUpperCase() + metodo.slice(1)
+
+  const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
+  const vueltoParam = getParamNumber(params.vuelto, computedVuelto)
+  const vuelto = isEfectivo ? Math.max(vueltoParam, computedVuelto) : 0
+
+  const cuotasDetalleNormalizadas = useMemo(() => {
+    if (cuotasImpactadasDetalle.length > 0) return cuotasImpactadasDetalle
+    if (cuotasImpactadas.length > 0) {
+      return cuotasImpactadas.map((numero) => ({
+        numero_cuota: numero,
+        estado: '',
+        monto_aplicado: 0,
+        saldo_antes: 0,
+        saldo_despues: 0,
+      }))
+    }
+    if (numeroCuota) {
+      const n = Number(numeroCuota)
+      if (Number.isFinite(n) && n > 0) {
+        return [
+          {
+            numero_cuota: n,
+            estado: estadoComprobante,
+            monto_aplicado: montoAplicado,
+            saldo_antes: montoAplicado + saldoRestanteCuota,
+            saldo_despues: saldoRestanteCuota,
+          },
+        ]
+      }
+    }
+    return [] as CuotaImpactadaDetalle[]
+  }, [cuotasImpactadasDetalle, cuotasImpactadas, numeroCuota, estadoComprobante, montoAplicado, saldoRestanteCuota])
+
+  const cantidadCuotasImpactadas = cuotasDetalleNormalizadas.length
+  const esPagoParcial = estadoComprobante === 'PARCIAL' || saldoRestanteCuota > 0
+  const esMultiCuota = cantidadCuotasImpactadas > 1
+  const cuotaPrincipal = cuotasDetalleNormalizadas[0] || null
+
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
-  const cuotasTexto = cuotasImpactadasDetalle.length
-    ? cuotasImpactadasDetalle
-        .map((item) => `#${item.numero_cuota} (${String(item.estado || '').toUpperCase()})`)
+  const cuotasTexto = cuotasDetalleNormalizadas.length
+    ? cuotasDetalleNormalizadas
+        .map((item) => `#${item.numero_cuota}${item.estado ? ` (${String(item.estado || '').toUpperCase()})` : ''}`)
         .join(', ')
-    : cuotasImpactadas.length > 0
-      ? cuotasImpactadas.map((item) => `#${item}`).join(', ')
-      : 'Sin detalle de cuotas impactadas'
+    : 'Sin detalle de cuotas impactadas'
 
   const proximaCuotaTexto = proximaCuota
     ? `Cuota #${proximaCuota}`
@@ -198,27 +238,21 @@ export default function PagoAprobado() {
       ? 'Préstamo saldado / sin saldo pendiente'
       : 'Sin próxima cuota informada'
 
-  const isEfectivo = metodo.toLowerCase() === 'efectivo'
-  const paymentMethodLabel =
-    metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
-      ? 'Mercado Pago'
-      : metodo[0]?.toUpperCase() + metodo.slice(1)
-
   const shareText = [
     'Comprobante de pago - Creditodo',
     `Recibo: ${receiptNumber}`,
     `Cliente: ${clienteNombre}`,
-    `Monto pagado: ${formatCurrencyArs(montoPagado)}`,
+    `Monto aplicado: ${formatCurrencyArs(montoAplicado)}`,
     `Método: ${paymentMethodLabel}`,
     `Fecha: ${fechaFormateada}`,
     `Cuotas impactadas: ${cuotasTexto}`,
-    `Saldo restante: ${formatCurrencyArs(saldoRestante)}`,
+    `Saldo restante del préstamo: ${formatCurrencyArs(saldoRestante)}`,
   ].join('\n')
 
   const receiptMetaItems: ReceiptLineItem[] = [
     {
       label: 'Estado',
-      value: estadoComprobante === 'PARCIAL' ? 'Pago aprobado (PARCIAL)' : 'Pago aprobado (COMPLETO)',
+      value: esPagoParcial ? 'Pago aprobado (PARCIAL)' : 'Pago aprobado (COMPLETO)',
       emphasize: true,
     },
     { label: 'Recibo N.º', value: receiptNumber },
@@ -235,31 +269,57 @@ export default function PagoAprobado() {
 
   const paymentItems: ReceiptLineItem[] = [
     { label: 'Método de pago', value: formatFallback(paymentMethodLabel) },
-    { label: 'Cuota abonada', value: numeroCuota ? `Cuota #${numeroCuota}` : 'No informada' },
     {
-      label: 'Cantidad de cuotas impactadas',
-      value: cuotasImpactadas.length ? String(cuotasImpactadas.length) : 'No informado',
+      label: 'Cuotas impactadas',
+      value: cantidadCuotasImpactadas ? `${cantidadCuotasImpactadas} (${cuotasTexto})` : 'No informado',
     },
-    { label: 'Cuotas impactadas', value: cuotasTexto },
     { label: 'Próxima cuota pendiente', value: proximaCuotaTexto },
+    ...(esPagoParcial
+      ? [
+          {
+            label: 'Resultado de aplicación',
+            value: 'Pago parcial: quedó saldo pendiente en al menos una cuota.',
+            emphasize: true,
+          },
+        ]
+      : []),
   ]
 
-  const financeItems: ReceiptLineItem[] = [
-    { label: 'Monto de cuota', value: formatCurrencyArs(montoCuota) },
-    { label: 'Monto pagado', value: formatCurrencyArs(montoPagado), emphasize: true },
-    {
-      label: isEfectivo ? 'Monto entregado' : 'Monto acreditado',
-      value: formatCurrencyArs(isEfectivo ? montoEntregado : montoPagado),
-    },
-    ...(isEfectivo
-      ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }]
-      : []),
-    {
-      label: 'Saldo restante',
-      value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
-      emphasize: saldoRestante <= 0,
-    },
-  ]
+  const financeItems: ReceiptLineItem[] = esMultiCuota
+    ? [
+        { label: 'Monto total aplicado', value: formatCurrencyArs(montoAplicado), emphasize: true },
+        { label: isEfectivo ? 'Monto entregado' : 'Monto acreditado', value: formatCurrencyArs(montoIngresado) },
+        ...(isEfectivo ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }] : []),
+        {
+          label: 'Saldo restante del préstamo',
+          value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
+          emphasize: saldoRestante <= 0,
+        },
+      ]
+    : [
+        { label: 'Cuota impactada', value: cuotaPrincipal ? `Cuota #${cuotaPrincipal.numero_cuota}` : formatFallback(numeroCuota, 'No informada') },
+        {
+          label: 'Monto de la cuota',
+          value: formatCurrencyArs(cuotaPrincipal ? Number(cuotaPrincipal.saldo_antes || 0) : montoAplicado + saldoRestanteCuota),
+        },
+        { label: 'Monto aplicado', value: formatCurrencyArs(montoAplicado), emphasize: true },
+        { label: isEfectivo ? 'Monto entregado' : 'Monto acreditado', value: formatCurrencyArs(montoIngresado) },
+        ...(isEfectivo ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }] : []),
+        {
+          label: 'Saldo restante de la cuota',
+          value: saldoRestanteCuota > 0 ? formatCurrencyArs(saldoRestanteCuota) : 'Cuota saldada',
+          emphasize: saldoRestanteCuota <= 0,
+        },
+        {
+          label: 'Saldo restante del préstamo',
+          value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
+          emphasize: saldoRestante <= 0,
+        },
+      ]
+
+  const backToPrestamoUrl = prestamoId
+    ? `/cliente-detalle?cliente_id=${clienteId}&prestamo_id=${prestamoId}`
+    : `/cliente-detalle?cliente_id=${clienteId}`
 
   const paymentIdentifier = formatFallback(pagoInternoId || pagoId, 'No disponible')
 
@@ -448,6 +508,23 @@ export default function PagoAprobado() {
             ))}
           </View>
 
+          {esMultiCuota ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Detalle por cuota impactada</Text>
+              {cuotasDetalleNormalizadas.map((item) => (
+                <View key={`cuota-impactada-${item.numero_cuota}`} style={styles.row}>
+                  <Text style={styles.rowValue}>Cuota #{item.numero_cuota}</Text>
+                  <Text style={styles.rowLabel}>Monto aplicado: {formatCurrencyArs(item.monto_aplicado || 0)}</Text>
+                  <Text style={styles.rowLabel}>Saldo previo: {formatCurrencyArs(item.saldo_antes || 0)}</Text>
+                  <Text style={styles.rowLabel}>Saldo posterior: {formatCurrencyArs(item.saldo_despues || 0)}</Text>
+                  <Text style={[styles.rowLabel, styles.resultingState]}>
+                    Estado resultante: {formatFallback(String(item.estado || '').toUpperCase(), 'NO INFORMADO')}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Observaciones</Text>
             <Text style={styles.notes}>{formatFallback(observaciones, 'Sin observaciones registradas')}</Text>
@@ -477,10 +554,10 @@ export default function PagoAprobado() {
           </Pressable>
           <Pressable
             style={styles.actionGhost}
-            onPress={() => router.replace(`/cliente-detalle?cliente_id=${clienteId}` as any)}
+            onPress={() => router.replace(backToPrestamoUrl as any)}
             nativeID="creditodo-recibo-back"
           >
-            <Text style={styles.actionGhostText}>Volver al préstamo / cliente</Text>
+            <Text style={styles.actionGhostText}>Volver al préstamo</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -611,6 +688,10 @@ const styles = StyleSheet.create({
   },
   highlightValue: {
     color: '#14532D',
+  },
+  resultingState: {
+    color: '#1D4ED8',
+    fontWeight: '700',
   },
   notes: {
     paddingHorizontal: 12,

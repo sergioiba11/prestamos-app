@@ -208,7 +208,7 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
             <Text style={styles.title}>Iniciar sesión</Text>
-            <Text style={styles.subtitle}>Entrá con tu email o DNI para continuar.</Text>
+            <Text style={styles.subtitle}>Entrá con DNI o email para continuar. Si no tenés cuenta, podés crearla por DNI o por email.</Text>
 
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={20} color="#6B7A99" />
@@ -263,9 +263,20 @@ export default function LoginScreen() {
               <Text style={styles.ghostLinkText}>¿No sos vos? Recuperar usuario</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.createAccountButton} onPress={() => router.push('/register' as any)}>
-              <Text style={styles.createAccountText}>Crear cuenta</Text>
-            </TouchableOpacity>
+            <View style={styles.registerActions}>
+              <TouchableOpacity
+                style={styles.createAccountButton}
+                onPress={() => router.push({ pathname: '/register', params: { mode: 'dni' } } as any)}
+              >
+                <Text style={styles.createAccountText}>Crear cuenta con DNI</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.createAccountButton}
+                onPress={() => router.push({ pathname: '/register', params: { mode: 'email' } } as any)}
+              >
+                <Text style={styles.createAccountText}>Crear cuenta con email</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.dividerRow}>
@@ -391,6 +402,9 @@ const styles = StyleSheet.create({
     color: '#4B5C7A',
     fontSize: 13,
     fontWeight: '600',
+  },
+  registerActions: {
+    gap: 8,
   },
   createAccountButton: {
     minHeight: 52,

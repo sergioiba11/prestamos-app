@@ -66,33 +66,7 @@ function normalizarEstado(estado?: string | null) {
   return String(estado || '').toLowerCase()
 }
 
-export async function obtenerPrestamoActivoConDetalle(clienteId: string): Promise<PrestamoDetalle | null> {
-  const { data: prestamoData, error: prestamoError } = await supabase
-    .from('prestamos')
-    .select(`
-      id,
-      cliente_id,
-      monto,
-      interes,
-      total_a_pagar,
-      fecha_inicio,
-      fecha_limite,
-      fecha_inicio_mora,
-      estado,
-      modalidad,
-      cuotas,
-      dias_plazo,
-      saldo_pendiente
-    `)
-    .eq('cliente_id', clienteId)
-    .in('estado', ['activo', 'pendiente', 'en_mora'])
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (prestamoError) throw prestamoError
-  if (!prestamoData) return null
-
+async function construirDetallePrestamo(prestamoData: PrestamoBase): Promise<PrestamoDetalle> {
   const [cuotasRes, pagosRes] = await Promise.all([
     supabase
       .from('cuotas')
@@ -157,7 +131,7 @@ export async function obtenerPrestamoActivoConDetalle(clienteId: string): Promis
   }) || null
 
   return {
-    prestamo: prestamoData as PrestamoBase,
+    prestamo: prestamoData,
     cuotas,
     pagos,
     totalPagadoAprobado,
@@ -169,4 +143,61 @@ export async function obtenerPrestamoActivoConDetalle(clienteId: string): Promis
     cuotasPendientes,
     cuotasVencidas,
   }
+}
+
+export async function obtenerPrestamoActivoConDetalle(clienteId: string): Promise<PrestamoDetalle | null> {
+  const { data: prestamoData, error: prestamoError } = await supabase
+    .from('prestamos')
+    .select(`
+      id,
+      cliente_id,
+      monto,
+      interes,
+      total_a_pagar,
+      fecha_inicio,
+      fecha_limite,
+      fecha_inicio_mora,
+      estado,
+      modalidad,
+      cuotas,
+      dias_plazo,
+      saldo_pendiente
+    `)
+    .eq('cliente_id', clienteId)
+    .in('estado', ['activo', 'pendiente', 'en_mora'])
+    .order('fecha_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (prestamoError) throw prestamoError
+  if (!prestamoData) return null
+
+  return construirDetallePrestamo(prestamoData as PrestamoBase)
+}
+
+export async function obtenerPrestamoConDetallePorId(prestamoId: string): Promise<PrestamoDetalle | null> {
+  const { data: prestamoData, error: prestamoError } = await supabase
+    .from('prestamos')
+    .select(`
+      id,
+      cliente_id,
+      monto,
+      interes,
+      total_a_pagar,
+      fecha_inicio,
+      fecha_limite,
+      fecha_inicio_mora,
+      estado,
+      modalidad,
+      cuotas,
+      dias_plazo,
+      saldo_pendiente
+    `)
+    .eq('id', prestamoId)
+    .maybeSingle()
+
+  if (prestamoError) throw prestamoError
+  if (!prestamoData) return null
+
+  return construirDetallePrestamo(prestamoData as PrestamoBase)
 }
