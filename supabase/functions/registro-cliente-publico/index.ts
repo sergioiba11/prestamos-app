@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -83,7 +84,7 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   let logEmail: string | null = null
   let logDni: string | null = null
 
@@ -172,6 +173,8 @@ Deno.serve(async (req) => {
       })
     }
   }
+
+  console.log('FUNCTION_START')
 
   try {
     logInfo({ step: 'FUNCTION_START', message: 'Inicio de registro-cliente-publico', email: null, dni: null })
