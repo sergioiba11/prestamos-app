@@ -34,6 +34,7 @@ export default function ClientesScreen() {
   const [error, setError] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
+  const [tab, setTab] = useState<'activos' | 'todos'>('activos')
 
   const cargarClientes = useCallback(async (esRefresh = false) => {
     if (esRefresh) setRefreshing(true)
@@ -87,6 +88,9 @@ export default function ClientesScreen() {
     })
   }, [clientes, busquedaDebounced])
 
+  const clientesActivos = useMemo(() => clientesUI.filter((c) => c.tienePrestamoActivo), [clientesUI])
+  const clientesMostrados = tab === 'activos' ? clientesActivos : clientesUI
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -126,6 +130,15 @@ export default function ClientesScreen() {
         />
       </View>
 
+      <View style={styles.segmented}>
+        <TouchableOpacity style={[styles.segmentBtn, tab === 'activos' && styles.segmentBtnActive]} onPress={() => setTab('activos')}>
+          <Text style={[styles.segmentText, tab === 'activos' && styles.segmentTextActive]}>Con préstamo activo ({clientesActivos.length})</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.segmentBtn, tab === 'todos' && styles.segmentBtnActive]} onPress={() => setTab('todos')}>
+          <Text style={[styles.segmentText, tab === 'todos' && styles.segmentTextActive]}>Todos ({clientesUI.length})</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
@@ -137,7 +150,7 @@ export default function ClientesScreen() {
           />
         }
       >
-        {clientesUI.length === 0 ? (
+        {clientesMostrados.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>{busquedaDebounced ? 'No encontramos resultados' : 'No hay clientes para mostrar'}</Text>
             <Text style={styles.emptyText}>
@@ -148,7 +161,7 @@ export default function ClientesScreen() {
           </View>
         ) : null}
 
-        {clientesUI.map((cliente) => {
+        {clientesMostrados.map((cliente) => {
           const badge = badgeByEstado(cliente)
 
           return (
@@ -250,6 +263,33 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: '#E2E8F0',
     fontSize: 14,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  segmentBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#0B1220',
+  },
+  segmentBtnActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#2563EB',
+  },
+  segmentText: {
+    color: '#CBD5E1',
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: '#DBEAFE',
   },
   content: {
     paddingBottom: 28,

@@ -111,6 +111,8 @@ export default function AdminHome() {
   const onNavigate = (key: AdminNavKey) => {
     setMenuOpen(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
     if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
@@ -231,6 +233,8 @@ export default function AdminHome() {
               <AdminQuickAction label="Registrar pago" subtitle="Registrar abono" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
               <AdminQuickAction label="Nuevo cliente" subtitle="Agregar cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
               <AdminQuickAction label="Ver clientes" subtitle="Lista completa" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
+              <AdminQuickAction label="Pagos pendientes" subtitle="Aprobación/rechazo" icon="hourglass-outline" onPress={() => router.push('/pagos-pendientes' as any)} />
+              <AdminQuickAction label="Historial" subtitle="Préstamos históricos" icon="time-outline" onPress={() => router.push('/historial-prestamos' as any)} />
             </View>
           </View>
 

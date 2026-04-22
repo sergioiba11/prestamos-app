@@ -76,6 +76,8 @@ export default function HistorialPrestamosScreen() {
     setShowMobileMenu(false)
 
     if (key === 'inicio') return router.push('/admin-home' as any)
+    if (key === 'historial') return router.push('/historial-prestamos' as any)
+    if (key === 'pagos-pendientes') return router.push('/pagos-pendientes' as any)
     if (key === 'nuevo-prestamo') return router.push('/nuevo-prestamo' as any)
     if (key === 'registrar-pago') return router.push('/cargar-pago' as any)
     if (key === 'clientes') return router.push('/clientes' as any)
@@ -106,7 +108,7 @@ export default function HistorialPrestamosScreen() {
   return (
     <View style={styles.page}>
       {!mobile ? (
-        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+        <AdminSidebar active="historial" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
         <View style={styles.mobileTopBar}>
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
@@ -172,7 +174,7 @@ export default function HistorialPrestamosScreen() {
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
           <AdminSidebar
-            active="inicio"
+            active="historial"
             adminName={adminName}
             adminRole={adminRole}
             onNavigate={onNavigate}

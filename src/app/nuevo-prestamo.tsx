@@ -12,6 +12,7 @@ import {
 } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { calcularFechaCuotaMensual, construirCronogramaCuotas } from '../lib/cuotas'
+import { logActivity } from '../lib/activity'
 
 type Cliente = {
   id: string
@@ -542,6 +543,16 @@ export default function NuevoPrestamo() {
         )
         return
       }
+
+      const { data: auth } = await supabase.auth.getUser()
+      await logActivity({
+        tipo: 'prestamo_creado',
+        actorId: auth.user?.id,
+        clienteId: clienteSeleccionado.id,
+        prestamoId: prestamoInsertado.id,
+        descripcion: `Préstamo creado para ${clienteSeleccionado.nombre}`,
+        metadata: { monto: montoNumero, interes: interesNumero, total_a_pagar: totalAPagar, modalidad },
+      })
 
       mostrarMensaje('Éxito', 'Préstamo y cuotas guardados correctamente')
 

@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-nativ
 
 export type AdminNavKey =
   | 'inicio'
+  | 'historial'
+  | 'pagos-pendientes'
   | 'nuevo-prestamo'
   | 'registrar-pago'
   | 'clientes'
@@ -22,6 +24,8 @@ type Props = {
 
 const navItems: Array<{ key: AdminNavKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'inicio', label: 'Inicio', icon: 'home-outline' },
+  { key: 'historial', label: 'Historial', icon: 'time-outline' },
+  { key: 'pagos-pendientes', label: 'Pagos pendientes', icon: 'hourglass-outline' },
   { key: 'nuevo-prestamo', label: 'Nuevo préstamo', icon: 'wallet-outline' },
   { key: 'registrar-pago', label: 'Registrar pago', icon: 'cash-outline' },
   { key: 'clientes', label: 'Ver clientes', icon: 'people-outline' },
