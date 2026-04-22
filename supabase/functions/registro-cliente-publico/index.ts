@@ -14,6 +14,14 @@ type ClienteRow = {
   usuario_id: string | null
 }
 
+type RollbackState = {
+  userId: string | null
+  insertedUsuario: boolean
+  clienteId: string | null
+  createdCliente: boolean
+  previousCliente: ClienteRow | null
+}
+
 function jsonResponse(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -66,19 +74,103 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+    console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
       stage: 'respuesta_final',
       status: 'ERROR',
       message: 'Método no permitido',
       code: 'METHOD_NOT_ALLOWED',
     })
-    return jsonResponse({ ok: false, error: 'Método no permitido', code: 'METHOD_NOT_ALLOWED' }, 405)
+    return businessError('Método no permitido', 'METHOD_NOT_ALLOWED')
   }
 
-  const rollback = {
-    userId: null as string | null,
+  const rollback: RollbackState = {
+    userId: null,
     insertedUsuario: false,
-    clienteId: null as string | null,
+    clienteId: null,
+    createdCliente: false,
+    previousCliente: null,
+  }
+
+  const runRollback = async (context: string, state: RollbackState) => {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !serviceRoleKey || !state.userId) return
+
+    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      stage: 'rollback_compensatorio',
+      status: 'OK',
+      message: 'Iniciando rollback compensatorio',
+      context,
+      hasInsertedUsuario: state.insertedUsuario,
+      hasClienteId: Boolean(state.clienteId),
+      createdCliente: state.createdCliente,
+    })
+
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    if (state.insertedUsuario) {
+      const { error: deleteUsuarioError } = await admin.from('usuarios').delete().eq('id', state.userId)
+      if (deleteUsuarioError) {
+        console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+          stage: 'rollback_compensatorio',
+          status: 'ERROR',
+          message: 'Falló eliminación en usuarios durante rollback',
+          detail: deleteUsuarioError.message,
+        })
+      }
+    }
+
+    if (state.clienteId) {
+      if (state.createdCliente) {
+        const { error: deleteClienteError } = await admin.from('clientes').delete().eq('id', state.clienteId)
+        if (deleteClienteError) {
+          console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+            stage: 'rollback_compensatorio',
+            status: 'ERROR',
+            message: 'Falló eliminación de cliente creado durante rollback',
+            detail: deleteClienteError.message,
+          })
+        }
+      } else {
+        const { error: restoreClienteError } = await admin
+          .from('clientes')
+          .update({
+            usuario_id: state.previousCliente?.usuario_id ?? null,
+            nombre: state.previousCliente?.nombre ?? null,
+            telefono: state.previousCliente?.telefono ?? null,
+            dni: state.previousCliente?.dni ?? null,
+          })
+          .eq('id', state.clienteId)
+
+        if (restoreClienteError) {
+          console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+            stage: 'rollback_compensatorio',
+            status: 'ERROR',
+            message: 'Falló restauración de cliente existente durante rollback',
+            detail: restoreClienteError.message,
+          })
+        }
+      }
+    }
+
+    const { error: deleteAuthError } = await admin.auth.admin.deleteUser(state.userId)
+    if (deleteAuthError) {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+        stage: 'rollback_compensatorio',
+        status: 'ERROR',
+        message: 'Falló eliminación en Auth durante rollback',
+        detail: deleteAuthError.message,
+      })
+    }
+
+    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      stage: 'rollback_compensatorio',
+      status: 'OK',
+      message: 'Rollback compensatorio finalizado',
+      context,
+    })
   }
 
   try {
@@ -130,7 +222,7 @@ Deno.serve(async (req) => {
       dniLength: dni.length,
     })
     if (dni.length < 7 || dni.length > 8) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'validacion_dni',
         status: 'ERROR',
         message: 'DNI inválido',
@@ -145,7 +237,7 @@ Deno.serve(async (req) => {
       message: 'Validando formato de correo',
     })
     if (!isValidEmail(email)) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'validacion_email',
         status: 'ERROR',
         message: 'Correo inválido',
@@ -161,7 +253,7 @@ Deno.serve(async (req) => {
       passwordLength: password.length,
     })
     if (password.length < 8) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'validacion_password',
         status: 'ERROR',
         message: 'Contraseña demasiado corta',
@@ -176,7 +268,7 @@ Deno.serve(async (req) => {
       message: 'Validando formato de teléfono',
     })
     if (!/^\+549\d{10}$/.test(telefono)) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'validacion_telefono',
         status: 'ERROR',
         message: 'Teléfono inválido',
@@ -217,7 +309,7 @@ Deno.serve(async (req) => {
     }
 
     if (cliente?.usuario_id) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'chequeo_duplicado_dni',
         status: 'ERROR',
         message: 'DNI ya vinculado a usuario',
@@ -254,10 +346,37 @@ Deno.serve(async (req) => {
     }
 
     if (duplicatedEmail?.id) {
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'chequeo_duplicado_correo',
         status: 'ERROR',
         message: 'Correo ya registrado',
+        code: 'EMAIL_ALREADY_REGISTERED',
+      })
+      return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
+    }
+
+    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+      stage: 'chequeo_duplicado_correo_auth',
+      status: 'OK',
+      message: 'Verificando correo en Auth antes de createUser',
+    })
+    const { data: authDuplicatedEmail, error: authDuplicatedEmailError } = await supabase.auth.admin.getUserByEmail(email)
+
+    if (authDuplicatedEmailError) {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+        stage: 'chequeo_duplicado_correo_auth',
+        status: 'ERROR',
+        message: 'Error al verificar correo en Auth',
+        detail: authDuplicatedEmailError.message,
+      })
+      throw new Error(authDuplicatedEmailError.message)
+    }
+
+    if (authDuplicatedEmail?.user?.id) {
+      console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+        stage: 'chequeo_duplicado_correo_auth',
+        status: 'ERROR',
+        message: 'Correo ya registrado en Auth',
         code: 'EMAIL_ALREADY_REGISTERED',
       })
       return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
@@ -288,10 +407,11 @@ Deno.serve(async (req) => {
           message: 'Falló creación inicial de cliente',
           detail: createClienteError?.message || 'No se pudo crear el cliente.',
         })
-        throw new Error(createClienteError?.message || 'No se pudo crear el cliente.')
+        return businessError('No se pudo crear el cliente base.', 'CLIENTE_CREATE_FAILED')
       }
 
       cliente = created
+      rollback.createdCliente = true
       console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'insercion_clientes',
         status: 'OK',
@@ -300,6 +420,13 @@ Deno.serve(async (req) => {
     }
 
     rollback.clienteId = cliente.id
+    rollback.previousCliente = {
+      id: cliente.id,
+      dni: cliente.dni,
+      nombre: cliente.nombre,
+      telefono: cliente.telefono,
+      usuario_id: cliente.usuario_id,
+    }
 
     console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
       stage: 'creacion_auth_user',
@@ -323,24 +450,9 @@ Deno.serve(async (req) => {
         status: 'ERROR',
         message: 'Falló createUser en Auth',
         detail: createAuthError?.message || 'Usuario auth no creado',
+        code: 'AUTH_CREATE_FAILED',
       })
-      const authMessage = String(createAuthError?.message || '').toLowerCase()
-      if (authMessage.includes('already') || authMessage.includes('registered') || authMessage.includes('exists')) {
-        console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-          stage: 'respuesta_final',
-          status: 'ERROR',
-          message: 'Error de negocio por correo duplicado en Auth',
-          code: 'EMAIL_ALREADY_REGISTERED',
-        })
-        return businessError('Ese correo ya está registrado.', 'EMAIL_ALREADY_REGISTERED')
-      }
-      console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-        stage: 'respuesta_final',
-        status: 'ERROR',
-        message: 'No se pudo crear el usuario de acceso',
-        code: 'AUTH_USER_CREATE_FAILED',
-      })
-      return jsonResponse({ ok: false, error: 'No se pudo crear el usuario de acceso.', code: 'AUTH_USER_CREATE_FAILED' }, 500)
+      return businessError('No se pudo crear la cuenta', 'AUTH_CREATE_FAILED')
     }
 
     rollback.userId = authData.user.id
@@ -364,7 +476,8 @@ Deno.serve(async (req) => {
         message: 'Falló inserción en usuarios',
         detail: usuarioError.message,
       })
-      throw new Error(usuarioError.message)
+      await runRollback('insercion_usuarios', rollback)
+      return businessError('No se pudo crear el usuario interno.', 'USUARIOS_INSERT_FAILED')
     }
     rollback.insertedUsuario = true
 
@@ -390,7 +503,8 @@ Deno.serve(async (req) => {
         message: 'Falló vinculación en clientes',
         detail: clienteUpdateError.message,
       })
-      throw new Error(clienteUpdateError.message)
+      await runRollback('vinculacion_clientes', rollback)
+      return businessError('No se pudo vincular el cliente.', 'CLIENTE_UPDATE_FAILED')
     }
 
     console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
@@ -407,38 +521,7 @@ Deno.serve(async (req) => {
     })
 
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')
-      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      if (supabaseUrl && serviceRoleKey && rollback.userId) {
-        console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-          stage: 'rollback_compensatorio',
-          status: 'OK',
-          message: 'Iniciando rollback compensatorio',
-          hasInsertedUsuario: rollback.insertedUsuario,
-          hasClienteId: Boolean(rollback.clienteId),
-        })
-        const admin = createClient(supabaseUrl, serviceRoleKey, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        })
-
-        if (rollback.insertedUsuario) {
-          await admin.from('usuarios').delete().eq('id', rollback.userId)
-        }
-
-        if (rollback.clienteId) {
-          await admin
-            .from('clientes')
-            .update({ usuario_id: null })
-            .eq('id', rollback.clienteId)
-        }
-
-        await admin.auth.admin.deleteUser(rollback.userId)
-        console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
-          stage: 'rollback_compensatorio',
-          status: 'OK',
-          message: 'Rollback compensatorio finalizado',
-        })
-      }
+      await runRollback('catch_unhandled', rollback)
     } catch (rollbackError) {
       console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
         stage: 'rollback_compensatorio',
@@ -451,12 +534,12 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log('REGISTRO_CLIENTE_PUBLICO_STAGE', {
+    console.error('REGISTRO_CLIENTE_PUBLICO_STAGE', {
       stage: 'respuesta_final',
       status: 'ERROR',
       message: 'Error interno no controlado',
       code: 'INTERNAL_ERROR',
     })
-    return jsonResponse({ ok: false, error: 'No se pudo completar el registro', code: 'INTERNAL_ERROR' }, 500)
+    return jsonResponse({ ok: false, error: 'Error inesperado en registro-cliente-publico', code: 'INTERNAL_ERROR' }, 500)
   }
 })
