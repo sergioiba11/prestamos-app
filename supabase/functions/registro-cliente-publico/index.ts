@@ -29,8 +29,8 @@ function jsonResponse(payload: Record<string, unknown>, status = 200) {
   })
 }
 
-function businessError(error: string, code: string, status = 200) {
-  return jsonResponse({ ok: false, error, code }, status)
+function businessError(error: string, code: string) {
+  return jsonResponse({ ok: false, error, code }, 200)
 }
 
 function normalizeDni(value: unknown): string {
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       message: 'Preflight OPTIONS respondido',
       code: 'OPTIONS_OK',
     })
-    return new Response('ok', { headers: corsHeaders })
+    return jsonResponse({ ok: true, code: 'OPTIONS_OK' }, 200)
   }
 
   if (req.method !== 'POST') {
@@ -514,10 +514,11 @@ Deno.serve(async (req) => {
       code: 'REGISTER_OK',
     })
     return jsonResponse({ ok: true, userId: authData.user.id, clienteId: cliente.id })
-  } catch (error: any) {
+  } catch (err: any) {
+    console.error('ERROR_REGISTRO', err)
     console.error('REGISTRO_CLIENTE_PUBLICO_UNHANDLED', {
-      message: error?.message || 'Unhandled error',
-      stack: error?.stack || null,
+      message: err?.message || 'Unhandled error',
+      stack: err?.stack || null,
     })
 
     try {
@@ -540,6 +541,6 @@ Deno.serve(async (req) => {
       message: 'Error interno no controlado',
       code: 'INTERNAL_ERROR',
     })
-    return jsonResponse({ ok: false, error: 'Error inesperado en registro-cliente-publico', code: 'INTERNAL_ERROR' }, 500)
+    return jsonResponse({ ok: false, error: 'Error interno del servidor', code: 'INTERNAL_ERROR' }, 500)
   }
 })
