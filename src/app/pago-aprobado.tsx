@@ -348,8 +348,8 @@ export default function PagoAprobado() {
       ]
 
   const backToPrestamoUrl = prestamoId
-    ? `/cliente-detalle?cliente_id=${clienteId}&prestamo_id=${prestamoId}`
-    : `/cliente-detalle?cliente_id=${clienteId}`
+    ? `/cliente/${clienteId}?prestamo_id=${prestamoId}`
+    : `/cliente/${clienteId}`
 
   const paymentIdentifier = formatFallback(pagoInternoId || pagoId, 'No disponible')
 

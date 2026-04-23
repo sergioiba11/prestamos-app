@@ -167,10 +167,7 @@ export default function HistorialPrestamosScreen() {
                     <TouchableOpacity
                       style={styles.actionButton}
                       onPress={() =>
-                        router.push({
-                          pathname: '/cliente-detalle',
-                          params: { cliente_id: item.clienteId, prestamo_id: item.prestamoId },
-                        } as any)
+                        router.push(`/cliente/${item.clienteId}?prestamo_id=${item.prestamoId}` as any)
                       }
                     >
                       <Text style={styles.actionButtonText}>Ver detalle</Text>

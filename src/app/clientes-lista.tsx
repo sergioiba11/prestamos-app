@@ -39,12 +39,7 @@ export default function ClientesLista() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
-            onPress={() =>
-              router.push({
-                pathname: '/cliente-detalle',
-                params: { cliente_id: item.id },
-              })
-            }
+            onPress={() => router.push(`/cliente/${item.id}` as any)}
           >
             <Text style={styles.nombre}>{item.nombre}</Text>
             <Text style={styles.info}>

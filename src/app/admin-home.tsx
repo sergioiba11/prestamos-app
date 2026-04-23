@@ -372,8 +372,8 @@ export default function AdminHome() {
             ) : (
               <AdminClientsTable
                 rows={filteredClients}
-                onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                onEdit={(row) => { console.log('[admin-home] editar cliente', row.clienteId); router.push(`/cliente/${row.clienteId}` as any) }}
+                onView={(row) => router.push(`/cliente/${row.clienteId}` as any)}
+                onEdit={(row) => { console.log('[admin-home] editar cliente', row.clienteId); router.push(`/cliente/${row.clienteId}/editar` as any) }}
                 onHistory={(row) => router.push({ pathname: '/historial-prestamos', params: { cliente_id: row.clienteId } } as any)}
               />
             )}
