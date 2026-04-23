@@ -17,7 +17,7 @@ import {
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
-import { supabase, supabaseUrl } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 
 type PendingPayment = {
   id: string
@@ -56,13 +56,14 @@ async function callAprobarPago(body: {
   accion: 'aprobar' | 'rechazar'
   observacion_revision?: string | null
 }) {
-const { data, error } = await supabase.auth.refreshSession()
+  const { error: refreshError } = await supabase.auth.refreshSession()
+  if (refreshError) throw refreshError
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
 if (error) throw error
 
 const token = data.session?.access_token
-
-if (!token) throw new Error('No hay sesión válida')
 
   const url = `${supabaseUrl}/functions/v1/aprobar-pago`
 
@@ -75,6 +76,7 @@ if (!token) throw new Error('No hay sesión válida')
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      apikey: supabaseAnonKey,
     },
     body: JSON.stringify(body),
   })
