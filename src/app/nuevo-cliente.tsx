@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
-import { logActivity } from '../lib/activity'
+import { createSystemActivity } from '../lib/activity'
 
 export default function NuevoCliente() {
   const [nombre, setNombre] = useState('')
@@ -116,10 +116,15 @@ console.log('TOKEN FINAL:', tokenAntes)
         )
       }
 
-      await logActivity({
+      await createSystemActivity({
         tipo: 'cliente_creado',
-        actorId: adminIdAntes,
-        descripcion: `Cliente creado: ${nombreLimpio}`,
+        titulo: 'Nuevo cliente creado',
+        descripcion: `Se creó el cliente ${nombreLimpio}`,
+        entidad_tipo: 'cliente',
+        entidad_id: data?.cliente?.id || null,
+        usuario_id: adminIdAntes,
+        prioridad: 'normal',
+        visible_en_notificaciones: true,
         metadata: { dni: dniLimpio, email: emailLimpio, telefono: telefonoLimpio },
       })
 

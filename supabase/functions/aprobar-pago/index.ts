@@ -194,6 +194,18 @@ Deno.serve(async (req) => {
         detalle: { metodo: pago.metodo, estado_anterior: pago.estado },
       })
 
+      await supabase.from('actividad_sistema').insert({
+        tipo: 'pago_rechazado',
+        titulo: 'Pago rechazado',
+        descripcion: `Se rechazó un pago ${pago.metodo || ''}`.trim(),
+        entidad_tipo: 'pago',
+        entidad_id: pago.id,
+        usuario_id: user.id,
+        prioridad: 'alta',
+        visible_en_notificaciones: true,
+        metadata: { actor_id: user.id, observacion: observacionRevision, route: '/pagos-pendientes' },
+      })
+
       await supabase.from('notificaciones').insert({
         tipo: 'pago_rechazado',
         titulo: 'Pago rechazado',
@@ -248,6 +260,18 @@ Deno.serve(async (req) => {
       }
       return jsonResponse({ error: errorMsg }, 400)
     }
+
+    await supabase.from('actividad_sistema').insert({
+      tipo: 'pago_aprobado',
+      titulo: 'Pago aprobado',
+      descripcion: 'Se aprobó un pago pendiente',
+      entidad_tipo: 'pago',
+      entidad_id: pago.id,
+      usuario_id: user.id,
+      prioridad: 'normal',
+      visible_en_notificaciones: true,
+      metadata: { actor_id: user.id, resultado, route: '/pagos-pendientes' },
+    })
 
     await supabase.from('notificaciones').insert({
       tipo: 'pago_aprobado',

@@ -188,6 +188,18 @@ Deno.serve(async (req) => {
       }
     }
 
+    await adminClient.from('actividad_sistema').insert({
+      tipo: 'cliente_creado',
+      titulo: 'Nuevo cliente creado',
+      descripcion: `Se creó el cliente ${nombre}`,
+      entidad_tipo: 'cliente',
+      entidad_id: authUserId,
+      usuario_id: user.id,
+      prioridad: 'normal',
+      visible_en_notificaciones: true,
+      metadata: { creado_por: user.id, email, dni },
+    })
+
     await adminClient.from('notificaciones').insert({
       tipo: 'nuevo_cliente',
       titulo: 'Nuevo cliente creado',

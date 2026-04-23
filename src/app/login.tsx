@@ -26,6 +26,7 @@ import {
 } from '../lib/biometrics'
 import { goByRole } from '../lib/auth-routing'
 import { signInWithEmailOrDni } from '../lib/onboarding'
+import { registerLoginActivity } from '../lib/activity'
 import { supabase } from '../lib/supabase'
 
 export default function LoginScreen() {
@@ -134,6 +135,11 @@ export default function LoginScreen() {
       }
 
       await askEnableBiometricAfterLogin(user.id)
+      try {
+        await registerLoginActivity(user.id)
+      } catch (activityError) {
+        console.warn('[login] no se pudo registrar actividad de login', activityError)
+      }
       await goByRole(user.id)
     } catch (err: any) {
       setError(err?.message || 'No se pudo iniciar sesión.')
