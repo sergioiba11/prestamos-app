@@ -17,7 +17,7 @@ import {
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseUrl } from '../lib/supabase'
 
 type PendingPayment = {
   id: string
@@ -63,11 +63,9 @@ async function callAprobarPago(body: {
   const token = sessionData.session?.access_token
   if (!token) throw new Error('No hay sesión activa')
 
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
-  if (!supabaseUrl) throw new Error('Falta EXPO_PUBLIC_SUPABASE_URL')
-
   const url = `${supabaseUrl}/functions/v1/aprobar-pago`
 
+  console.log('SUPABASE URL:', url)
   console.log('Invocando aprobar-pago:', url)
   console.log('Tiene token:', !!token)
 
@@ -89,7 +87,7 @@ async function callAprobarPago(body: {
   }
 
   console.log('Status aprobar-pago:', response.status)
-  console.log('Respuesta aprobar-pago:', json)
+  console.log('Respuesta:', json)
 
   if (!response.ok) {
     throw new Error(json?.error || `Error HTTP ${response.status}`)
