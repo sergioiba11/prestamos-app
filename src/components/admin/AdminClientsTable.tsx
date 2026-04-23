@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
-import { useState } from 'react'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { ClientePrestamoActivo } from '../../lib/admin-dashboard'
 
 function toInitials(name: string) {
@@ -30,47 +30,125 @@ export function AdminClientsTable({
   onHistory: (row: ClientePrestamoActivo) => void
 }) {
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const triggerRefs = useRef<Record<string, View | null>>({})
+
+  const activeRow = useMemo(() => rows.find((row) => row.prestamoId === menuOpenFor) || null, [menuOpenFor, rows])
+
+  const updateMenuPosition = useCallback((prestamoId: string) => {
+    const trigger = triggerRefs.current[prestamoId]
+    if (!trigger) return
+
+    trigger.measureInWindow((x, y, width, height) => {
+      const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+      const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 720
+      const menuWidth = 190
+      const menuHeight = 132
+      const margin = 8
+
+      let left = x + width - menuWidth
+      let top = y + height + 8
+
+      if (left < margin) left = margin
+      if (left + menuWidth > viewportWidth - margin) left = viewportWidth - menuWidth - margin
+      if (top + menuHeight > viewportHeight - margin) top = Math.max(margin, y - menuHeight - 8)
+
+      setMenuPosition({ top, left })
+    })
+  }, [])
+
+  const toggleMenu = useCallback(
+    (prestamoId: string) => {
+      setMenuOpenFor((prev) => {
+        if (prev === prestamoId) {
+          setMenuPosition(null)
+          return null
+        }
+
+        setTimeout(() => updateMenuPosition(prestamoId), 0)
+        return prestamoId
+      })
+    },
+    [updateMenuPosition]
+  )
+
+  useEffect(() => {
+    if (!menuOpenFor || Platform.OS !== 'web') return
+
+    const handleReposition = () => updateMenuPosition(menuOpenFor)
+    window.addEventListener('resize', handleReposition)
+    window.addEventListener('scroll', handleReposition, true)
+    return () => {
+      window.removeEventListener('resize', handleReposition)
+      window.removeEventListener('scroll', handleReposition, true)
+    }
+  }, [menuOpenFor, updateMenuPosition])
+
+  const closeMenu = useCallback(() => {
+    setMenuOpenFor(null)
+    setMenuPosition(null)
+  }, [])
+
+  const portalMenu =
+    Platform.OS === 'web' &&
+    typeof document !== 'undefined' &&
+    menuOpenFor &&
+    menuPosition &&
+    activeRow
+      ? require('react-dom').createPortal(
+          <View style={styles.portalRoot} pointerEvents="box-none">
+            <Pressable style={styles.portalBackdrop} onPress={closeMenu} />
+            <View style={[styles.menuPortal, { top: menuPosition.top, left: menuPosition.left }]}>
+              <TouchableOpacity onPress={() => { closeMenu(); onView(activeRow) }}><Text style={styles.menuItem}>Ver detalles</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { closeMenu(); onEdit(activeRow) }}><Text style={styles.menuItem}>Editar cliente</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { closeMenu(); onHistory(activeRow) }}><Text style={styles.menuItem}>Historial pagos</Text></TouchableOpacity>
+            </View>
+          </View>,
+          document.body
+        )
+      : null
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={styles.tableWrap}>
-        <TableHeader />
-        {rows.map((row) => (
-          <View key={row.prestamoId} style={styles.row}>
-            <View style={[styles.cell, styles.clientCell]}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>{toInitials(row.nombre)}</Text></View>
-              <View>
-                <Text style={styles.name}>{row.nombre}</Text>
-                <Text style={styles.email}>{row.email || 'Sin email'}</Text>
+    <>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.tableWrap}>
+          <TableHeader />
+          {rows.map((row) => (
+            <View key={row.prestamoId} style={styles.row}>
+              <View style={[styles.cell, styles.clientCell]}>
+                <View style={styles.avatar}><Text style={styles.avatarText}>{toInitials(row.nombre)}</Text></View>
+                <View>
+                  <Text style={styles.name}>{row.nombre}</Text>
+                  <Text style={styles.email}>{row.email || 'Sin email'}</Text>
+                </View>
               </View>
-            </View>
 
-            <Text style={[styles.cell, styles.text]}>{row.dni}</Text>
-            <Text style={[styles.cell, styles.text]}>{row.telefono}</Text>
-            <Text style={[styles.cell, styles.text]}>{money(row.prestamoActivo)}</Text>
-            <Text style={[styles.cell, styles.text]}>{formatDate(row.proximoPago)}</Text>
-            <View style={[styles.cell, styles.statusCell]}><StatusBadge status={row.estado} /></View>
-            <View style={[styles.cell, styles.actionsCell]}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => onView(row)}>
-                <Ionicons name="eye-outline" size={16} color="#BFDBFE" />
-              </TouchableOpacity>
-              <View style={styles.menuWrap}>
-                <TouchableOpacity style={styles.iconBtn} onPress={() => setMenuOpenFor((prev) => (prev === row.prestamoId ? null : row.prestamoId))}>
-                  <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
+              <Text style={[styles.cell, styles.text]}>{row.dni}</Text>
+              <Text style={[styles.cell, styles.text]}>{row.telefono}</Text>
+              <Text style={[styles.cell, styles.text]}>{money(row.prestamoActivo)}</Text>
+              <Text style={[styles.cell, styles.text]}>{formatDate(row.proximoPago)}</Text>
+              <View style={[styles.cell, styles.statusCell]}><StatusBadge status={row.estado} /></View>
+              <View style={[styles.cell, styles.actionsCell]}>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => onView(row)}>
+                  <Ionicons name="eye-outline" size={16} color="#BFDBFE" />
                 </TouchableOpacity>
-                {menuOpenFor === row.prestamoId ? (
-                  <View style={styles.menu}>
-                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onView(row) }}><Text style={styles.menuItem}>Ver detalles</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onEdit(row) }}><Text style={styles.menuItem}>Editar cliente</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => { setMenuOpenFor(null); onHistory(row) }}><Text style={styles.menuItem}>Historial pagos</Text></TouchableOpacity>
-                  </View>
-                ) : null}
+                <View
+                  collapsable={false}
+                  ref={(node) => {
+                    triggerRefs.current[row.prestamoId] = node
+                  }}
+                >
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => toggleMenu(row.prestamoId)}>
+                    <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
+          ))}
+        </View>
+      </ScrollView>
+      {portalMenu}
+    </>
   )
 }
 
@@ -122,8 +200,7 @@ const styles = StyleSheet.create({
   cell: { paddingHorizontal: 12 },
   clientCell: { width: 286, flexDirection: 'row', alignItems: 'center', gap: 10 },
   statusCell: { width: 120 },
-  actionsCell: { width: 120, flexDirection: 'row', gap: 8, overflow: 'visible', zIndex: 15 },
-  menuWrap: { position: 'relative', overflow: 'visible', zIndex: 20 },
+  actionsCell: { width: 120, flexDirection: 'row', gap: 8 },
   text: { width: 120, color: '#E2E8F0' },
   avatar: {
     width: 36,
@@ -152,10 +229,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#0B1220',
   },
-  menu: {
-    position: 'absolute',
-    top: 34,
-    right: 0,
+  portalRoot: {
+    ...StyleSheet.absoluteFillObject,
+    position: 'fixed',
+    zIndex: 99999,
+  },
+  portalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    position: 'fixed',
+  },
+  menuPortal: {
+    position: 'fixed',
     backgroundColor: '#0F172A',
     borderRadius: 10,
     borderWidth: 1,
@@ -163,8 +247,12 @@ const styles = StyleSheet.create({
     padding: 8,
     gap: 8,
     minWidth: 140,
-    zIndex: 9999,
+    zIndex: 99999,
     elevation: 30,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
   },
   menuItem: { color: '#E2E8F0', fontSize: 12 },
 })

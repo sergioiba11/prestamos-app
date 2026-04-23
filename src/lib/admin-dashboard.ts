@@ -5,7 +5,8 @@ type ClienteRow = {
   usuario_id: string | null
   nombre: string | null
   dni: string | null
-  dni_editado: boolean | null
+  dni_editado?: boolean | null
+  dniEditado?: boolean | null
   telefono: string | null
   direccion: string | null
 }
@@ -59,7 +60,8 @@ type AdminClientesListadoViewRow = {
   usuario_id: string | null
   nombre: string | null
   dni: string | null
-  dni_editado: boolean | null
+  dni_editado?: boolean | null
+  dniEditado?: boolean | null
   telefono: string | null
   direccion: string | null
   email: string | null
@@ -180,6 +182,14 @@ function toNumber(value: unknown): number {
   return Number(value || 0)
 }
 
+function resolveDniEditado(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === null || value === undefined) return false
+  if (typeof value === 'number') return value > 0
+  const normalized = String(value).trim().toLowerCase()
+  return normalized === 'true' || normalized === 't' || normalized === '1' || normalized === 'si' || normalized === 'sí'
+}
+
 function hasActiveLoan(cliente: ClienteAdminListadoItem): boolean {
   if (cliente.tienePrestamoActivo || cliente.tienePrestamoVencido) return true
   if (cliente.cantidadPrestamosActivos > 0) return true
@@ -236,7 +246,7 @@ function toListadoItemFromView(row: AdminClientesListadoViewRow): ClienteAdminLi
     usuarioId: row.usuario_id || '',
     nombre: row.nombre || 'Cliente',
     dni: row.dni || '—',
-    dniEditado: Boolean(row.dni_editado),
+    dniEditado: resolveDniEditado((row as any).dni_editado ?? (row as any).dniEditado ?? false),
     telefono: row.telefono || 'Sin teléfono',
     direccion: row.direccion || 'Sin dirección',
     email: row.email || 'Sin email',
@@ -271,14 +281,28 @@ function toActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
 }
 
 export async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
-  const { data: clientesRaw, error: clientesError } = await supabase
+  let clientesRaw: any[] | null = null
+
+  const clientesWithDniEditado = await supabase
     .from('clientes')
     .select('id,usuario_id,nombre,dni,dni_editado,telefono,direccion')
     .order('nombre', { ascending: true })
 
-  if (clientesError) {
-    console.error('[admin-dashboard] clientes fallback error', clientesError)
-    throw clientesError
+  if (!clientesWithDniEditado.error) {
+    clientesRaw = clientesWithDniEditado.data
+  } else {
+    console.warn('[admin-dashboard] clientes fallback sin dni_editado, reintentando', clientesWithDniEditado.error)
+    const clientesLegacy = await supabase
+      .from('clientes')
+      .select('id,usuario_id,nombre,dni,telefono,direccion')
+      .order('nombre', { ascending: true })
+
+    if (clientesLegacy.error) {
+      console.error('[admin-dashboard] clientes fallback error', clientesLegacy.error)
+      throw clientesLegacy.error
+    }
+
+    clientesRaw = clientesLegacy.data
   }
 
   const clientes = (clientesRaw || []) as ClienteRow[]
@@ -382,7 +406,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
       usuarioId: cliente.usuario_id || '',
       nombre: cliente.nombre || 'Cliente',
       dni: cliente.dni || '—',
-      dniEditado: Boolean(cliente.dni_editado),
+      dniEditado: resolveDniEditado((cliente as any).dni_editado ?? (cliente as any).dniEditado ?? false),
       telefono: cliente.telefono || 'Sin teléfono',
       direccion: cliente.direccion || 'Sin dirección',
       email: usuario?.email || 'Sin email',
@@ -411,10 +435,30 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 }
 
 export async function fetchAdminClientesListado(): Promise<ClienteAdminListadoItem[]> {
-  const { data, error } = await supabase
+  const selectWithDniEditado =
+    'cliente_id,usuario_id,nombre,dni,dni_editado,telefono,direccion,email,cantidad_prestamos,cantidad_prestamos_activos,tiene_prestamo_activo,tiene_prestamo_vencido,deuda_activa,total_pagado,restante,fecha_ultimo_pago,proximo_vencimiento,estado_cliente'
+  const selectLegacy =
+    'cliente_id,usuario_id,nombre,dni,telefono,direccion,email,cantidad_prestamos,cantidad_prestamos_activos,tiene_prestamo_activo,tiene_prestamo_vencido,deuda_activa,total_pagado,restante,fecha_ultimo_pago,proximo_vencimiento,estado_cliente'
+
+  const withDniEditado = await supabase
     .from('admin_clientes_listado')
-    .select('*')
+    .select(selectWithDniEditado)
     .order('nombre', { ascending: true })
+
+  let data = withDniEditado.data
+  let error = withDniEditado.error
+
+  if (error) {
+    console.warn('[admin-dashboard] admin_clientes_listado with dni_editado failed', error)
+
+    const legacy = await supabase
+      .from('admin_clientes_listado')
+      .select(selectLegacy)
+      .order('nombre', { ascending: true })
+
+    data = legacy.data
+    error = legacy.error
+  }
 
   if (!error) {
     const viewRows = (data || []) as AdminClientesListadoViewRow[]

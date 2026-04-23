@@ -49,7 +49,7 @@ select
   c.usuario_id,
   c.nombre,
   c.dni,
-  c.dni_editado,
+  coalesce((to_jsonb(c) ->> 'dni_editado')::boolean, false) as dni_editado,
   c.telefono,
   c.direccion,
   u.email,

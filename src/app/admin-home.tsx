@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +35,20 @@ function formatDate(value: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function formatAdminDateTime(value: Date) {
+  const fecha = value.toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  const hora = value.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return {
+    fecha: fecha.charAt(0).toUpperCase() + fecha.slice(1),
+    hora: `${hora} hs`,
+  }
+}
+
 export default function AdminHome() {
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
@@ -55,6 +70,13 @@ export default function AdminHome() {
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
   const [editingClient, setEditingClient] = useState<ClientePrestamoActivo | null>(null)
   const [saveToast, setSaveToast] = useState('')
+  const [now, setNow] = useState(() => new Date())
+  const notificationsButtonRef = useRef<View | null>(null)
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const loadNotifications = useCallback(async () => {
     const { data, error } = await supabase
@@ -162,6 +184,7 @@ export default function AdminHome() {
   }, [activeClients, search])
 
   const unreadCount = notifications.filter((n) => !n.leida).length
+  const fechaHora = useMemo(() => formatAdminDateTime(now), [now])
 
   const onClientSaved = async () => {
     await loadData()
@@ -194,42 +217,59 @@ export default function AdminHome() {
             <Ionicons name="menu" size={24} color="#E2E8F0" />
           </TouchableOpacity>
           <Text style={styles.mobileTitle}>Admin</Text>
-          <TouchableOpacity style={styles.mobileBellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-            <Ionicons name="notifications-outline" size={20} color="#DBEAFE" />
-            {unreadCount > 0 ? (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>{unreadCount}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+          <View style={{ width: 34 }} />
         </View>
       )}
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}> 
           {saveToast ? <Text style={styles.toast}>{saveToast}</Text> : null}
-          <View style={styles.pageTopRow}>
-            <View>
-              <Text style={styles.pageTitle}>Panel de administración</Text>
-              <Text style={styles.pageSubtitle}>Hola, {adminName}. Resumen financiero en tiempo real.</Text>
-            </View>
-            {!isMobile ? (
-              <View style={styles.headerActions}>
-                <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                  <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
-                  <Text style={styles.notificationsText}>Notificaciones</Text>
-                  {unreadCount > 0 ? (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{unreadCount}</Text>
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-                {notificationsOpen ? (
-                  <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
-                ) : null}
+          <View style={styles.heroShadow}>
+            <LinearGradient
+              colors={['#1E3A8A', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCard}
+            >
+              <View style={[styles.heroRow, isMobile && styles.heroRowMobile]}>
+                <View style={styles.heroLeft}>
+                  <Text style={styles.heroEyebrow}>Panel de administración</Text>
+                  <Text style={styles.heroTitle}>¡Bienvenido, {adminName}!</Text>
+                  <Text style={styles.heroSubtitle}>Gestioná tus préstamos de forma rápida y segura.</Text>
+                </View>
+                <View style={[styles.heroRight, isMobile && styles.heroRightMobile]}>
+                  <View style={styles.dateCard}>
+                    <Text style={styles.dateLabel}>Fecha actual</Text>
+                    <Text style={styles.dateValue}>{fechaHora.fecha}</Text>
+                    <Text style={styles.timeValue}>{fechaHora.hora}</Text>
+                  </View>
+                  <View
+                    collapsable={false}
+                    ref={(node) => {
+                      notificationsButtonRef.current = node
+                    }}
+                  >
+                    <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+                      <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
+                      <Text style={styles.notificationsText}>Notificaciones</Text>
+                      {unreadCount > 0 ? (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadText}>{unreadCount}</Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-            ) : null}
+            </LinearGradient>
           </View>
+          <AdminNotificationsPanel
+            visible={notificationsOpen}
+            notifications={notifications}
+            onMarkAllRead={markAllRead}
+            anchorRef={notificationsButtonRef.current}
+            onClose={() => setNotificationsOpen(false)}
+          />
 
           <View style={styles.kpiGrid}>
             <AdminStatCard label="A cobrar hoy" subtitle={kpis.cobrarHoy > 0 ? 'Cuotas con vencimiento hoy' : 'Sin vencimientos hoy'} value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
@@ -397,10 +437,41 @@ const styles = StyleSheet.create({
   content: { padding: 20, gap: 16, paddingBottom: 34, backgroundColor: '#020817' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
-  pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 26 },
-  pageSubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
-  headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
+  heroShadow: {
+    borderRadius: 22,
+    shadowColor: '#1D4ED8',
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  heroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(191,219,254,0.3)',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  heroRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16 },
+  heroRowMobile: { flexDirection: 'column', alignItems: 'stretch' },
+  heroLeft: { flex: 1, minWidth: 220 },
+  heroEyebrow: { color: 'rgba(219,234,254,0.88)', fontWeight: '700', fontSize: 12, letterSpacing: 0.3 },
+  heroTitle: { color: '#F8FAFC', fontWeight: '900', fontSize: 30, marginTop: 4 },
+  heroSubtitle: { color: '#DBEAFE', marginTop: 8, fontSize: 14 },
+  heroRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroRightMobile: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
+  dateCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(191,219,254,0.38)',
+    backgroundColor: 'rgba(15,23,42,0.26)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minWidth: 244,
+  },
+  dateLabel: { color: '#BFDBFE', fontSize: 11, fontWeight: '700' },
+  dateValue: { color: '#F8FAFC', fontWeight: '700', fontSize: 13, marginTop: 4 },
+  timeValue: { color: '#DBEAFE', fontWeight: '800', fontSize: 16, marginTop: 2 },
   notificationsBtn: {
     minHeight: 40,
     paddingHorizontal: 12,
@@ -418,7 +489,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#020817', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  mobileBellBtn: { width: 34, height: 34, borderRadius: 10, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' },
   unreadBadge: { position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
