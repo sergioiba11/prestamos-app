@@ -46,6 +46,20 @@ function date(v?: string | null) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+async function getAccessToken() {
+  const { data, error } = await supabase.auth.getSession()
+
+  if (error) throw error
+
+  const token = data.session?.access_token
+
+  if (!token) {
+    throw new Error('No hay sesión activa')
+  }
+
+  return token
+}
+
 export default function PagosPendientesScreen() {
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -84,14 +98,6 @@ export default function PagosPendientesScreen() {
   const closeObservationModal = () => {
     setObsModal({ open: false, payment: null })
     setCurrentObservation('')
-  }
-
-  const getAccessToken = async () => {
-    const { data, error } = await supabase.auth.getSession()
-    if (error) throw error
-    const token = data.session?.access_token
-    if (!token) throw new Error('No se encontró la sesión activa')
-    return token
   }
 
   const loadData = useCallback(async () => {
@@ -160,11 +166,13 @@ export default function PagosPendientesScreen() {
       setProcessingId(pagoId)
       console.log('Aprobando:', pagoId)
 
-      const accessToken = await getAccessToken()
+      const token = await getAccessToken()
+      console.log('Token:', token)
+      console.log('Invocando aprobar-pago')
 
       const { data, error } = await supabase.functions.invoke('aprobar-pago', {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: {
           pago_id: pagoId,
@@ -216,11 +224,13 @@ export default function PagosPendientesScreen() {
       setProcessingId(pago.id)
       console.log('Rechazando pago:', pago.id)
 
-      const accessToken = await getAccessToken()
+      const token = await getAccessToken()
+      console.log('Token:', token)
+      console.log('Invocando aprobar-pago')
 
       const { error } = await supabase.functions.invoke('aprobar-pago', {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: {
           pago_id: pago.id,
