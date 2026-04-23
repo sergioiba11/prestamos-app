@@ -99,7 +99,7 @@ export default function AdminHome() {
       )
       const { data: pendingPaymentsData, error: pendingPaymentsErrorResponse } = await supabase
         .from('pagos')
-        .select('id, cliente_id, prestamo_id, monto, metodo, created_at, estado, estado_validacion')
+        .select('id, cliente_id, prestamo_id, monto, metodo, created_at, estado')
         .eq('estado', 'pendiente_aprobacion')
         .order('created_at', { ascending: false })
 
@@ -121,7 +121,7 @@ export default function AdminHome() {
             monto: Number(pago.monto || 0),
             metodo: String(pago.metodo || 'Sin método'),
             createdAt: String(pago.created_at || ''),
-            estadoValidacion: String(pago.estado || pago.estado_validacion || 'pendiente_aprobacion'),
+            estadoValidacion: String(pago.estado || 'pendiente_aprobacion'),
             prestamoId: pago.prestamo_id ? String(pago.prestamo_id) : undefined,
             telefono: cliente?.telefono || undefined,
           } as PagoPendienteItem

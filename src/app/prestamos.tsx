@@ -124,7 +124,16 @@ export default function PrestamosScreen() {
             </View>
 
             {filtered.map((loan) => (
-              <TouchableOpacity key={loan.prestamoId} style={styles.loanCard} onPress={() => router.push(`/cliente/${loan.clienteId}` as any)}>
+              <TouchableOpacity
+                key={loan.prestamoId}
+                style={styles.loanCard}
+                onPress={() =>
+                  router.push({
+                    pathname: `/cliente/${loan.clienteId}`,
+                    params: { prestamo_id: loan.prestamoId },
+                  } as any)
+                }
+              >
                 {(() => {
                   const badge = badgePrestamo(loan.estado)
                   return (

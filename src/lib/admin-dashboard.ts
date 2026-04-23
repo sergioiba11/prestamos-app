@@ -42,7 +42,6 @@ type PagoRow = {
   created_at: string | null
   fecha_pago: string | null
   estado: string | null
-  estado_validacion: string | null
   impactado: boolean | null
   comprobante_url: string | null
 }
@@ -170,7 +169,6 @@ const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pend
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
 const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
 const PENDING_VALIDATION_STATES = new Set(['pendiente_aprobacion'])
-const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado', 'pagado'])
 
 function low(value?: string | null): string {
   return String(value || '').toLowerCase()
@@ -218,19 +216,15 @@ function resolvePagoClienteId(pago: PagoRow, prestamosById: Map<string, Prestamo
   return prestamosById.get(pago.prestamo_id)?.cliente_id || ''
 }
 
-function isApprovedPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion' | 'metodo'>) {
+function isApprovedPayment(pago: Pick<PagoRow, 'estado' | 'metodo'>) {
   const estado = low(pago.estado)
   if (estado) return estado === 'aprobado'
-  const estadoValidacion = low(pago.estado_validacion)
-  if (estadoValidacion) return APPROVED_VALIDATION_STATES.has(estadoValidacion)
   return low(pago.metodo) === 'efectivo'
 }
 
-function isPendingValidationPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion'>) {
+function isPendingValidationPayment(pago: Pick<PagoRow, 'estado'>) {
   const estado = low(pago.estado)
-  if (estado) return estado === 'pendiente_aprobacion'
-  const estadoValidacion = low(pago.estado_validacion)
-  return PENDING_VALIDATION_STATES.has(estadoValidacion)
+  return PENDING_VALIDATION_STATES.has(estado)
 }
 
 function toListadoItemFromView(row: AdminClientesListadoViewRow): ClienteAdminListadoItem {
@@ -332,7 +326,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: pagosRaw, error: pagosError } = await supabase
     .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado,comprobante_url')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado,comprobante_url')
 
   if (pagosError) {
     console.error('[admin-dashboard] pagos fallback error', pagosError)
@@ -484,7 +478,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado,comprobante_url')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado,comprobante_url')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
@@ -540,10 +534,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       monto: toNumber(pago.monto),
       metodo: pago.metodo || 'Sin método',
       createdAt: pago.created_at || '',
-      estadoValidacion:
-        low(pago.estado) ||
-        low(pago.estado_validacion) ||
-        (isApprovedPayment(pago) ? 'aprobado' : 'pendiente'),
+      estadoValidacion: low(pago.estado) || (isApprovedPayment(pago) ? 'aprobado' : 'pendiente_aprobacion'),
       prestamoId: pago.prestamo_id || undefined,
       telefono: cliente?.telefono || undefined,
     }
@@ -692,7 +683,7 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       .order('fecha_inicio', { ascending: false }),
     supabase
       .from('pagos')
-      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado,estado_validacion')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado')
       .order('created_at', { ascending: false }),
   ])
 
@@ -700,6 +691,16 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
     console.error('[admin-dashboard] detalle prestamos error', prestamosResult.error)
     throw prestamosResult.error
   }
+
+  console.log('detalle cliente/prestamo data:', {
+    clienteId: normalizedClienteId,
+    prestamos: prestamosResult.data,
+    pagos: pagosResult.data,
+  })
+  console.log('detalle cliente/prestamo error:', {
+    prestamosError: prestamosResult.error,
+    pagosError: pagosResult.error,
+  })
 
   if (pagosResult.error) {
     console.error('[admin-dashboard] detalle pagos error', pagosResult.error)
@@ -725,7 +726,7 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       prestamoId: pago.prestamo_id || null,
       monto: toNumber(pago.monto),
       metodo: pago.metodo || 'sin_metodo',
-      estado: low(pago.estado) || low(pago.estado_validacion) || 'pendiente',
+      estado: low(pago.estado) || 'pendiente_aprobacion',
       createdAt: pago.created_at || '',
     }))
 
