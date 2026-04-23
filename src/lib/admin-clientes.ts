@@ -20,7 +20,7 @@ function normalizeDni(raw: string) {
 
 function toFriendlyError(err: any) {
   const msg = String(err?.message || err?.details || 'No se pudo actualizar el cliente.')
-  if (msg.toLowerCase().includes('no changes')) return 'No hay cambios para guardar.'
+  if (msg.toLowerCase().includes('no changes') || msg.toLowerCase().includes('no hay cambios')) return 'No hay cambios para guardar.'
   if (msg.toLowerCase().includes('ya está en uso')) return 'Ese DNI ya está en uso.'
   return msg
 }
@@ -92,11 +92,11 @@ export async function updateClienteEditableByAdmin(params: {
 }) {
   const payload = {
     p_cliente_id: params.clienteId,
-    p_nombre: params.nombre.trim(),
-    p_apellido: params.apellido.trim() || null,
-    p_dni: normalizeDni(params.dni),
-    p_telefono: params.telefono.trim() || null,
-    p_direccion: params.direccion.trim() || null,
+    p_nombre: params.nombre,
+    p_apellido: params.apellido,
+    p_dni: params.dni,
+    p_telefono: params.telefono,
+    p_direccion: params.direccion,
   }
 
   console.log('[admin-cliente] update payload', payload)
