@@ -69,10 +69,12 @@ type RegistrarPagoResponse = {
   ok?: boolean
   pendiente?: boolean
   estado?: string
+  impactado?: boolean
   error?: string
   detalle?: string
   pago?: any
   cuotas_impactadas?: number[]
+  estado_comprobante?: string
   detalle_aplicacion?: Array<{
     cuota_id: string
     numero_cuota: number
@@ -705,12 +707,36 @@ export default function CargarPago() {
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
 
       const json = await invocarFuncionConFallback(accessToken, payload)
+      console.log('[cargar-pago] respuesta completa registrar-pago:', json)
 
-      if (!json || json.error) {
+      if (!json || json.error || json.ok === false || !json?.pago?.id) {
+        console.error('[cargar-pago] registrar-pago inválido/error:', {
+          error: json?.error,
+          detalle: json?.detalle,
+          ok: json?.ok,
+          pago_id: json?.pago?.id,
+          response: json,
+        })
         Alert.alert(
           'Error',
-          json?.error || json?.detalle || 'La función respondió vacío. Intentá nuevamente.'
+          json?.error ||
+            json?.detalle ||
+            'No se pudo registrar el pago correctamente. Intentá nuevamente.'
         )
+        return
+      }
+
+      if (metodo === 'transferencia') {
+        if (json.ok && json.estado === 'pendiente_aprobacion' && json.impactado === false) {
+          Alert.alert('Transferencia pendiente', 'La transferencia quedó pendiente de validación')
+          void cargarCuotasPrestamo(prestamoSeleccionado.id)
+          setMonto('')
+          setComprobante('')
+          router.push('/pagos-pendientes' as any)
+          return
+        }
+
+        Alert.alert('Error', 'La transferencia no pudo registrarse como pendiente')
         return
       }
 
@@ -744,16 +770,6 @@ export default function CargarPago() {
             qrUrl: mpData.qr_url || null,
             qrBase64: mpData.qr_base64 || null,
           })
-        } else if (metodo === 'transferencia') {
-          Alert.alert(
-            'Transferencia pendiente',
-            'La transferencia quedó pendiente de validación.'
-          )
-          void cargarCuotasPrestamo(prestamoSeleccionado.id)
-          setMonto('')
-          setComprobante('')
-          router.replace('/pagos-pendientes' as any)
-          return
         } else {
           Alert.alert('Pago registrado', 'Pago enviado para aprobación administrativa.')
         }
@@ -789,9 +805,15 @@ export default function CargarPago() {
         console.warn('[cargar-pago] createSystemActivity pago_registrado fallback (registrado server-side)', activityError)
       }
 
-      router.replace({
+      if (!(json.ok && json.estado === 'aprobado' && json.impactado === true)) {
+        Alert.alert('Error', 'El pago no quedó aprobado correctamente')
+        return
+      }
+
+      router.push({
         pathname: '/pago-aprobado',
         params: {
+          id: String(json.pago.id),
           monto: String(Number(montoAplicado.toFixed(2))),
           monto_ingresado: String(Number(montoNormalizado.toFixed(2))),
           vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
@@ -815,13 +837,13 @@ export default function CargarPago() {
           cliente_dni: clienteSeleccionado.dni || '',
           cliente_email: clienteSeleccionado.email || '',
           cliente_telefono: clienteSeleccionado.telefono || '',
-          pago_id: json?.pago?.id ? String(json.pago.id) : '',
-          identificador_interno_pago: json?.pago?.id ? String(json.pago.id) : '',
+          pago_id: String(json.pago.id),
+          identificador_interno_pago: String(json.pago.id),
           observaciones: json?.pago?.nota ? String(json.pago.nota) : '',
         },
       })
     } catch (error: any) {
-      console.log('ERROR REGISTRAR PAGO CATCH:', error)
+      console.error('[cargar-pago] error registrar pago catch:', error)
       const detalle = typeof error?.details === 'string' ? error.details : ''
       const hint = typeof error?.hint === 'string' ? error.hint : ''
       const mensaje = [error?.message, detalle, hint].filter(Boolean).join('\n')

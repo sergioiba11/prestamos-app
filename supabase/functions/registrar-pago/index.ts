@@ -413,6 +413,8 @@ Deno.serve(async (req) => {
     const comprobanteUrl = String(body?.comprobante_url || body?.comprobante || '').trim() || null
     const mpPreferenceId = String(body?.mp_preference_id || '').trim() || null
 
+    console.log('[registrar-pago] metodo recibido:', metodo)
+
     if (!prestamo_id || !cliente_id || !metodo || !cuota_id_inicial) {
       return jsonResponse(
         {
@@ -532,6 +534,7 @@ Deno.serve(async (req) => {
           pendiente: true,
           estado: 'pendiente_aprobacion',
           pago: { id: possibleDuplicates[0].id },
+          impactado: false,
           idempotente: true,
         })
       }
@@ -555,6 +558,8 @@ Deno.serve(async (req) => {
         })
         .select()
         .single()
+
+      console.log('[registrar-pago] resultado insert pago pendiente:', { pago: pagoPendiente, error: pagoPendienteError?.message || null })
 
       if (pagoPendienteError || !pagoPendiente) {
         return jsonResponse(
@@ -591,16 +596,25 @@ Deno.serve(async (req) => {
         console.error('[registrar-pago] notificaciones pago_pendiente error', notifPendienteError)
       }
 
-      return jsonResponse({
+      const pendingResponse = {
         ok: true,
         pendiente: true,
         pago: pagoPendiente,
         estado: 'pendiente_aprobacion',
+        impactado: false,
         mensaje:
           metodo === 'transferencia'
             ? 'Pago pendiente de aprobación'
             : 'Pago de Mercado Pago pendiente de confirmación',
+      }
+
+      console.log('[registrar-pago] estado final devuelto:', {
+        estado: pendingResponse.estado,
+        impactado: pendingResponse.impactado,
+        pago_id: pendingResponse.pago?.id || null,
       })
+
+      return jsonResponse(pendingResponse)
     }
 
     let cuotasAProcesar = cuotasPendientes
@@ -708,6 +722,11 @@ Deno.serve(async (req) => {
       )
     )
 
+    console.log('[registrar-pago] impacto aplicado en cuotas:', {
+      cuotas_impactadas: detalleAplicacion.length,
+      monto_total_aplicado: totalAplicado,
+    })
+
     if (totalAplicado <= 0) {
       return jsonResponse(
         { error: 'No se pudo aplicar el pago a ninguna cuota' },
@@ -734,6 +753,8 @@ Deno.serve(async (req) => {
       })
       .select()
       .single()
+
+    console.log('[registrar-pago] resultado insert pago efectivo:', { pago, error: pagoError?.message || null })
 
     if (pagoError || !pago) {
       return jsonResponse(
@@ -965,9 +986,11 @@ Deno.serve(async (req) => {
       console.error('[registrar-pago] notificaciones pago_registrado error', notifError)
     }
 
-    return jsonResponse({
+    const successResponse = {
       ok: true,
       pago,
+      estado: 'aprobado',
+      impactado: true,
       cuotas_impactadas: cuotasImpactadas,
       cuotas_impactadas_detalle: detalleAplicacion.map((item) => ({
         numero_cuota: item.numero_cuota,
@@ -989,7 +1012,16 @@ Deno.serve(async (req) => {
       factura_email_cliente: resultadoCorreoCliente,
       factura_email_admin: resultadoCorreoAdmin,
       debug,
+    }
+
+    console.log('[registrar-pago] estado final devuelto:', {
+      estado: successResponse.estado,
+      impactado: successResponse.impactado,
+      pago_id: successResponse.pago?.id || null,
+      cuotas_impactadas: successResponse.cuotas_impactadas?.length || 0,
     })
+
+    return jsonResponse(successResponse)
   } catch (error) {
     return jsonResponse(
       {
