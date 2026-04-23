@@ -239,6 +239,10 @@ export async function signInWithEmailOrDni(params: {
     }
 
     email = payload.email
+    console.log('[auth] email resuelto desde DNI/identificador', {
+      identifier: rawIdentifier,
+      resolvedEmail: email,
+    })
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -247,7 +251,26 @@ export async function signInWithEmailOrDni(params: {
   })
 
   if (error) {
-    const normalized = error.message.toLowerCase()
+    const normalizedMessage = (error.message || '').toLowerCase()
+    const normalizedCode = String((error as any).code || '').toLowerCase()
+    const isEmailNotConfirmed =
+      normalizedMessage.includes('email_not_confirmed') || normalizedCode.includes('email_not_confirmed')
+
+    if (isEmailNotConfirmed) {
+      console.warn('[auth] login bloqueado por email_not_confirmed', {
+        email,
+        code: (error as any).code || null,
+      })
+      const confirmationError = new Error('Tenés que confirmar tu correo antes de ingresar.') as Error & {
+        code?: string
+        resolvedEmail?: string
+      }
+      confirmationError.code = 'email_not_confirmed'
+      confirmationError.resolvedEmail = email
+      throw confirmationError
+    }
+
+    const normalized = normalizedMessage
     if (normalized.includes('invalid login credentials')) {
       throw new Error('Usuario o contraseña incorrectos.')
     }
