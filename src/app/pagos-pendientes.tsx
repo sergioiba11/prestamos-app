@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
@@ -61,12 +61,15 @@ async function getAccessToken() {
 }
 
 export default function PagosPendientesScreen() {
+  const { width } = useWindowDimensions()
+  const isMobile = width < 1024
+
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [adminName, setAdminName] = useState('Operador')
   const [adminRole, setAdminRole] = useState<UserRole>('unknown')
   const [items, setItems] = useState<PendingPayment[]>([])
-  const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [queryError, setQueryError] = useState<string | null>(null)
   const [obsModal, setObsModal] = useState<{ open: boolean; payment: PendingPayment | null }>({
@@ -76,7 +79,7 @@ export default function PagosPendientesScreen() {
   const [currentObservation, setCurrentObservation] = useState('')
 
   const onNavigate = (key: AdminNavKey) => {
-    setMobileMenu(false)
+    setMenuOpen(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
     if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
@@ -291,16 +294,26 @@ export default function PagosPendientesScreen() {
 
   return (
     <View style={styles.page}>
-      <AdminSidebar
-        active="pagos-pendientes"
-        adminName={adminName}
-        adminRole={adminRole}
-        onNavigate={onNavigate}
-        onLogout={onLogout}
-      />
+      {!isMobile ? (
+        <AdminSidebar
+          active="pagos-pendientes"
+          adminName={adminName}
+          adminRole={adminRole}
+          onNavigate={onNavigate}
+          onLogout={onLogout}
+        />
+      ) : (
+        <View style={styles.mobileTopBar}>
+          <TouchableOpacity onPress={() => setMenuOpen(true)}>
+            <Ionicons name="menu" size={24} color="#E2E8F0" />
+          </TouchableOpacity>
+          <Text style={styles.mobileTitle}>Pagos pendientes</Text>
+          <View style={styles.mobileTopBarSpacer} />
+        </View>
+      )}
 
-      <View style={styles.main}>
-        <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.mainWrap}>
+        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
           <Text style={styles.title}>Pagos pendientes</Text>
           <Text style={styles.subtitle}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
 
@@ -352,6 +365,21 @@ export default function PagosPendientesScreen() {
         </ScrollView>
       </View>
 
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <View style={styles.modalWrapMenu}>
+          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
+          <AdminSidebar
+            active="pagos-pendientes"
+            adminName={adminName}
+            adminRole={adminRole}
+            onNavigate={onNavigate}
+            onLogout={onLogout}
+            mobile
+            onCloseMobile={() => setMenuOpen(false)}
+          />
+        </View>
+      </Modal>
+
       <Modal visible={obsModal.open} transparent animationType="fade" onRequestClose={closeObservationModal}>
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={closeObservationModal} />
@@ -385,8 +413,25 @@ export default function PagosPendientesScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
-  main: { flex: 1 },
+  mainWrap: { flex: 1 },
   content: { padding: 16, paddingBottom: 32, gap: 12 },
+  mobileTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    height: 56,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    backgroundColor: '#020817',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
+  mobileTopBarSpacer: { width: 24, height: 24 },
   title: { color: '#fff', fontSize: 28, fontWeight: '800' },
   subtitle: { color: '#94A3B8' },
   searchInput: {
@@ -443,6 +488,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   backBtnText: { color: '#fff', fontWeight: '700' },
+  modalWrapMenu: { flex: 1, flexDirection: 'row' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
   modalWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.72)' },
   modalCard: {
