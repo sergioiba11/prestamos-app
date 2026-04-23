@@ -2,6 +2,7 @@ import { Image } from 'expo-image'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Platform,
@@ -12,6 +13,7 @@ import {
   Text,
   View,
 } from 'react-native'
+import { supabase } from '../lib/supabase'
 
 type ParamValue = string | string[] | undefined
 
@@ -146,6 +148,8 @@ function formatFileName(cliente: string, fecha: string) {
 export default function PagoAprobado() {
   const params = useLocalSearchParams()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [validatingPayment, setValidatingPayment] = useState(true)
+  const [paymentApproved, setPaymentApproved] = useState(false)
   const receiptRef = useRef<View | null>(null)
 
   const montoAplicado = getParamNumber(params.monto)
@@ -237,6 +241,32 @@ export default function PagoAprobado() {
     : saldoRestante <= 0
       ? 'Préstamo saldado / sin saldo pendiente'
       : 'Sin próxima cuota informada'
+
+  useEffect(() => {
+    const validatePayment = async () => {
+      try {
+        if (!pagoId) {
+          setPaymentApproved(false)
+          return
+        }
+        const { data, error } = await supabase
+          .from('pagos')
+          .select('estado,impactado')
+          .eq('id', pagoId)
+          .maybeSingle()
+        if (error) throw error
+        const estado = String(data?.estado || '').toLowerCase()
+        const impactado = Boolean(data?.impactado)
+        setPaymentApproved(estado === 'aprobado' && impactado)
+      } catch {
+        setPaymentApproved(false)
+      } finally {
+        setValidatingPayment(false)
+      }
+    }
+
+    void validatePayment()
+  }, [pagoId])
 
   const shareText = [
     'Comprobante de pago - Creditodo',
@@ -451,6 +481,29 @@ export default function PagoAprobado() {
       styleTag.remove()
     }
   }, [])
+
+  if (validatingPayment) {
+    return (
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator size="large" color="#22C55E" />
+        <Text style={styles.loadingText}>Validando comprobante...</Text>
+      </View>
+    )
+  }
+
+  if (!paymentApproved) {
+    return (
+      <View style={styles.loadingWrap}>
+        <Text style={styles.deniedTitle}>Comprobante no disponible</Text>
+        <Text style={styles.deniedText}>
+          Esta pantalla solo muestra pagos aprobados e impactados.
+        </Text>
+        <Pressable style={styles.backButton} onPress={() => router.replace('/pagos-pendientes' as any)}>
+          <Text style={styles.backButtonText}>Ir a pagos pendientes</Text>
+        </Pressable>
+      </View>
+    )
+  }
 
   return (
     <View style={styles.screen} nativeID="creditodo-recibo-root">
@@ -773,5 +826,37 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontWeight: '700',
     fontSize: 14,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+    padding: 20,
+    gap: 10,
+  },
+  loadingText: {
+    color: '#334155',
+    fontWeight: '600',
+  },
+  deniedTitle: {
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  deniedText: {
+    color: '#475569',
+    textAlign: 'center',
+  },
+  backButton: {
+    marginTop: 8,
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 })
