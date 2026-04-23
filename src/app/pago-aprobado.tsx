@@ -243,7 +243,7 @@ export default function PagoAprobado() {
   const estadoComprobante = getParamString(params.estado_comprobante, 'COMPLETO').toUpperCase()
 
   const proximaCuota = proximaCuotaDb || getParamString(params.proxima_cuota)
-  const clienteNombreRaw = useMemo(() => {
+  const nombreCompleto = useMemo(() => {
     const nombre = String(cliente?.nombre || getParamString(params.cliente_nombre)).trim()
     const apellido = String(cliente?.apellido || getParamString(params.cliente_apellido)).trim()
     if (nombre && apellido) return `${nombre} ${apellido}`
@@ -251,9 +251,9 @@ export default function PagoAprobado() {
     if (apellido) return apellido
     return ''
   }, [cliente?.nombre, cliente?.apellido, params.cliente_nombre, params.cliente_apellido])
-  const clienteNombre = formatFallback(clienteNombreRaw, 'Cliente no informado')
-  const clienteDni = String(cliente?.dni || getParamString(params.cliente_dni))
-  const clienteEmail = String(cliente?.email || usuario?.email || getParamString(params.cliente_email))
+  const clienteNombre = formatFallback(nombreCompleto, 'Cliente no informado')
+  const dniFinal = String(cliente?.dni || getParamString(params.cliente_dni))
+  const emailFinal = String(cliente?.email || usuario?.email || getParamString(params.cliente_email))
   const clienteTelefono = String(cliente?.telefono || getParamString(params.cliente_telefono))
   const observaciones = getParamString(params.observaciones)
 
@@ -340,6 +340,7 @@ export default function PagoAprobado() {
         if (pagoError) throw pagoError
         setPago((pagoData || null) as PagoComprobanteRow | null)
         console.log('pago comprobante:', pagoData)
+        console.log('cliente_id comprobante:', pagoData?.cliente_id)
 
         const estado = String(pagoData?.estado || '').toLowerCase()
         const impactado = Boolean(pagoData?.impactado)
@@ -517,8 +518,8 @@ export default function PagoAprobado() {
 
   const clientItems: ReceiptLineItem[] = [
     { label: 'Nombre completo', value: clienteNombre },
-    { label: 'DNI', value: formatFallback(clienteDni, 'No registrado') },
-    { label: 'Email', value: formatFallback(clienteEmail, 'No registrado') },
+    { label: 'DNI', value: formatFallback(dniFinal, 'No registrado') },
+    { label: 'Email', value: formatFallback(emailFinal, 'No registrado') },
     { label: 'ID cliente', value: formatFallback(clienteId) },
   ]
 
