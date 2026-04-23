@@ -93,7 +93,20 @@ export default function AdminHome() {
       }
 
       const data = await fetchAdminPanelData()
-      setKpis(data.kpis)
+      const { data: pagosPendientes, error } = await supabase
+        .from('pagos')
+        .select('id')
+        .eq('estado', 'pendiente_aprobacion')
+
+      console.log('dashboard pendientes:', pagosPendientes)
+      if (error) console.error('admin-home pagos pendientes error', error)
+
+      const totalPagosPendientes = pagosPendientes?.length || 0
+
+      setKpis({
+        ...data.kpis,
+        pagosPendientes: totalPagosPendientes,
+      })
       setActiveClients(data.activosCards)
       setPendingPayments(data.pagosPendientesList)
       await loadNotifications()
