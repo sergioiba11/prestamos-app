@@ -31,6 +31,38 @@ type CuotaImpactadaDetalle = {
   saldo_despues: number
 }
 
+type PagoComprobanteRow = {
+  id: string
+  prestamo_id: string | null
+  cliente_id: string | null
+  monto: number | null
+  metodo: string | null
+  estado: string | null
+  impactado: boolean | null
+  created_at: string | null
+  fecha_pago: string | null
+}
+
+type ClienteComprobanteRow = {
+  id: string
+  nombre: string | null
+  apellido: string | null
+  dni: string | null
+  email: string | null
+  telefono: string | null
+  usuario_id: string | null
+}
+
+type PrestamoComprobanteRow = {
+  id: string
+  cliente_id: string | null
+  monto: number | null
+  interes: number | null
+  total_a_pagar: number | null
+  estado: string | null
+  cuotas: number | null
+}
+
 function getParamString(value: ParamValue, fallback = '') {
   const raw = Array.isArray(value) ? value[0] : value
   if (typeof raw !== 'string') return fallback
@@ -150,20 +182,28 @@ export default function PagoAprobado() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [validatingPayment, setValidatingPayment] = useState(true)
   const [paymentApproved, setPaymentApproved] = useState(false)
+  const [pago, setPago] = useState<PagoComprobanteRow | null>(null)
+  const [cliente, setCliente] = useState<ClienteComprobanteRow | null>(null)
+  const [prestamo, setPrestamo] = useState<PrestamoComprobanteRow | null>(null)
+  const [saldoRestantePrestamoDb, setSaldoRestantePrestamoDb] = useState<number | null>(null)
   const receiptRef = useRef<View | null>(null)
 
-  const montoAplicado = getParamNumber(params.monto)
+  const montoAplicadoParam = getParamNumber(params.monto)
+  const montoAplicado = Number.isFinite(Number(pago?.monto)) ? Number(pago?.monto || 0) : montoAplicadoParam
   const montoIngresado = getParamNumber(params.monto_ingresado, montoAplicado)
-  const saldoRestante = getParamNumber(params.saldo_restante)
+  const saldoRestanteParam = getParamNumber(params.saldo_restante)
+  const saldoRestante = Number.isFinite(Number(saldoRestantePrestamoDb))
+    ? Number(saldoRestantePrestamoDb || 0)
+    : saldoRestanteParam
   const saldoRestanteCuota = getParamNumber(params.saldo_restante_cuota)
 
-  const metodo = getParamString(params.metodo, 'No informado')
-  const prestamoId = getParamString(params.prestamo_id)
-  const clienteId = getParamString(params.cliente_id)
+  const metodo = String(pago?.metodo || getParamString(params.metodo, 'No informado'))
+  const prestamoId = String(prestamo?.id || pago?.prestamo_id || getParamString(params.prestamo_id))
+  const clienteId = String(cliente?.id || pago?.cliente_id || getParamString(params.cliente_id))
   const numeroCuota = getParamString(params.numero_cuota)
-  const pagoId = getParamString(params.pago_id) || getParamString(params.id)
+  const pagoId = String(pago?.id || getParamString(params.pago_id) || getParamString(params.id))
   const pagoInternoId = getParamString(params.identificador_interno_pago)
-  const fechaRaw = getParamString(params.fecha)
+  const fechaRaw = String(pago?.fecha_pago || pago?.created_at || getParamString(params.fecha))
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
 
   const cuotasImpactadas = useMemo(
@@ -178,12 +218,12 @@ export default function PagoAprobado() {
 
   const proximaCuota = getParamString(params.proxima_cuota)
   const clienteNombre = formatFallback(
-    `${getParamString(params.cliente_nombre)} ${getParamString(params.cliente_apellido)}`.trim(),
+    `${String(cliente?.nombre || getParamString(params.cliente_nombre))} ${String(cliente?.apellido || getParamString(params.cliente_apellido))}`.trim(),
     'Cliente no informado'
   )
-  const clienteDni = getParamString(params.cliente_dni)
-  const clienteEmail = getParamString(params.cliente_email)
-  const clienteTelefono = getParamString(params.cliente_telefono)
+  const clienteDni = String(cliente?.dni || getParamString(params.cliente_dni))
+  const clienteEmail = String(cliente?.email || getParamString(params.cliente_email))
+  const clienteTelefono = String(cliente?.telefono || getParamString(params.cliente_telefono))
   const observaciones = getParamString(params.observaciones)
 
   const isEfectivo = metodo.toLowerCase() === 'efectivo'
@@ -243,21 +283,89 @@ export default function PagoAprobado() {
       : 'Sin próxima cuota informada'
 
   useEffect(() => {
-    const validatePayment = async () => {
+    const loadReceiptData = async () => {
       try {
         if (!pagoId) {
           setPaymentApproved(false)
           return
         }
-        const { data, error } = await supabase
+
+        const { data: pagoData, error: pagoError } = await supabase
           .from('pagos')
-          .select('estado,impactado')
+          .select('id,prestamo_id,cliente_id,monto,metodo,estado,impactado,created_at,fecha_pago')
           .eq('id', pagoId)
           .maybeSingle()
-        if (error) throw error
-        const estado = String(data?.estado || '').toLowerCase()
-        const impactado = Boolean(data?.impactado)
+        if (pagoError) throw pagoError
+        setPago((pagoData || null) as PagoComprobanteRow | null)
+        console.log('pago comprobante:', pagoData)
+
+        const estado = String(pagoData?.estado || '').toLowerCase()
+        const impactado = Boolean(pagoData?.impactado)
         setPaymentApproved(estado === 'aprobado' && impactado)
+
+        let clienteData: ClienteComprobanteRow | null = null
+        if (pagoData?.cliente_id) {
+          const { data: clienteQueryData, error: clienteError } = await supabase
+            .from('clientes')
+            .select('id,nombre,apellido,dni,email,telefono,usuario_id')
+            .eq('id', pagoData.cliente_id)
+            .maybeSingle()
+          if (clienteError) {
+            console.error('Error cargando cliente para comprobante:', clienteError)
+          }
+
+          clienteData = clienteError ? null : ((clienteQueryData || null) as ClienteComprobanteRow | null)
+
+          if (clienteData?.usuario_id && !String(clienteData.email || '').trim()) {
+            const { data: usuarioData, error: usuarioError } = await supabase
+              .from('usuarios')
+              .select('email')
+              .eq('id', clienteData.usuario_id)
+              .maybeSingle()
+            if (usuarioError) {
+              console.error('Error cargando email de usuario para comprobante:', usuarioError)
+            } else {
+              clienteData = {
+                ...clienteData,
+                email: String(usuarioData?.email || clienteData.email || ''),
+              }
+            }
+          }
+        }
+        setCliente(clienteData)
+        console.log('cliente comprobante:', clienteData)
+
+        let prestamoData: PrestamoComprobanteRow | null = null
+        if (pagoData?.prestamo_id) {
+          const { data: prestamoQueryData, error: prestamoError } = await supabase
+            .from('prestamos')
+            .select('id,cliente_id,monto,interes,total_a_pagar,estado,cuotas')
+            .eq('id', pagoData.prestamo_id)
+            .maybeSingle()
+          if (prestamoError) {
+            console.error('Error cargando préstamo para comprobante:', prestamoError)
+          } else {
+            prestamoData = (prestamoQueryData || null) as PrestamoComprobanteRow | null
+          }
+
+          const { data: cuotasData, error: cuotasError } = await supabase
+            .from('cuotas')
+            .select('saldo_pendiente,estado')
+            .eq('prestamo_id', pagoData.prestamo_id)
+            .in('estado', ['pendiente', 'parcial'])
+          if (cuotasError) {
+            console.error('Error calculando saldo restante para comprobante:', cuotasError)
+            setSaldoRestantePrestamoDb(null)
+          } else {
+            const saldoCalculado = ((cuotasData || []) as Array<{ saldo_pendiente?: number | null }>)
+              .reduce((acc, item) => acc + Number(item?.saldo_pendiente || 0), 0)
+            setSaldoRestantePrestamoDb(Number.isFinite(saldoCalculado) ? saldoCalculado : null)
+          }
+        } else {
+          setSaldoRestantePrestamoDb(null)
+        }
+        setPrestamo(prestamoData)
+        console.log('prestamo comprobante:', prestamoData)
       } catch {
         setPaymentApproved(false)
       } finally {
@@ -265,7 +373,7 @@ export default function PagoAprobado() {
       }
     }
 
-    void validatePayment()
+    void loadReceiptData()
   }, [pagoId])
 
   const shareText = [
