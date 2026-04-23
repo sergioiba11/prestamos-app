@@ -1,4 +1,4 @@
-import { Link, router } from 'expo-router'
+import { Link } from 'expo-router'
 import { useState } from 'react'
 import {
   ActivityIndicator,
@@ -142,8 +142,8 @@ export default function RegisterScreen() {
         return
       }
 
-      setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
-      setTimeout(() => router.replace('/login' as any), 600)
+      setSuccess('Te enviamos un correo para confirmar tu cuenta. Revisá tu email antes de iniciar sesión.')
+      setPassword('')
     } catch {
       setError('No se pudo completar el registro en este momento.')
     } finally {
@@ -192,13 +192,17 @@ export default function RegisterScreen() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {success ? <Text style={styles.successText}>{success}</Text> : null}
 
-          <TouchableOpacity style={[styles.primaryButton, loading && styles.disabled]} onPress={submit} disabled={loading}>
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.disabled]}
+            onPress={submit}
+            disabled={loading || !!success}
+          >
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Crear cuenta</Text>}
           </TouchableOpacity>
 
           <Link href={'/login' as any} asChild>
             <TouchableOpacity style={styles.secondaryButton}>
-              <Text style={styles.secondaryText}>Ya tengo cuenta</Text>
+              <Text style={styles.secondaryText}>{success ? 'Ir a iniciar sesión' : 'Ya tengo cuenta'}</Text>
             </TouchableOpacity>
           </Link>
         </ScrollView>

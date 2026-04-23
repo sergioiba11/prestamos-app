@@ -255,5 +255,6 @@ export async function signInWithEmailOrDni(params: {
   }
 
   if (!data.user) throw new Error('No se pudo iniciar sesión. Intentá nuevamente.')
-  return data.user
+
+  return { user: data.user, email }
 }
