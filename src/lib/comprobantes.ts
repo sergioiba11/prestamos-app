@@ -1,7 +1,6 @@
 export type PagoComprobanteCandidate = {
   id: string
   estado?: string | null
-  estado_validacion?: string | null
   impactado?: boolean | null
   comprobante_url?: string | null
   created_at?: string | null
@@ -16,22 +15,19 @@ function low(value?: string | null): string {
   return String(value || '').trim().toLowerCase()
 }
 
-export function isPendingValidationPayment(pago: Pick<PagoComprobanteCandidate, 'estado' | 'estado_validacion'>): boolean {
+export function isPendingValidationPayment(pago: Pick<PagoComprobanteCandidate, 'estado'>): boolean {
   const estado = low(pago.estado)
-  if (estado) return PENDING_VALIDATION_STATES.has(estado)
-  return PENDING_VALIDATION_STATES.has(low(pago.estado_validacion))
+  return PENDING_VALIDATION_STATES.has(estado)
 }
 
-export function isRejectedPayment(pago: Pick<PagoComprobanteCandidate, 'estado' | 'estado_validacion'>): boolean {
+export function isRejectedPayment(pago: Pick<PagoComprobanteCandidate, 'estado'>): boolean {
   const estado = low(pago.estado)
-  if (estado) return REJECTED_STATES.has(estado)
-  return REJECTED_STATES.has(low(pago.estado_validacion))
+  return REJECTED_STATES.has(estado)
 }
 
-export function isApprovedPaymentForReceipt(pago: Pick<PagoComprobanteCandidate, 'estado' | 'estado_validacion' | 'impactado'>): boolean {
+export function isApprovedPaymentForReceipt(pago: Pick<PagoComprobanteCandidate, 'estado' | 'impactado'>): boolean {
   const estado = low(pago.estado)
-  const estadoValidacion = low(pago.estado_validacion)
-  const approved = estado ? estado === 'aprobado' : APPROVED_VALIDATION_STATES.has(estadoValidacion)
+  const approved = estado === 'aprobado' || APPROVED_VALIDATION_STATES.has(estado)
   return approved && Boolean(pago.impactado)
 }
 
