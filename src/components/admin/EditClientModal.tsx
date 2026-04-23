@@ -7,6 +7,7 @@ type ClientEditable = {
   usuario_id?: string
   nombre: string
   dni: string
+  dni_editado?: boolean
   telefono: string
   direccion: string
   email: string
@@ -26,6 +27,7 @@ export function EditClientModal({
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
   const [direccion, setDireccion] = useState('')
+  const [dni, setDni] = useState('')
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
@@ -33,6 +35,7 @@ export function EditClientModal({
   useEffect(() => {
     if (!client) return
     setNombre(client.nombre || '')
+    setDni(client.dni || '')
     setTelefono(client.telefono || '')
     setDireccion(client.direccion || '')
     setEmail(client.email || '')
@@ -41,30 +44,55 @@ export function EditClientModal({
 
   const save = async () => {
     if (!client) return
-    if (!nombre.trim()) {
-      setMsg('El nombre es obligatorio.')
-      return
-    }
 
     try {
       setLoading(true)
       setMsg('')
 
+      const dniNormalizado = dni.trim()
+      const nombreNormalizado = nombre.trim()
+      const telefonoNormalizado = telefono.trim()
+      const direccionNormalizada = direccion.trim()
+
+      if (!nombreNormalizado) {
+        setMsg('El nombre es obligatorio.')
+        return
+      }
+
+      const { data: clienteActual, error: clienteActualError } = await supabase
+        .from('clientes')
+        .select('dni,dni_editado')
+        .eq('id', client.id)
+        .single()
+
+      if (clienteActualError) throw clienteActualError
+
+      const dniEditado = Boolean(clienteActual?.dni_editado)
+      const dniActual = String(clienteActual?.dni || '').trim()
+      const dniRealmenteCambio = dniNormalizado !== dniActual
+
+      if (dniRealmenteCambio && dniEditado) {
+        setMsg('El DNI solo puede modificarse una vez.')
+        return
+      }
+
+      const payload: Record<string, any> = {
+        nombre: nombreNormalizado,
+        telefono: telefonoNormalizado || null,
+        direccion: direccionNormalizada || null,
+      }
+
+      if (dniRealmenteCambio) {
+        payload.dni = dniNormalizado
+        payload.dni_editado = true
+      }
+
       const { error: clienteError } = await supabase
         .from('clientes')
-        .update({ nombre: nombre.trim(), telefono: telefono.trim() || null, direccion: direccion.trim() || null })
+        .update(payload)
         .eq('id', client.id)
 
       if (clienteError) throw clienteError
-
-      if (client.usuario_id && email.trim()) {
-        const { error: userError } = await supabase
-          .from('usuarios')
-          .update({ email: email.trim().toLowerCase() })
-          .eq('id', client.usuario_id)
-
-        if (userError) throw userError
-      }
 
       onSaved()
       onClose()
@@ -82,10 +110,18 @@ export function EditClientModal({
           <Text style={styles.title}>Editar cliente</Text>
 
           <TextInput style={styles.input} placeholder="Nombre" placeholderTextColor="#64748B" value={nombre} onChangeText={setNombre} />
-          <TextInput style={styles.inputDisabled} value={`DNI: ${client?.dni || '—'}`} editable={false} />
+          <TextInput
+            style={client?.dni_editado ? styles.inputDisabled : styles.input}
+            placeholder="DNI"
+            placeholderTextColor="#64748B"
+            value={dni}
+            onChangeText={setDni}
+            editable={!client?.dni_editado}
+          />
+          {client?.dni_editado ? <Text style={styles.helper}>El DNI solo puede modificarse una vez.</Text> : null}
           <TextInput style={styles.input} placeholder="Teléfono" placeholderTextColor="#64748B" value={telefono} onChangeText={setTelefono} />
           <TextInput style={styles.input} placeholder="Dirección" placeholderTextColor="#64748B" value={direccion} onChangeText={setDireccion} />
-          <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#64748B" value={email} onChangeText={setEmail} autoCapitalize="none" />
+          <TextInput style={styles.inputDisabled} placeholder="Email" placeholderTextColor="#64748B" value={email} editable={false} autoCapitalize="none" />
 
           {msg ? <Text style={styles.msg}>{msg}</Text> : null}
 
@@ -113,4 +149,5 @@ const styles = StyleSheet.create({
   btn: { borderRadius: 10, backgroundColor: '#1D4ED8', paddingHorizontal: 14, paddingVertical: 10, minWidth: 96, alignItems: 'center' },
   btnText: { color: '#fff', fontWeight: '700' },
   msg: { color: '#FCA5A5', fontSize: 12 },
+  helper: { color: '#FBBF24', fontSize: 12, marginTop: -2 },
 })

@@ -54,7 +54,7 @@ export function AdminClientsTable({
               <TouchableOpacity style={styles.iconBtn} onPress={() => onView(row)}>
                 <Ionicons name="eye-outline" size={16} color="#BFDBFE" />
               </TouchableOpacity>
-              <View>
+              <View style={styles.menuWrap}>
                 <TouchableOpacity style={styles.iconBtn} onPress={() => setMenuOpenFor((prev) => (prev === row.prestamoId ? null : row.prestamoId))}>
                   <Ionicons name="ellipsis-horizontal" size={16} color="#94A3B8" />
                 </TouchableOpacity>
@@ -97,7 +97,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const styles = StyleSheet.create({
-  tableWrap: { minWidth: 1010, width: '100%' },
+  tableWrap: { minWidth: 1010, width: '100%', overflow: 'visible' },
   headerRow: {
     flexDirection: 'row',
     backgroundColor: '#111827',
@@ -116,11 +116,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1E293B',
     paddingVertical: 10,
     alignItems: 'center',
+    overflow: 'visible',
+    zIndex: 1,
   },
   cell: { paddingHorizontal: 12 },
   clientCell: { width: 286, flexDirection: 'row', alignItems: 'center', gap: 10 },
   statusCell: { width: 120 },
-  actionsCell: { width: 120, flexDirection: 'row', gap: 8 },
+  actionsCell: { width: 120, flexDirection: 'row', gap: 8, overflow: 'visible', zIndex: 15 },
+  menuWrap: { position: 'relative', overflow: 'visible', zIndex: 20 },
   text: { width: 120, color: '#E2E8F0' },
   avatar: {
     width: 36,
@@ -160,7 +163,8 @@ const styles = StyleSheet.create({
     padding: 8,
     gap: 8,
     minWidth: 140,
-    zIndex: 40,
+    zIndex: 9999,
+    elevation: 30,
   },
   menuItem: { color: '#E2E8F0', fontSize: 12 },
 })
