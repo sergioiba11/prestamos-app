@@ -27,6 +27,14 @@ function badgeByEstado(cliente: ClienteAdminListadoItem) {
   return { text: 'Sin préstamo', style: styles.badgeOff }
 }
 
+function isClienteConPrestamoActivo(cliente: ClienteAdminListadoItem) {
+  if (cliente.tienePrestamoActivo || cliente.tienePrestamoVencido) return true
+  if (cliente.cantidadPrestamosActivos > 0) return true
+  if (cliente.deudaActiva > 0 || cliente.restante > 0) return true
+  const estado = String(cliente.estadoCliente || '').toLowerCase()
+  return ['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'].includes(estado)
+}
+
 export default function ClientesScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -88,7 +96,7 @@ export default function ClientesScreen() {
     })
   }, [clientes, busquedaDebounced])
 
-  const clientesActivos = useMemo(() => clientesUI.filter((c) => c.tienePrestamoActivo), [clientesUI])
+  const clientesActivos = useMemo(() => clientesUI.filter((c) => isClienteConPrestamoActivo(c)), [clientesUI])
   const clientesMostrados = tab === 'activos' ? clientesActivos : clientesUI
 
   if (loading) {
