@@ -163,6 +163,32 @@ export default function HistorialPrestamosScreen() {
                   <Text style={styles.itemMeta}>Total: {money(item.total)} · Pagado: {money(item.pagado)}</Text>
                   <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {item.estado}</Text>
                   <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)}</Text>
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/cliente-detalle',
+                          params: { cliente_id: item.clienteId, prestamo_id: item.prestamoId },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.actionButtonText}>Ver detalle</Text>
+                    </TouchableOpacity>
+                    {item.comprobantePagoId ? (
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.receiptButton]}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/pago-aprobado',
+                            params: { pago_id: item.comprobantePagoId, prestamo_id: item.prestamoId, cliente_id: item.clienteId },
+                          } as any)
+                        }
+                      >
+                        <Text style={styles.receiptButtonText}>Ver comprobante</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
               ))}
 
@@ -253,6 +279,18 @@ const styles = StyleSheet.create({
   },
   itemTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
   itemMeta: { color: '#94A3B8', marginTop: 4, fontSize: 12 },
+  actionsRow: { marginTop: 12, flexDirection: 'row', gap: 8 },
+  actionButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#0F172A',
+  },
+  actionButtonText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
+  receiptButton: { backgroundColor: '#1E3A8A', borderColor: '#2563EB' },
+  receiptButtonText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
   empty: { color: '#94A3B8' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#CBD5E1', marginTop: 10 },
