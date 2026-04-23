@@ -1,5 +1,6 @@
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState, useEffect } from 'react'
+import { Ionicons } from '@expo/vector-icons'
 import {
   ActivityIndicator,
   RefreshControl,
@@ -43,6 +44,7 @@ export default function ClientesScreen() {
   const [busqueda, setBusqueda] = useState('')
   const [busquedaDebounced, setBusquedaDebounced] = useState('')
   const [tab, setTab] = useState<'activos' | 'todos'>('activos')
+  const [menuAbiertoPara, setMenuAbiertoPara] = useState<string | null>(null)
 
   const cargarClientes = useCallback(async (esRefresh = false) => {
     if (esRefresh) setRefreshing(true)
@@ -62,6 +64,12 @@ export default function ClientesScreen() {
       if (esRefresh) setRefreshing(false)
       else setLoading(false)
     }
+  }, [])
+
+  const goEditarCliente = useCallback((clienteId: string) => {
+    console.log('[clientes] editar cliente id', clienteId)
+    setMenuAbiertoPara(null)
+    router.push(`/cliente/${clienteId}` as any)
   }, [])
 
   useFocusEffect(
@@ -184,6 +192,40 @@ export default function ClientesScreen() {
 
                 <View style={[styles.badge, badge.style]}>
                   <Text style={styles.badgeText}>{badge.text}</Text>
+                </View>
+
+                <View style={styles.menuWrap}>
+                  <TouchableOpacity
+                    style={styles.menuButton}
+                    onPress={() => setMenuAbiertoPara((prev) => (prev === cliente.clienteId ? null : cliente.clienteId))}
+                  >
+                    <Ionicons name="ellipsis-vertical" size={16} color="#E2E8F0" />
+                  </TouchableOpacity>
+                  {menuAbiertoPara === cliente.clienteId ? (
+                    <View style={styles.menuPopup}>
+                      <TouchableOpacity
+                        style={styles.menuItemBtn}
+                        onPress={() => {
+                          setMenuAbiertoPara(null)
+                          router.push({ pathname: '/cliente-detalle', params: { cliente_id: cliente.clienteId } } as any)
+                        }}
+                      >
+                        <Text style={styles.menuItemText}>Ver detalles</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.menuItemBtn} onPress={() => goEditarCliente(cliente.clienteId)}>
+                        <Text style={styles.menuItemText}>Editar cliente</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.menuItemBtn}
+                        onPress={() => {
+                          setMenuAbiertoPara(null)
+                          router.push({ pathname: '/historial-prestamos', params: { cliente_id: cliente.clienteId } } as any)
+                        }}
+                      >
+                        <Text style={styles.menuItemText}>Historial de pagos</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -312,6 +354,7 @@ const styles = StyleSheet.create({
   },
   cardTop: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 12,
   },
   cardBottom: {
@@ -324,6 +367,40 @@ const styles = StyleSheet.create({
   cardActions: {
     marginTop: 12,
     alignItems: 'flex-end',
+  },
+  menuWrap: {
+    position: 'relative',
+  },
+  menuButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuPopup: {
+    position: 'absolute',
+    right: 0,
+    top: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    zIndex: 12,
+    minWidth: 170,
+    paddingVertical: 4,
+  },
+  menuItemBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  menuItemText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '600',
   },
   detailBtn: {
     borderRadius: 10,

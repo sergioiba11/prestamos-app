@@ -58,6 +58,7 @@ export default function RootLayout() {
           <Stack.Screen name="nuevo-empleado" options={{ headerShown: false }} />
           <Stack.Screen name="configuraciones" options={{ headerShown: false }} />
           <Stack.Screen name="cliente-detalle" options={{ headerShown: false }} />
+          <Stack.Screen name="cliente/[id]" options={{ headerShown: false }} />
         </Stack>
       </OnboardingProvider>
     </AuthProvider>
