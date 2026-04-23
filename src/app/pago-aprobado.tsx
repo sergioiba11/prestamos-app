@@ -161,7 +161,7 @@ export default function PagoAprobado() {
   const prestamoId = getParamString(params.prestamo_id)
   const clienteId = getParamString(params.cliente_id)
   const numeroCuota = getParamString(params.numero_cuota)
-  const pagoId = getParamString(params.pago_id)
+  const pagoId = getParamString(params.pago_id) || getParamString(params.id)
   const pagoInternoId = getParamString(params.identificador_interno_pago)
   const fechaRaw = getParamString(params.fecha)
   const fechaFormateada = formatDateTimeLocal(fechaRaw)

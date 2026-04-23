@@ -106,8 +106,10 @@ export default function PagosPendientesScreen() {
       const { data, error } = await supabase
         .from('pagos')
         .select('id,cliente_id,prestamo_id,monto,metodo,estado,estado_validacion,impactado,comprobante_url,observacion,observacion_validacion,created_at,clientes(nombre,dni)')
-        .or('estado.eq.pendiente_aprobacion,estado_validacion.in.(pendiente,pendiente_aprobacion,en_revision)')
+        .eq('estado', 'pendiente_aprobacion')
         .order('created_at', { ascending: false })
+
+      console.log('[pagos-pendientes] respuesta Supabase pagos:', { data, error })
 
       if (error) throw error
       setItems((data || []) as unknown as PendingPayment[])
