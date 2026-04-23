@@ -561,13 +561,13 @@ export default function NuevoPrestamo() {
           interes: interesNumero,
           total_a_pagar: totalAPagar,
           modalidad,
-          route: `/cliente-detalle?cliente_id=${clienteSeleccionado.id}` ,
+          route: `/cliente/${clienteSeleccionado.id}` ,
         },
       })
 
       mostrarMensaje('Éxito', 'Préstamo y cuotas guardados correctamente')
 
-      router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+      router.replace(`/cliente/${clienteSeleccionado.id}` as any)
     } catch (error: any) {
       console.log('ERROR CATCH:', error)
       mostrarMensaje('Error', error?.message || 'No se pudo guardar el préstamo')

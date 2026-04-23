@@ -512,7 +512,7 @@ export default function CargarPago() {
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
-      router.replace(`/cliente-detalle?cliente_id=${clienteSeleccionado.id}` as any)
+      router.replace(`/cliente/${clienteSeleccionado.id}` as any)
       return
     }
     router.back()

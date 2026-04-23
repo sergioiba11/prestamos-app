@@ -188,12 +188,7 @@ export default function ClienteHome() {
 
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/cliente-detalle',
-                      params: { cliente_id: cliente?.id || '' },
-                    } as any)
-                  }
+                  onPress={() => router.push(`/cliente/${cliente?.id || ''}` as any)}
                 >
                   <Text style={styles.primaryButtonText}>Consultar préstamo</Text>
                 </TouchableOpacity>

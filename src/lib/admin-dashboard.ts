@@ -649,3 +649,117 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     clientesListado,
   }
 }
+
+export type ClientePrestamoDetalleItem = {
+  id: string
+  clienteId: string
+  monto: number
+  interes: number
+  totalAPagar: number
+  saldoPendiente: number
+  estado: string
+  modalidad: string | null
+  fechaInicio: string
+  fechaLimite: string
+}
+
+export type ClientePagoDetalleItem = {
+  id: string
+  clienteId: string
+  prestamoId: string | null
+  monto: number
+  metodo: string
+  estado: string
+  createdAt: string
+}
+
+export type ClienteDetalleConsolidado = {
+  cliente: ClienteAdminListadoItem | null
+  prestamosActivos: ClientePrestamoDetalleItem[]
+  historialPrestamos: ClientePrestamoDetalleItem[]
+  pagosCliente: ClientePagoDetalleItem[]
+}
+
+export async function fetchClienteDetalleConsolidado(clienteId: string): Promise<ClienteDetalleConsolidado> {
+  const normalizedClienteId = String(clienteId || '').trim()
+  if (!normalizedClienteId) {
+    throw new Error('Cliente inválido para consulta consolidada.')
+  }
+
+  const [clientesListado, prestamosResult, pagosResult] = await Promise.all([
+    fetchAdminClientesListado(),
+    supabase
+      .from('prestamos')
+      .select('id,cliente_id,monto,interes,total_a_pagar,saldo_pendiente,estado,modalidad,fecha_inicio,fecha_limite')
+      .eq('cliente_id', normalizedClienteId)
+      .order('fecha_inicio', { ascending: false }),
+    supabase
+      .from('pagos')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado,estado_validacion')
+      .order('created_at', { ascending: false }),
+  ])
+
+  if (prestamosResult.error) {
+    console.error('[admin-dashboard] detalle prestamos error', prestamosResult.error)
+    throw prestamosResult.error
+  }
+
+  if (pagosResult.error) {
+    console.error('[admin-dashboard] detalle pagos error', pagosResult.error)
+    throw pagosResult.error
+  }
+
+  const cliente = clientesListado.find((row) => row.clienteId === normalizedClienteId) || null
+  const prestamos = ((prestamosResult.data || []) as PrestamoRow[]).filter((prestamo) => prestamo.cliente_id === normalizedClienteId)
+
+  const prestamosById = new Map<string, PrestamoRow>()
+  for (const prestamo of prestamos) prestamosById.set(prestamo.id, prestamo)
+
+  const pagosRows = (pagosResult.data || []) as PagoRow[]
+  const pagosCliente = pagosRows
+    .filter((pago) => {
+      if (pago.cliente_id === normalizedClienteId) return true
+      if (!pago.prestamo_id) return false
+      return prestamosById.has(pago.prestamo_id)
+    })
+    .map((pago) => ({
+      id: pago.id,
+      clienteId: pago.cliente_id || normalizedClienteId,
+      prestamoId: pago.prestamo_id || null,
+      monto: toNumber(pago.monto),
+      metodo: pago.metodo || 'sin_metodo',
+      estado: low(pago.estado) || low(pago.estado_validacion) || 'pendiente',
+      createdAt: pago.created_at || '',
+    }))
+
+  const historialPrestamos: ClientePrestamoDetalleItem[] = prestamos.map((prestamo) => ({
+    id: prestamo.id,
+    clienteId: prestamo.cliente_id,
+    monto: toNumber(prestamo.monto),
+    interes: toNumber(prestamo.interes),
+    totalAPagar: toNumber(prestamo.total_a_pagar),
+    saldoPendiente: Math.max(toNumber(prestamo.saldo_pendiente), 0),
+    estado: low(prestamo.estado) || 'activo',
+    modalidad: prestamo.modalidad,
+    fechaInicio: ymd(prestamo.fecha_inicio),
+    fechaLimite: ymd(prestamo.fecha_limite),
+  }))
+
+  const prestamosActivos = historialPrestamos.filter((prestamo) => isActiveLoanState(prestamo.estado))
+
+  console.log('[admin-dashboard] detalle cliente diagnostico', {
+    clienteId: normalizedClienteId,
+    cantidadPrestamosListado: cliente?.cantidadPrestamos,
+    cantidadPrestamosActivosListado: cliente?.cantidadPrestamosActivos,
+    prestamosConsulta: historialPrestamos.length,
+    prestamosActivosConsulta: prestamosActivos.length,
+    pagosConsulta: pagosCliente.length,
+  })
+
+  return {
+    cliente,
+    prestamosActivos,
+    historialPrestamos,
+    pagosCliente,
+  }
+}

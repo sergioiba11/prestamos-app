@@ -69,7 +69,7 @@ export default function ClientesScreen() {
   const goEditarCliente = useCallback((clienteId: string) => {
     console.log('[clientes] editar cliente id', clienteId)
     setMenuAbiertoPara(null)
-    router.push(`/cliente/${clienteId}` as any)
+    router.push(`/cliente/${clienteId}/editar` as any)
   }, [])
 
   useFocusEffect(
@@ -207,7 +207,7 @@ export default function ClientesScreen() {
                         style={styles.menuItemBtn}
                         onPress={() => {
                           setMenuAbiertoPara(null)
-                          router.push({ pathname: '/cliente-detalle', params: { cliente_id: cliente.clienteId } } as any)
+                          router.push(`/cliente/${cliente.clienteId}` as any)
                         }}
                       >
                         <Text style={styles.menuItemText}>Ver detalles</Text>
@@ -239,7 +239,7 @@ export default function ClientesScreen() {
               <View style={styles.cardActions}>
                 <TouchableOpacity
                   style={styles.detailBtn}
-                  onPress={() => router.push({ pathname: '/cliente-detalle', params: { cliente_id: cliente.clienteId } } as any)}
+                  onPress={() => router.push(`/cliente/${cliente.clienteId}` as any)}
                 >
                   <Text style={styles.detailBtnText}>Ver detalle</Text>
                 </TouchableOpacity>
