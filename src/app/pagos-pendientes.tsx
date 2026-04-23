@@ -17,7 +17,7 @@ import {
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 
 type PendingPayment = {
   id: string
@@ -56,6 +56,9 @@ async function callAprobarPago(body: {
   accion: 'aprobar' | 'rechazar'
   observacion_revision?: string | null
 }) {
+  const { error: refreshError } = await supabase.auth.refreshSession()
+  if (refreshError) throw refreshError
+
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
   if (sessionError) throw sessionError
@@ -63,11 +66,9 @@ async function callAprobarPago(body: {
   const token = sessionData.session?.access_token
   if (!token) throw new Error('No hay sesión activa')
 
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
-  if (!supabaseUrl) throw new Error('Falta EXPO_PUBLIC_SUPABASE_URL')
-
   const url = `${supabaseUrl}/functions/v1/aprobar-pago`
 
+  console.log('SUPABASE URL:', url)
   console.log('Invocando aprobar-pago:', url)
   console.log('Tiene token:', !!token)
 
@@ -76,6 +77,7 @@ async function callAprobarPago(body: {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      apikey: supabaseAnonKey,
     },
     body: JSON.stringify(body),
   })
@@ -89,7 +91,7 @@ async function callAprobarPago(body: {
   }
 
   console.log('Status aprobar-pago:', response.status)
-  console.log('Respuesta aprobar-pago:', json)
+  console.log('Respuesta:', json)
 
   if (!response.ok) {
     throw new Error(json?.error || `Error HTTP ${response.status}`)
@@ -207,6 +209,7 @@ export default function PagosPendientesScreen() {
   const handleAprobar = async (pagoId: string) => {
     try {
       setProcessingId(pagoId)
+      console.log('Aprobando pago:', pagoId)
 
       const result = await callAprobarPago({
         pago_id: pagoId,
@@ -249,6 +252,8 @@ export default function PagosPendientesScreen() {
       if (!pago) return
 
       setProcessingId(pago.id)
+      console.log('Rechazando pago:', pago.id)
+      console.log('Observación rechazo:', currentObservation)
 
       await callAprobarPago({
         pago_id: pago.id,
@@ -275,9 +280,9 @@ export default function PagosPendientesScreen() {
       Alert.alert('Pago rechazado correctamente')
       closeObservationModal()
       await loadData()
-    } catch (err: any) {
-      console.error(err)
-      Alert.alert('Error al rechazar pago', err?.message || 'No se pudo rechazar el pago')
+    } catch (error: any) {
+      console.error(error)
+      Alert.alert('Error al rechazar pago', error?.message || 'No se pudo rechazar el pago')
     } finally {
       setProcessingId(null)
     }
@@ -325,7 +330,13 @@ export default function PagosPendientesScreen() {
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            !isMobile && styles.contentDesktop,
+            isMobile && styles.contentMobile,
+          ]}
+        >
           <Text style={styles.title}>Pagos pendientes</Text>
           <Text style={styles.subtitle}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
 
@@ -424,7 +435,19 @@ export default function PagosPendientesScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32, gap: 12 },
+  content: {
+    flexGrow: 1,
+    width: '100%',
+    padding: 20,
+    gap: 16,
+  },
+  contentDesktop: {
+    marginLeft: 260,
+  },
+  contentMobile: {
+    marginLeft: 0,
+    paddingTop: 84,
+  },
   mobileTopBar: {
     position: 'absolute',
     top: 0,
