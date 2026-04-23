@@ -55,6 +55,8 @@ export default function PagosPendientesScreen() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [queryError, setQueryError] = useState<string | null>(null)
+  const [selectedPago, setSelectedPago] = useState<PendingPayment | null>(null)
+  const [rejectionComment, setRejectionComment] = useState('')
   const [obsModal, setObsModal] = useState<{ open: boolean; action: 'aprobar' | 'rechazar'; payment: PendingPayment | null }>({
     open: false,
     action: 'aprobar',
@@ -80,6 +82,12 @@ export default function PagosPendientesScreen() {
   const onLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/login' as any)
+  }
+
+  const closeObservationModal = () => {
+    setObsModal({ open: false, action: 'aprobar', payment: null })
+    setSelectedPago(null)
+    setRejectionComment('')
   }
 
   const loadData = useCallback(async () => {
@@ -137,18 +145,17 @@ export default function PagosPendientesScreen() {
     })
   }, [items, search])
 
-  const sendDecision = async () => {
+  const handleConfirmApprove = async () => {
     if (!obsModal.payment) return
 
     try {
       setProcessingId(obsModal.payment.id)
       const payment = obsModal.payment
-      const action = obsModal.action
       const currentObservation = observation.trim() || null
       const { data, error } = await supabase.functions.invoke('aprobar-pago', {
         body: {
           pago_id: payment.id,
-          accion: action,
+          accion: 'aprobar',
           observacion_revision: currentObservation,
         },
       })
@@ -157,12 +164,12 @@ export default function PagosPendientesScreen() {
       const decisionResult = (data || {}) as AprobarPagoResponse
 
       await createSystemActivity({
-        tipo: action === 'aprobar' ? 'pago_aprobado' : 'pago_rechazado',
-        titulo: action === 'aprobar' ? 'Pago aprobado' : 'Pago rechazado',
-        descripcion: `Pago ${payment.id} ${action === 'aprobar' ? 'aprobado' : 'rechazado'} por ${adminName}` ,
+        tipo: 'pago_aprobado',
+        titulo: 'Pago aprobado',
+        descripcion: `Pago ${payment.id} aprobado por ${adminName}` ,
         entidad_tipo: 'pago',
         entidad_id: payment.id,
-        prioridad: action === 'aprobar' ? 'normal' : 'alta',
+        prioridad: 'normal',
         visible_en_notificaciones: true,
         metadata: {
           observacion_revision: currentObservation,
@@ -173,13 +180,8 @@ export default function PagosPendientesScreen() {
       })
 
       setObservation('')
-      setObsModal({ open: false, action: 'aprobar', payment: null })
+      closeObservationModal()
       await loadData()
-
-      if (action === 'rechazar') {
-        Alert.alert('Pago rechazado', 'El pago fue rechazado y no impactó cuotas ni saldo del préstamo.')
-        return
-      }
 
       const cuotasImpactadas = decisionResult.cuotas_impactadas || []
       const firstImpact = decisionResult.detalle_aplicacion?.[0] || null
@@ -233,6 +235,76 @@ export default function PagosPendientesScreen() {
       )
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo actualizar el pago')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const handleConfirmReject = async () => {
+    if (!selectedPago) {
+      Alert.alert('Error', 'No hay pago seleccionado para rechazar.')
+      return
+    }
+
+    try {
+      setProcessingId(selectedPago.id)
+      console.log('rechazando pago', selectedPago)
+      console.log('comentario rechazo', rejectionComment)
+
+      const trimmedComment = rejectionComment.trim()
+      const updatePayload: Record<string, unknown> = {
+        estado: 'rechazado',
+        impactado: false,
+      }
+      if (trimmedComment) updatePayload.observacion_validacion = trimmedComment
+
+      let { data, error } = await supabase
+        .from('pagos')
+        .update(updatePayload)
+        .eq('id', selectedPago.id)
+        .select('id, estado')
+
+      if (error && String(error.message || '').toLowerCase().includes('observacion_validacion')) {
+        console.log('observacion_validacion no existe; se rechaza sin guardar comentario')
+        ;({ data, error } = await supabase
+          .from('pagos')
+          .update({
+            estado: 'rechazado',
+            impactado: false,
+          })
+          .eq('id', selectedPago.id)
+          .select('id, estado'))
+      }
+
+      console.log('resultado rechazo', data)
+      console.log('error rechazo', error)
+
+      if (error) {
+        Alert.alert('Error al rechazar pago', error.message || 'No se pudo rechazar el pago')
+        return
+      }
+
+      await createSystemActivity({
+        tipo: 'pago_rechazado',
+        titulo: 'Pago rechazado',
+        descripcion: `Pago ${selectedPago.id} rechazado por ${adminName}` ,
+        entidad_tipo: 'pago',
+        entidad_id: selectedPago.id,
+        prioridad: 'alta',
+        visible_en_notificaciones: true,
+        metadata: {
+          observacion_revision: trimmedComment || null,
+          cliente_id: selectedPago.cliente_id,
+          prestamo_id: selectedPago.prestamo_id,
+          route: '/pagos-pendientes',
+        },
+      })
+
+      closeObservationModal()
+      await loadData()
+      Alert.alert('Pago rechazado correctamente')
+    } catch (error: any) {
+      Alert.alert('Error al rechazar pago', error?.message || 'No se pudo rechazar el pago')
     } finally {
       setProcessingId(null)
     }
@@ -301,7 +373,10 @@ export default function PagosPendientesScreen() {
                 <TouchableOpacity
                   disabled={processingId === item.id}
                   style={[styles.actionBtn, styles.rejectBtn]}
-                  onPress={() => setObsModal({ open: true, action: 'rechazar', payment: item })}
+                  onPress={() => {
+                    setSelectedPago(item)
+                    setObsModal({ open: true, action: 'rechazar', payment: item })
+                  }}
                 >
                   <Ionicons name="close-circle" size={16} color="#FEE2E2" />
                   <Text style={styles.actionText}>Rechazar</Text>
@@ -312,20 +387,23 @@ export default function PagosPendientesScreen() {
         </ScrollView>
       </View>
 
-      <Modal visible={obsModal.open} transparent animationType="fade" onRequestClose={() => setObsModal({ open: false, action: 'aprobar', payment: null })}>
+      <Modal visible={obsModal.open} transparent animationType="fade" onRequestClose={closeObservationModal}>
         <View style={styles.modalWrap}>
-          <Pressable style={styles.overlay} onPress={() => setObsModal({ open: false, action: 'aprobar', payment: null })} />
+          <Pressable style={styles.overlay} onPress={closeObservationModal} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{obsModal.action === 'aprobar' ? 'Aprobar pago' : 'Rechazar pago'}</Text>
             <TextInput
               style={styles.observationInput}
-              value={observation}
-              onChangeText={setObservation}
+              value={obsModal.action === 'aprobar' ? observation : rejectionComment}
+              onChangeText={obsModal.action === 'aprobar' ? setObservation : setRejectionComment}
               placeholder="Observación (opcional)"
               placeholderTextColor="#64748B"
               multiline
             />
-            <TouchableOpacity style={styles.confirmBtn} onPress={sendDecision}>
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={obsModal.action === 'aprobar' ? handleConfirmApprove : handleConfirmReject}
+            >
               <Text style={styles.confirmText}>{processingId ? 'Procesando...' : 'Confirmar'}</Text>
             </TouchableOpacity>
           </View>
