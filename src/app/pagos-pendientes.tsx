@@ -28,23 +28,11 @@ type PendingPayment = {
   estado: string | null
   impactado: boolean | null
   created_at: string | null
-  clientes?: { nombre: string | null; dni: string | null } | null
 }
 
-type AprobarPagoResponse = {
+type FunctionResponse = {
   ok?: boolean
-  estado?: string
   pago_id?: string
-  cuotas_impactadas?: number[]
-  total_aplicado?: number
-  saldo_restante?: number
-  detalle_aplicacion?: Array<{
-    numero_cuota?: number
-    estado_resultante?: string
-    monto_aplicado?: number
-    saldo_cuota_antes?: number
-    saldo_cuota_despues?: number
-  }>
   error?: string
 }
 
@@ -63,6 +51,53 @@ function date(v?: string | null) {
   })
 }
 
+async function callAprobarPago(body: {
+  pago_id: string
+  accion: 'aprobar' | 'rechazar'
+  observacion_revision?: string | null
+}) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError) throw sessionError
+
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('No hay sesión activa')
+
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
+  if (!supabaseUrl) throw new Error('Falta EXPO_PUBLIC_SUPABASE_URL')
+
+  const url = `${supabaseUrl}/functions/v1/aprobar-pago`
+
+  console.log('Invocando aprobar-pago:', url)
+  console.log('Tiene token:', !!token)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  let json: FunctionResponse | null = null
+
+  try {
+    json = await response.json()
+  } catch {
+    json = null
+  }
+
+  console.log('Status aprobar-pago:', response.status)
+  console.log('Respuesta aprobar-pago:', json)
+
+  if (!response.ok) {
+    throw new Error(json?.error || `Error HTTP ${response.status}`)
+  }
+
+  return json || {}
+}
+
 export default function PagosPendientesScreen() {
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
@@ -75,10 +110,7 @@ export default function PagosPendientesScreen() {
   const [items, setItems] = useState<PendingPayment[]>([])
   const [search, setSearch] = useState('')
   const [queryError, setQueryError] = useState<string | null>(null)
-  const [obsModal, setObsModal] = useState<{
-    open: boolean
-    payment: PendingPayment | null
-  }>({
+  const [obsModal, setObsModal] = useState<{ open: boolean; payment: PendingPayment | null }>({
     open: false,
     payment: null,
   })
@@ -115,7 +147,6 @@ export default function PagosPendientesScreen() {
 
       const { data: auth } = await supabase.auth.getUser()
       const userId = auth.user?.id
-
       if (!userId) throw new Error('Sesión inválida')
 
       const { data: user } = await supabase
@@ -167,7 +198,6 @@ export default function PagosPendientesScreen() {
   const filtered = useMemo(() => {
     const t = search.trim().toLowerCase()
     if (!t) return items
-
     return items.filter((item) => {
       const metodo = String(item.metodo || '').toLowerCase()
       return metodo.includes(t) || item.id.toLowerCase().includes(t)
@@ -177,23 +207,11 @@ export default function PagosPendientesScreen() {
   const handleAprobar = async (pagoId: string) => {
     try {
       setProcessingId(pagoId)
-      console.log('Aprobando:', pagoId)
-      console.log('Invocando aprobar-pago')
 
-      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
-        body: {
-          pago_id: pagoId,
-          accion: 'aprobar',
-        },
+      const result = await callAprobarPago({
+        pago_id: pagoId,
+        accion: 'aprobar',
       })
-
-      if (error) throw error
-
-      const decisionResult = (data || {}) as AprobarPagoResponse
-
-      if (decisionResult?.error) {
-        throw new Error(decisionResult.error)
-      }
 
       const payment = items.find((item) => item.id === pagoId) || null
 
@@ -216,9 +234,7 @@ export default function PagosPendientesScreen() {
 
       await loadData()
       Alert.alert('Pago aprobado')
-      router.push(
-        `/pago-aprobado?pago_id=${encodeURIComponent(String(decisionResult.pago_id || pagoId))}` as any,
-      )
+      router.push(`/pago-aprobado?pago_id=${encodeURIComponent(String(result.pago_id || pagoId))}` as any)
     } catch (error: any) {
       console.error(error)
       Alert.alert('Error al aprobar', error?.message || 'No se pudo aprobar el pago')
@@ -229,32 +245,16 @@ export default function PagosPendientesScreen() {
 
   const handleConfirmReject = async () => {
     try {
-      const pago = obsModal?.payment
-
-      if (!pago) {
-        console.error('No hay pago seleccionado')
-        return
-      }
+      const pago = obsModal.payment
+      if (!pago) return
 
       setProcessingId(pago.id)
-      console.log('Rechazando pago:', pago.id)
-      console.log('Invocando aprobar-pago')
 
-      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
-        body: {
-          pago_id: pago.id,
-          accion: 'rechazar',
-          observacion_revision: currentObservation.trim() || null,
-        },
+      await callAprobarPago({
+        pago_id: pago.id,
+        accion: 'rechazar',
+        observacion_revision: currentObservation.trim() || null,
       })
-
-      if (error) throw error
-
-      const result = (data || {}) as AprobarPagoResponse
-
-      if (result?.error) {
-        throw new Error(result.error)
-      }
 
       await createSystemActivity({
         tipo: 'pago_rechazado',
@@ -296,13 +296,8 @@ export default function PagosPendientesScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.deniedTitle}>Sin permisos</Text>
-        <Text style={styles.deniedText}>
-          Solo admin o empleado pueden aprobar/rechazar pagos pendientes.
-        </Text>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.replace('/cliente-home' as any)}
-        >
+        <Text style={styles.deniedText}>Solo admin o empleado pueden aprobar/rechazar pagos pendientes.</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/cliente-home' as any)}>
           <Text style={styles.backBtnText}>Ir a inicio</Text>
         </TouchableOpacity>
       </View>
@@ -332,9 +327,7 @@ export default function PagosPendientesScreen() {
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
           <Text style={styles.title}>Pagos pendientes</Text>
-          <Text style={styles.subtitle}>
-            Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.
-          </Text>
+          <Text style={styles.subtitle}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
 
           <TextInput
             value={search}
@@ -345,9 +338,7 @@ export default function PagosPendientesScreen() {
           />
 
           {queryError ? <Text style={styles.errorText}>Error al cargar pagos: {queryError}</Text> : null}
-          {filtered.length === 0 ? (
-            <Text style={styles.empty}>No hay pagos pendientes para validar.</Text>
-          ) : null}
+          {filtered.length === 0 ? <Text style={styles.empty}>No hay pagos pendientes para validar.</Text> : null}
 
           {filtered.map((item) => (
             <View key={item.id} style={styles.card}>
@@ -357,9 +348,7 @@ export default function PagosPendientesScreen() {
               </View>
 
               <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
-              <Text style={styles.meta}>
-                Fecha: {date(item.created_at)} · Estado: {item.estado || 'pendiente'}
-              </Text>
+              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || 'pendiente'}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
 
               <View style={styles.actions}>
@@ -388,12 +377,7 @@ export default function PagosPendientesScreen() {
         </ScrollView>
       </View>
 
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuOpen(false)}
-      >
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrapMenu}>
           <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
           <AdminSidebar
@@ -408,12 +392,7 @@ export default function PagosPendientesScreen() {
         </View>
       </Modal>
 
-      <Modal
-        visible={obsModal.open}
-        transparent
-        animationType="fade"
-        onRequestClose={closeObservationModal}
-      >
+      <Modal visible={obsModal.open} transparent animationType="fade" onRequestClose={closeObservationModal}>
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={closeObservationModal} />
           <View style={styles.modalCard}>
@@ -433,9 +412,7 @@ export default function PagosPendientesScreen() {
               disabled={!!processingId}
               onPress={() => void handleConfirmReject()}
             >
-              <Text style={styles.confirmText}>
-                {processingId ? 'Procesando...' : 'Confirmar'}
-              </Text>
+              <Text style={styles.confirmText}>{processingId ? 'Procesando...' : 'Confirmar'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -484,11 +461,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   amount: { color: '#60A5FA', fontWeight: '800', fontSize: 16 },
   meta: { color: '#94A3B8', fontSize: 12 },
