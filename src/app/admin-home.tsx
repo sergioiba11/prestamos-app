@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -55,6 +55,7 @@ export default function AdminHome() {
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
   const [editingClient, setEditingClient] = useState<ClientePrestamoActivo | null>(null)
   const [saveToast, setSaveToast] = useState('')
+  const notificationsButtonRef = useRef<View | null>(null)
 
   const loadNotifications = useCallback(async () => {
     const { data, error } = await supabase
@@ -194,14 +195,21 @@ export default function AdminHome() {
             <Ionicons name="menu" size={24} color="#E2E8F0" />
           </TouchableOpacity>
           <Text style={styles.mobileTitle}>Admin</Text>
-          <TouchableOpacity style={styles.mobileBellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-            <Ionicons name="notifications-outline" size={20} color="#DBEAFE" />
-            {unreadCount > 0 ? (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>{unreadCount}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+          <View
+            collapsable={false}
+            ref={(node) => {
+              notificationsButtonRef.current = node
+            }}
+          >
+            <TouchableOpacity style={styles.mobileBellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+              <Ionicons name="notifications-outline" size={20} color="#DBEAFE" />
+              {unreadCount > 0 ? (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>{unreadCount}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -215,21 +223,32 @@ export default function AdminHome() {
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>
-                <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                  <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
-                  <Text style={styles.notificationsText}>Notificaciones</Text>
-                  {unreadCount > 0 ? (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{unreadCount}</Text>
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-                {notificationsOpen ? (
-                  <AdminNotificationsPanel notifications={notifications} onMarkAllRead={markAllRead} />
-                ) : null}
+                <View
+                  collapsable={false}
+                  ref={(node) => {
+                    notificationsButtonRef.current = node
+                  }}
+                >
+                  <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+                    <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
+                    <Text style={styles.notificationsText}>Notificaciones</Text>
+                    {unreadCount > 0 ? (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>{unreadCount}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : null}
           </View>
+          <AdminNotificationsPanel
+            visible={notificationsOpen}
+            notifications={notifications}
+            onMarkAllRead={markAllRead}
+            anchorRef={notificationsButtonRef.current}
+            onClose={() => setNotificationsOpen(false)}
+          />
 
           <View style={styles.kpiGrid}>
             <AdminStatCard label="A cobrar hoy" subtitle={kpis.cobrarHoy > 0 ? 'Cuotas con vencimiento hoy' : 'Sin vencimientos hoy'} value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
