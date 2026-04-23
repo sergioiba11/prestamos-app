@@ -44,6 +44,89 @@ function normalizarMetodoPago(metodo: unknown) {
   return ''
 }
 
+function calcularAplicacionCuotas({
+  cuotas,
+  montoEntregado,
+  aplicarAMultiples,
+}: {
+  cuotas: Array<{
+    id: string
+    numero_cuota: number
+    monto_cuota: number
+    monto_pagado: number
+    saldo_pendiente: number
+  }>
+  montoEntregado: number
+  aplicarAMultiples: boolean
+}) {
+  let restante = montoEntregado
+  const cuotasImpactadas: number[] = []
+  const detalleAplicacion: Array<{
+    cuota_id: string
+    numero_cuota: number
+    monto_aplicado: number
+    monto_pagado_despues: number
+    saldo_cuota_antes: number
+    saldo_cuota_despues: number
+    estado_resultante: string
+  }> = []
+
+  for (const cuota of cuotas) {
+    if (restante <= 0) break
+
+    const saldoAnterior = redondear(
+      Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
+    )
+    const pagadoAnterior = redondear(Number(cuota.monto_pagado ?? 0))
+
+    if (saldoAnterior <= 0) continue
+
+    const montoAplicado = redondear(
+      aplicarAMultiples
+        ? Math.min(restante, saldoAnterior)
+        : Math.min(montoEntregado, saldoAnterior)
+    )
+
+    if (montoAplicado <= 0) continue
+
+    const nuevoSaldo = redondear(saldoAnterior - montoAplicado)
+    const nuevoMontoPagado = redondear(pagadoAnterior + montoAplicado)
+    const nuevoEstado = esMontoCerrado(nuevoSaldo) ? 'pagada' : 'parcial'
+    const saldoPersistido = esMontoCerrado(nuevoSaldo) ? 0 : nuevoSaldo
+
+    cuotasImpactadas.push(Number(cuota.numero_cuota))
+    detalleAplicacion.push({
+      cuota_id: cuota.id,
+      numero_cuota: cuota.numero_cuota,
+      monto_aplicado: montoAplicado,
+      monto_pagado_despues: nuevoMontoPagado,
+      saldo_cuota_antes: saldoAnterior,
+      saldo_cuota_despues: saldoPersistido,
+      estado_resultante: nuevoEstado,
+    })
+
+    restante = aplicarAMultiples ? redondear(restante - montoAplicado) : 0
+
+    if (!esMontoCerrado(saldoPersistido)) {
+      restante = 0
+      break
+    }
+  }
+
+  const totalAplicado = redondear(
+    detalleAplicacion.reduce(
+      (acc, item) => acc + Number(item.monto_aplicado || 0),
+      0
+    )
+  )
+
+  return {
+    cuotasImpactadas,
+    detalleAplicacion,
+    totalAplicado,
+  }
+}
+
 function extraerTokenBearer(authHeader: string | null) {
   if (!authHeader) return null
   const limpio = authHeader.trim()
@@ -410,9 +493,6 @@ Deno.serve(async (req) => {
       Number(body?.monto_entregado ?? body?.monto_ingresado ?? body?.monto)
     )
     const aplicarAMultiples = body?.aplicar_a_multiples !== false
-    const comprobanteUrl = String(body?.comprobante_url || body?.comprobante || '').trim() || null
-    const mpPreferenceId = String(body?.mp_preference_id || '').trim() || null
-
     console.log('[registrar-pago] metodo recibido:', metodo)
 
     if (!prestamo_id || !cliente_id || !metodo || !cuota_id_inicial) {
@@ -429,33 +509,15 @@ Deno.serve(async (req) => {
     }
 
     if (metodo === 'mercado_pago') {
-      const { data: adminSettings, error: adminSettingsError } = await supabase
-        .from('admin_settings')
-        .select('connected, mp_access_token')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (adminSettingsError) {
-        return jsonResponse({ error: adminSettingsError.message }, 500)
-      }
-
-      const mpConnected =
-        Boolean(adminSettings?.connected) &&
-        Boolean(String(adminSettings?.mp_access_token || '').trim())
-
-      if (!mpConnected) {
-        return jsonResponse(
-          { error: 'Primero conectá Mercado Pago en Configuraciones' },
-          400
-        )
-      }
-
-      if (!mpPreferenceId) {
-        return jsonResponse(
-          { error: 'Mercado Pago no generó una preferencia válida para este pago' },
-          400
-        )
-      }
+      return jsonResponse(
+        {
+          error:
+            'Mercado Pago todavía no impacta automáticamente. Registrá el pago como transferencia o esperá la validación manual.',
+          estado: 'pendiente_aprobacion',
+          impactado: false,
+        },
+        400
+      )
     }
 
     const { data: prestamo, error: prestamoError } = await supabase
@@ -517,106 +579,6 @@ Deno.serve(async (req) => {
       )
     }
 
-    if (metodo === 'transferencia' || metodo === 'mercado_pago') {
-      const duplicateQuery = supabase
-        .from('pagos')
-        .select('id, estado')
-        .eq('prestamo_id', prestamo_id)
-        .eq('cliente_id', cliente_id)
-        .eq('monto', montoEntregado)
-        .eq('estado', 'pendiente_aprobacion')
-        .limit(1)
-
-      const { data: possibleDuplicates } = await duplicateQuery
-      if (possibleDuplicates && possibleDuplicates.length > 0) {
-        return jsonResponse({
-          ok: true,
-          pendiente: true,
-          estado: 'pendiente_aprobacion',
-          pago: { id: possibleDuplicates[0].id },
-          impactado: false,
-          idempotente: true,
-        })
-      }
-
-      const { data: pagoPendiente, error: pagoPendienteError } = await supabase
-        .from('pagos')
-        .insert({
-          prestamo_id,
-          cliente_id,
-          cuota_id: cuota_id_inicial,
-          numero_cuota: numero_cuota_inicial ? Number(numero_cuota_inicial) : null,
-          monto: montoEntregado,
-          metodo,
-          estado: 'pendiente_aprobacion',
-          estado_validacion: 'pendiente',
-          comprobante_url: comprobanteUrl,
-          mp_preference_id: metodo === 'mercado_pago' ? mpPreferenceId : null,
-          registrado_por: user.id,
-          impactado: false,
-          created_at: new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      console.log('[registrar-pago] resultado insert pago pendiente:', { pago: pagoPendiente, error: pagoPendienteError?.message || null })
-
-      if (pagoPendienteError || !pagoPendiente) {
-        return jsonResponse(
-          { error: pagoPendienteError?.message || 'No se pudo registrar el pago pendiente' },
-          500
-        )
-      }
-
-      const { error: activityPendienteError } = await supabase.from('actividad_sistema').insert({
-        tipo: 'pago_pendiente',
-        titulo: 'Pago pendiente de aprobación',
-        descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
-        entidad_tipo: 'pago',
-        entidad_id: pagoPendiente.id,
-        usuario_id: user.id,
-        prioridad: 'alta',
-        visible_en_notificaciones: true,
-        metadata: { metodo, monto: montoEntregado, cliente_id, prestamo_id, registrado_por: user.id, route: '/pagos-pendientes' },
-      })
-      if (activityPendienteError) {
-        console.error('[registrar-pago] actividad_sistema pago_pendiente error', activityPendienteError)
-      }
-
-      const { error: notifPendienteError } = await supabase.from('notificaciones').insert({
-        tipo: 'pago_pendiente',
-        titulo: 'Pago pendiente de aprobación',
-        descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
-        cliente_id,
-        prestamo_id,
-        pago_id: pagoPendiente.id,
-        metadata: { metodo, monto: montoEntregado, registrado_por: user.id },
-      })
-      if (notifPendienteError) {
-        console.error('[registrar-pago] notificaciones pago_pendiente error', notifPendienteError)
-      }
-
-      const pendingResponse = {
-        ok: true,
-        pendiente: true,
-        pago: pagoPendiente,
-        estado: 'pendiente_aprobacion',
-        impactado: false,
-        mensaje:
-          metodo === 'transferencia'
-            ? 'Pago pendiente de aprobación'
-            : 'Pago de Mercado Pago pendiente de confirmación',
-      }
-
-      console.log('[registrar-pago] estado final devuelto:', {
-        estado: pendingResponse.estado,
-        impactado: pendingResponse.impactado,
-        pago_id: pendingResponse.pago?.id || null,
-      })
-
-      return jsonResponse(pendingResponse)
-    }
-
     let cuotasAProcesar = cuotasPendientes
 
     if (cuota_id_inicial) {
@@ -648,84 +610,150 @@ Deno.serve(async (req) => {
       cuotasAProcesar = cuotasPendientes.slice(index)
     }
 
-    let restante = montoEntregado
-    const cuotasImpactadas: number[] = []
-    const detalleAplicacion: Array<{
-      cuota_id: string
-      numero_cuota: number
-      monto_aplicado: number
-      saldo_cuota_antes: number
-      saldo_cuota_despues: number
-      estado_resultante: string
-    }> = []
-
-    for (const cuota of cuotasAProcesar) {
-      if (restante <= 0) break
-
-      const saldoAnterior = redondear(
-        Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
-      )
-      const pagadoAnterior = redondear(Number(cuota.monto_pagado ?? 0))
-
-      if (saldoAnterior <= 0) continue
-
-      const montoAplicado = redondear(
-        aplicarAMultiples
-          ? Math.min(restante, saldoAnterior)
-          : Math.min(montoEntregado, saldoAnterior)
-      )
-
-      if (montoAplicado <= 0) continue
-
-      const nuevoSaldo = redondear(saldoAnterior - montoAplicado)
-      const nuevoMontoPagado = redondear(pagadoAnterior + montoAplicado)
-      const nuevoEstado = esMontoCerrado(nuevoSaldo) ? 'pagada' : 'parcial'
-      const saldoPersistido = esMontoCerrado(nuevoSaldo) ? 0 : nuevoSaldo
-
-      const { error: updateCuotaError } = await supabase
-        .from('cuotas')
-        .update({
-          monto_pagado: nuevoMontoPagado,
-          saldo_pendiente: saldoPersistido,
-          estado: nuevoEstado,
-          fecha_pago: new Date().toISOString(),
-        })
-        .eq('id', cuota.id)
-
-      if (updateCuotaError) {
-        return jsonResponse({ error: updateCuotaError.message }, 500)
-      }
-
-      cuotasImpactadas.push(Number(cuota.numero_cuota))
-      detalleAplicacion.push({
-        cuota_id: cuota.id,
-        numero_cuota: cuota.numero_cuota,
-        monto_aplicado: montoAplicado,
-        saldo_cuota_antes: saldoAnterior,
-        saldo_cuota_despues: saldoPersistido,
-        estado_resultante: nuevoEstado,
+    if (metodo === 'transferencia') {
+      const aplicacionTentativa = calcularAplicacionCuotas({
+        cuotas: cuotasAProcesar,
+        montoEntregado,
+        aplicarAMultiples,
       })
 
-      restante = aplicarAMultiples ? redondear(restante - montoAplicado) : 0
+      const montoReferencia = aplicacionTentativa.totalAplicado > 0
+        ? aplicacionTentativa.totalAplicado
+        : montoEntregado
 
-      if (!esMontoCerrado(saldoPersistido)) {
-        // Regla de negocio: si la cuota quedó parcial, no avanzar a la siguiente.
-        restante = 0
-        break
+      console.log('[registrar-pago] impacto habilitado:', false)
+      console.log('[registrar-pago] referencia aplicación transferencia:', {
+        monto_entregado: montoEntregado,
+        total_aplicado_tentativo: aplicacionTentativa.totalAplicado,
+        cuotas_tentativas: aplicacionTentativa.cuotasImpactadas,
+      })
+
+      const duplicateQuery = supabase
+        .from('pagos')
+        .select('id, estado')
+        .eq('prestamo_id', prestamo_id)
+        .eq('cliente_id', cliente_id)
+        .eq('monto', montoReferencia)
+        .eq('estado', 'pendiente_aprobacion')
+        .limit(1)
+
+      const { data: possibleDuplicates } = await duplicateQuery
+      if (possibleDuplicates && possibleDuplicates.length > 0) {
+        const duplicateResponse = {
+          ok: true,
+          pago: { id: possibleDuplicates[0].id },
+          estado: 'pendiente_aprobacion',
+          impactado: false,
+          redirect_to: '/pagos-pendientes',
+          mensaje: 'La transferencia quedó pendiente de validación',
+          idempotente: true,
+        }
+        console.log('[registrar-pago] estado final devuelto:', duplicateResponse)
+        return jsonResponse(duplicateResponse)
       }
+
+      const { data: pagoPendiente, error: pagoPendienteError } = await supabase
+        .from('pagos')
+        .insert((() => {
+          const payload = {
+            prestamo_id,
+            cliente_id,
+            monto: montoReferencia,
+            metodo: 'transferencia',
+            registrado_por: user.id,
+            estado: 'pendiente_aprobacion',
+            impactado: false,
+          }
+          console.log('[registrar-pago] payload insert pagos:', payload)
+          return payload
+        })())
+        .select()
+        .single()
+
+      console.log('[registrar-pago] resultado insert pago pendiente:', { pago: pagoPendiente, error: pagoPendienteError?.message || null })
+
+      if (pagoPendienteError || !pagoPendiente) {
+        return jsonResponse(
+          { error: pagoPendienteError?.message || 'No se pudo registrar el pago pendiente' },
+          500
+        )
+      }
+
+      const { error: activityPendienteError } = await supabase.from('actividad_sistema').insert({
+        tipo: 'pago_pendiente',
+        titulo: 'Pago pendiente de aprobación',
+        descripcion: `Pago ${metodo} pendiente por ${montoReferencia}`,
+        entidad_tipo: 'pago',
+        entidad_id: pagoPendiente.id,
+        usuario_id: user.id,
+        prioridad: 'alta',
+        visible_en_notificaciones: true,
+        metadata: { metodo, monto: montoReferencia, cliente_id, prestamo_id, registrado_por: user.id, route: '/pagos-pendientes' },
+      })
+      if (activityPendienteError) {
+        console.error('[registrar-pago] actividad_sistema pago_pendiente error', activityPendienteError)
+      }
+
+      const { error: notifPendienteError } = await supabase.from('notificaciones').insert({
+        tipo: 'pago_pendiente',
+        titulo: 'Pago pendiente de aprobación',
+        descripcion: `Pago ${metodo} pendiente por ${montoReferencia}`,
+        cliente_id,
+        prestamo_id,
+        pago_id: pagoPendiente.id,
+        metadata: { metodo, monto: montoReferencia, registrado_por: user.id },
+      })
+      if (notifPendienteError) {
+        console.error('[registrar-pago] notificaciones pago_pendiente error', notifPendienteError)
+      }
+
+      const pendingResponse = {
+        ok: true,
+        pago: pagoPendiente,
+        estado: 'pendiente_aprobacion',
+        impactado: false,
+        redirect_to: '/pagos-pendientes',
+        mensaje: 'La transferencia quedó pendiente de validación',
+        total_aplicable_referencia: aplicacionTentativa.totalAplicado,
+        cuotas_tentativas: aplicacionTentativa.cuotasImpactadas,
+      }
+
+      console.log('[registrar-pago] estado final devuelto:', pendingResponse)
+
+      return jsonResponse(pendingResponse)
     }
 
-    const totalAplicado = redondear(
-      detalleAplicacion.reduce(
-        (acc, item) => acc + Number(item.monto_aplicado || 0),
-        0
-      )
-    )
+    const aplicacionEfectivo = calcularAplicacionCuotas({
+      cuotas: cuotasAProcesar,
+      montoEntregado,
+      aplicarAMultiples,
+    })
 
+    const cuotasImpactadas = aplicacionEfectivo.cuotasImpactadas
+    const detalleAplicacion = aplicacionEfectivo.detalleAplicacion
+    const totalAplicado = aplicacionEfectivo.totalAplicado
+
+    console.log('[registrar-pago] impacto habilitado:', true)
     console.log('[registrar-pago] impacto aplicado en cuotas:', {
       cuotas_impactadas: detalleAplicacion.length,
       monto_total_aplicado: totalAplicado,
     })
+
+    for (const item of detalleAplicacion) {
+      const { error: updateCuotaError } = await supabase
+        .from('cuotas')
+        .update({
+          monto_pagado: item.monto_pagado_despues,
+          saldo_pendiente: item.saldo_cuota_despues,
+          estado: item.estado_resultante,
+          fecha_pago: new Date().toISOString(),
+        })
+        .eq('id', item.cuota_id)
+
+      if (updateCuotaError) {
+        return jsonResponse({ error: updateCuotaError.message }, 500)
+      }
+    }
 
     if (totalAplicado <= 0) {
       return jsonResponse(
@@ -736,21 +764,24 @@ Deno.serve(async (req) => {
 
     const vuelto = redondear(montoEntregado - totalAplicado)
 
+    const pagoEfectivoPayload = {
+      prestamo_id,
+      cliente_id,
+      monto: totalAplicado,
+      metodo: 'efectivo',
+      registrado_por: user.id,
+      estado: 'aprobado',
+      impactado: true,
+      estado_validacion: 'aprobado',
+      aprobado_por: user.id,
+      aprobado_at: new Date().toISOString(),
+      fecha_pago: new Date().toISOString(),
+    }
+    console.log('[registrar-pago] payload insert pagos:', pagoEfectivoPayload)
+
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .insert({
-        prestamo_id,
-        cliente_id,
-        monto: totalAplicado,
-        metodo,
-        estado: 'aprobado',
-        estado_validacion: 'aprobado',
-        registrado_por: user.id,
-        aprobado_por: user.id,
-        aprobado_at: new Date().toISOString(),
-        impactado: true,
-        fecha_pago: new Date().toISOString(),
-      })
+      .insert(pagoEfectivoPayload)
       .select()
       .single()
 
@@ -991,6 +1022,7 @@ Deno.serve(async (req) => {
       pago,
       estado: 'aprobado',
       impactado: true,
+      redirect_to: `/pago-aprobado?id=${pago.id}`,
       cuotas_impactadas: cuotasImpactadas,
       cuotas_impactadas_detalle: detalleAplicacion.map((item) => ({
         numero_cuota: item.numero_cuota,
