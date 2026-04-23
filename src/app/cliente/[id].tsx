@@ -2,6 +2,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { ClienteEditableAdmin, fetchClienteEditableById, updateClienteEditableByAdmin } from '../../lib/admin-clientes'
+import { createSystemActivity } from '../../lib/activity'
 
 type FormState = {
   nombre: string
@@ -110,6 +111,35 @@ export default function ClienteEditScreen() {
         direccion,
       })
       console.log('[cliente-edit] save result', result)
+
+      const dniCambio = normalizeDni(cliente.dni) !== dni
+
+      await createSystemActivity({
+        tipo: 'cliente_editado',
+        titulo: 'Cliente editado',
+        descripcion: `Se actualizó el cliente ${nombre}${apellido ? ` ${apellido}` : ''}`.trim(),
+        entidad_tipo: 'cliente',
+        entidad_id: cliente.id,
+        prioridad: 'normal',
+        visible_en_notificaciones: true,
+        metadata: {
+          cambios: { nombre, apellido, telefono, direccion },
+          route: `/cliente/${cliente.id}` ,
+        },
+      })
+
+      if (dniCambio) {
+        await createSystemActivity({
+          tipo: 'dni_editado',
+          titulo: 'DNI de cliente editado',
+          descripcion: `Se modificó el DNI del cliente ${nombre}${apellido ? ` ${apellido}` : ''}`.trim(),
+          entidad_tipo: 'cliente',
+          entidad_id: cliente.id,
+          prioridad: 'alta',
+          visible_en_notificaciones: true,
+          metadata: { dni_nuevo: dni, route: `/cliente/${cliente.id}` },
+        })
+      }
 
       await loadCliente()
       setSuccess('Cliente actualizado correctamente.')

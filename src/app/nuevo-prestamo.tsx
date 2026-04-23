@@ -12,7 +12,7 @@ import {
 } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { calcularFechaCuotaMensual, construirCronogramaCuotas } from '../lib/cuotas'
-import { logActivity } from '../lib/activity'
+import { createSystemActivity } from '../lib/activity'
 
 type Cliente = {
   id: string
@@ -545,13 +545,24 @@ export default function NuevoPrestamo() {
       }
 
       const { data: auth } = await supabase.auth.getUser()
-      await logActivity({
+      await createSystemActivity({
         tipo: 'prestamo_creado',
-        actorId: auth.user?.id,
-        clienteId: clienteSeleccionado.id,
-        prestamoId: prestamoInsertado.id,
-        descripcion: `Préstamo creado para ${clienteSeleccionado.nombre}`,
-        metadata: { monto: montoNumero, interes: interesNumero, total_a_pagar: totalAPagar, modalidad },
+        titulo: 'Préstamo creado',
+        descripcion: `Se creó un préstamo para ${clienteSeleccionado.nombre}`,
+        entidad_tipo: 'prestamo',
+        entidad_id: prestamoInsertado.id,
+        usuario_id: auth.user?.id || null,
+        prioridad: 'normal',
+        visible_en_notificaciones: true,
+        metadata: {
+          cliente_id: clienteSeleccionado.id,
+          cliente_nombre: clienteSeleccionado.nombre,
+          monto: montoNumero,
+          interes: interesNumero,
+          total_a_pagar: totalAPagar,
+          modalidad,
+          route: `/cliente-detalle?cliente_id=${clienteSeleccionado.id}` ,
+        },
       })
 
       mostrarMensaje('Éxito', 'Préstamo y cuotas guardados correctamente')

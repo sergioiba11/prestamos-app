@@ -57,6 +57,18 @@ Deno.serve(async (req) => {
     if (rejectError) return jsonResponse({ error: rejectError.message }, 500)
     if (!rejected) return jsonResponse({ error: 'No se pudo rechazar el pago' }, 409)
 
+    await supabase.from('actividad_sistema').insert({
+      tipo: 'pago_rechazado',
+      titulo: 'Pago rechazado',
+      descripcion: `Se rechazó un pago ${pago.metodo || ''}`.trim(),
+      entidad_tipo: 'pago',
+      entidad_id: pagoId,
+      usuario_id: actorId,
+      prioridad: 'alta',
+      visible_en_notificaciones: true,
+      metadata: { actor_id: actorId, observacion, route: '/pagos-pendientes' },
+    })
+
     await supabase.from('notificaciones').insert({
       tipo: 'pago_rechazado',
       titulo: 'Pago rechazado',

@@ -1,26 +1,79 @@
+import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { ActivityFeedFilter, ActivityItem, getActivityFeed } from '../lib/activity'
 import { supabase } from '../lib/supabase'
-
-type ActivityRow = {
-  id: string
-  tipo: string | null
-  descripcion: string | null
-  created_at: string | null
-}
 
 function formatDate(v?: string | null) {
   if (!v) return '—'
   return new Date(v).toLocaleString('es-AR')
 }
 
+function isToday(iso: string) {
+  const d = new Date(iso)
+  const now = new Date()
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+}
+
+function iconByType(tipo: string) {
+  if (tipo.includes('cliente') || tipo.includes('dni')) return 'person-outline'
+  if (tipo.includes('prestamo') || tipo.includes('solicitud')) return 'wallet-outline'
+  if (tipo.includes('pago')) return 'cash-outline'
+  if (tipo.includes('login')) return 'log-in-outline'
+  return 'pulse-outline'
+}
+
+function priorityLabel(priority: string) {
+  if (priority === 'critica') return 'Crítica'
+  if (priority === 'alta') return 'Alta'
+  return 'Normal'
+}
+
+const FILTERS: Array<{ key: ActivityFeedFilter; label: string }> = [
+  { key: 'todos', label: 'Todos' },
+  { key: 'clientes', label: 'Clientes' },
+  { key: 'prestamos', label: 'Préstamos' },
+  { key: 'pagos', label: 'Pagos' },
+  { key: 'solicitudes', label: 'Solicitudes' },
+  { key: 'logins', label: 'Logins' },
+]
+
+function Section({ title, items }: { title: string; items: ActivityItem[] }) {
+  if (!items.length) return null
+
+  return (
+    <View style={styles.sectionWrap}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {items.map((item) => (
+        <View key={item.id} style={[styles.row, item.prioridad === 'alta' && styles.rowHigh, item.prioridad === 'critica' && styles.rowCritical]}>
+          <View style={styles.rowHeader}>
+            <View style={styles.rowHeaderLeft}>
+              <Ionicons name={iconByType(item.tipo) as any} size={15} color="#93C5FD" />
+              <Text style={styles.rowType}>{String(item.tipo || 'evento').replace(/_/g, ' ')}</Text>
+            </View>
+            <View style={styles.flagsWrap}>
+              <Text style={styles.priorityTag}>{priorityLabel(item.prioridad)}</Text>
+              {item.fijada ? <Ionicons name="pin" size={12} color="#F59E0B" /> : null}
+            </View>
+          </View>
+          <Text style={styles.rowTitle}>{item.titulo}</Text>
+          <Text style={styles.rowDesc}>{item.descripcion || 'Sin descripción'}</Text>
+          {item.usuario_nombre ? <Text style={styles.rowUser}>Usuario: {item.usuario_nombre}</Text> : null}
+          <Text style={styles.rowDate}>{formatDate(item.created_at)}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 export default function ActividadScreen() {
   const [loading, setLoading] = useState(true)
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('admin')
-  const [items, setItems] = useState<ActivityRow[]>([])
+  const [items, setItems] = useState<ActivityItem[]>([])
+  const [filter, setFilter] = useState<ActivityFeedFilter>('todos')
 
   const onNavigate = (key: AdminNavKey) => {
     if (key === 'inicio') return router.push('/admin-home' as any)
@@ -54,34 +107,26 @@ export default function ActividadScreen() {
         setAdminRole(userData?.rol || 'admin')
       }
 
-      const fromActividad = await supabase
-        .from('actividad')
-        .select('id,tipo,descripcion,created_at')
-        .order('created_at', { ascending: false })
-        .limit(30)
-
-      if (!fromActividad.error) {
-        setItems((fromActividad.data || []) as ActivityRow[])
-        return
-      }
-
-      const fromNotificaciones = await supabase
-        .from('notificaciones')
-        .select('id,tipo,descripcion,created_at')
-        .order('created_at', { ascending: false })
-        .limit(30)
-
-      setItems((fromNotificaciones.data || []) as ActivityRow[])
+      const feed = await getActivityFeed({ filter, limit: 300 })
+      setItems(feed)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [filter])
 
   useFocusEffect(
     useCallback(() => {
       void load()
     }, [load])
   )
+
+  const grouped = useMemo(() => {
+    const pinned = items.filter((item) => item.fijada)
+    const unread = items.filter((item) => !item.leida && !item.fijada)
+    const today = items.filter((item) => !item.fijada && item.leida && isToday(item.created_at))
+    const previous = items.filter((item) => !item.fijada && item.leida && !isToday(item.created_at))
+    return { pinned, unread, today, previous }
+  }, [items])
 
   return (
     <View style={styles.page}>
@@ -95,15 +140,20 @@ export default function ActividadScreen() {
         ) : (
           <ScrollView contentContainerStyle={styles.content}>
             <Text style={styles.title}>Actividad del sistema</Text>
-            <Text style={styles.subtitle}>Base de auditoría para clientes, préstamos y pagos.</Text>
+            <Text style={styles.subtitle}>Historial completo de clientes, préstamos, pagos y accesos.</Text>
 
-            {items.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <Text style={styles.rowType}>{String(item.tipo || 'evento').replaceAll('_', ' ')}</Text>
-                <Text style={styles.rowDesc}>{item.descripcion || 'Sin descripción'}</Text>
-                <Text style={styles.rowDate}>{formatDate(item.created_at)}</Text>
-              </View>
-            ))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersRow}>
+              {FILTERS.map((f) => (
+                <TouchableOpacity key={f.key} style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]} onPress={() => setFilter(f.key)}>
+                  <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Section title="Fijadas" items={grouped.pinned} />
+            <Section title="No leídas" items={grouped.unread} />
+            <Section title="Hoy" items={grouped.today} />
+            <Section title="Anteriores" items={grouped.previous} />
 
             {items.length === 0 ? (
               <View style={styles.emptyBox}>
@@ -128,9 +178,24 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 10, paddingBottom: 28 },
   title: { color: '#fff', fontSize: 28, fontWeight: '800' },
   subtitle: { color: '#94A3B8' },
+  filtersRow: { gap: 8, paddingVertical: 6 },
+  filterBtn: { borderRadius: 999, borderWidth: 1, borderColor: '#334155', backgroundColor: '#0B1220', paddingHorizontal: 12, paddingVertical: 7 },
+  filterBtnActive: { borderColor: '#2563EB', backgroundColor: '#0E1A35' },
+  filterText: { color: '#CBD5E1', fontWeight: '700', fontSize: 12 },
+  filterTextActive: { color: '#DBEAFE' },
+  sectionWrap: { gap: 8 },
+  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 14, marginTop: 4 },
   row: { backgroundColor: '#0B1220', borderColor: '#1E293B', borderWidth: 1, borderRadius: 12, padding: 12, gap: 4 },
+  rowHigh: { borderColor: '#D97706' },
+  rowCritical: { borderColor: '#DC2626', backgroundColor: '#1F1117' },
+  rowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rowHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  flagsWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  priorityTag: { color: '#94A3B8', fontSize: 11, textTransform: 'uppercase' },
   rowType: { color: '#93C5FD', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
-  rowDesc: { color: '#E2E8F0', fontWeight: '600' },
+  rowTitle: { color: '#E2E8F0', fontWeight: '800' },
+  rowDesc: { color: '#E2E8F0', fontWeight: '500' },
+  rowUser: { color: '#93C5FD', fontSize: 12 },
   rowDate: { color: '#64748B', fontSize: 12 },
   emptyBox: { borderRadius: 12, borderWidth: 1, borderColor: '#334155', padding: 16, alignItems: 'center', gap: 10 },
   emptyText: { color: '#94A3B8' },

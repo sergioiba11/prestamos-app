@@ -555,6 +555,18 @@ Deno.serve(async (req) => {
         )
       }
 
+      await supabase.from('actividad_sistema').insert({
+        tipo: 'pago_pendiente',
+        titulo: 'Pago pendiente de aprobación',
+        descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
+        entidad_tipo: 'pago',
+        entidad_id: pagoPendiente.id,
+        usuario_id: user.id,
+        prioridad: 'alta',
+        visible_en_notificaciones: true,
+        metadata: { metodo, monto: montoEntregado, cliente_id, prestamo_id, registrado_por: user.id, route: '/pagos-pendientes' },
+      })
+
       await supabase.from('notificaciones').insert({
         tipo: 'pago_pendiente',
         titulo: 'Pago pendiente de aprobación',
@@ -910,6 +922,18 @@ Deno.serve(async (req) => {
         `[registrar-pago] No se enviará correo al admin para pago ${pago.id}: admin sin email`
       )
     }
+
+    await supabase.from('actividad_sistema').insert({
+      tipo: 'pago_registrado',
+      titulo: 'Pago registrado',
+      descripcion: `Pago aplicado por ${formatearMonto(totalAplicado)}`,
+      entidad_tipo: 'pago',
+      entidad_id: pago.id,
+      usuario_id: user.id,
+      prioridad: 'normal',
+      visible_en_notificaciones: true,
+      metadata: { metodo, monto_aplicado: totalAplicado, estado_prestamo: nuevoEstadoPrestamo, cliente_id, prestamo_id },
+    })
 
     await supabase.from('notificaciones').insert({
       tipo: 'pago_aprobado',

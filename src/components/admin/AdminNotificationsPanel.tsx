@@ -1,17 +1,26 @@
-import { useEffect, useState } from 'react'
-import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { useEffect, useMemo, useState } from 'react'
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 export type AdminNotification = {
   id: string
   titulo: string
-  descripcion: string
+  descripcion: string | null
   leida: boolean
   created_at: string
+  prioridad: 'normal' | 'alta' | 'critica'
+  fijada: boolean
+  metadata?: Record<string, any>
 }
 
 function formatDate(value: string) {
   if (!value) return '—'
   const d = new Date(value)
+  const now = Date.now()
+  const diffMins = Math.round((now - d.getTime()) / 60000)
+  if (diffMins < 1) return 'Ahora'
+  if (diffMins < 60) return `Hace ${diffMins} min`
+  if (diffMins < 1440) return `Hace ${Math.floor(diffMins / 60)} h`
   return d.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
 }
 
@@ -19,12 +28,14 @@ export function AdminNotificationsPanel({
   visible,
   notifications,
   onMarkAllRead,
+  onOpenItem,
   anchorRef,
   onClose,
 }: {
   visible: boolean
   notifications: AdminNotification[]
   onMarkAllRead: () => void
+  onOpenItem?: (item: AdminNotification) => void
   anchorRef?: View | null
   onClose?: () => void
 }) {
@@ -77,27 +88,38 @@ export function AdminNotificationsPanel({
     }
   }, [anchorRef, visible])
 
+  const canMarkAll = useMemo(() => notifications.some((n) => !n.leida), [notifications])
+
   if (!visible) return null
 
   const content = (
     <View style={styles.panel}>
       <View style={styles.header}>
         <Text style={styles.title}>Bandeja de entrada</Text>
-        <TouchableOpacity onPress={onMarkAllRead}>
-          <Text style={styles.markRead}>Marcar todas</Text>
+        <TouchableOpacity onPress={onMarkAllRead} disabled={!canMarkAll}>
+          <Text style={[styles.markRead, !canMarkAll && styles.disabledText]}>Marcar todas</Text>
         </TouchableOpacity>
       </View>
 
       {notifications.length === 0 ? (
         <Text style={styles.empty}>No hay notificaciones.</Text>
       ) : (
-        notifications.map((item) => (
-          <View key={item.id} style={[styles.item, !item.leida && styles.itemUnread]}>
-            <Text style={styles.itemTitle}>{item.titulo}</Text>
-            <Text style={styles.itemDesc}>{item.descripcion || 'Sin detalle'}</Text>
-            <Text style={styles.itemDate}>{formatDate(item.created_at)}</Text>
-          </View>
-        ))
+        <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+          {notifications.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.item, !item.leida && styles.itemUnread, item.prioridad === 'alta' && styles.itemHigh, item.prioridad === 'critica' && styles.itemCritical]}
+              onPress={() => onOpenItem?.(item)}
+            >
+              <View style={styles.itemTitleRow}>
+                <Text style={styles.itemTitle}>{item.titulo}</Text>
+                {item.fijada ? <Ionicons name="pin" size={12} color="#F59E0B" /> : null}
+              </View>
+              <Text numberOfLines={2} style={styles.itemDesc}>{item.descripcion || 'Sin detalle'}</Text>
+              <Text style={styles.itemDate}>{formatDate(item.created_at)}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       )}
     </View>
   )
@@ -128,26 +150,22 @@ const styles = StyleSheet.create({
     elevation: 30,
     gap: 8,
   },
-  portalRoot: {
-    ...StyleSheet.absoluteFillObject,
-    position: 'fixed',
-    zIndex: 99999,
-  },
-  portalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    position: 'fixed',
-  },
-  panelPortal: {
-    position: 'fixed',
-    zIndex: 99999,
-  },
+  portalRoot: { ...StyleSheet.absoluteFillObject, position: 'fixed', zIndex: 99999 },
+  portalBackdrop: { ...StyleSheet.absoluteFillObject, position: 'fixed' },
+  panelPortal: { position: 'fixed', zIndex: 99999 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { color: '#fff', fontWeight: '700' },
   markRead: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
+  disabledText: { color: '#475569' },
   empty: { color: '#94A3B8', fontSize: 12 },
+  list: { maxHeight: 352 },
+  listContent: { gap: 8, paddingBottom: 2 },
   item: { borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#111827', padding: 10 },
-  itemUnread: { borderColor: '#2563EB' },
-  itemTitle: { color: '#fff', fontWeight: '700' },
+  itemUnread: { borderColor: '#2563EB', backgroundColor: '#0E1A35' },
+  itemHigh: { borderColor: '#D97706' },
+  itemCritical: { borderColor: '#DC2626' },
+  itemTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  itemTitle: { color: '#fff', fontWeight: '700', flex: 1 },
   itemDesc: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
   itemDate: { color: '#64748B', fontSize: 11, marginTop: 4 },
 })

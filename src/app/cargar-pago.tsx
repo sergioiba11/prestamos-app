@@ -20,7 +20,7 @@ import {
   supabaseAnonKey,
   supabaseUrl,
 } from '../lib/supabase'
-import { logActivity } from '../lib/activity'
+import { createSystemActivity } from '../lib/activity'
 
 type Cliente = {
   id: string
@@ -714,13 +714,22 @@ export default function CargarPago() {
       }
 
       if (json?.pendiente) {
-        await logActivity({
-          tipo: 'pago_registrado',
-          clienteId: clienteSeleccionado.id,
-          prestamoId: prestamoSeleccionado.id,
-          pagoId: json?.pago?.id ? String(json.pago.id) : null,
-          descripcion: `Pago pendiente de aprobación (${metodo})`,
-          metadata: { monto: Number(montoAplicado.toFixed(2)), cuota: cuotaSeleccionada.numero_cuota },
+        await createSystemActivity({
+          tipo: 'pago_pendiente',
+          titulo: 'Pago pendiente de aprobación',
+          descripcion: `Transferencia de ${formatearMoneda(Number(montoAplicado.toFixed(2)))} pendiente para ${clienteSeleccionado.nombre}` ,
+          entidad_tipo: 'pago',
+          entidad_id: json?.pago?.id ? String(json.pago.id) : null,
+          prioridad: 'alta',
+          visible_en_notificaciones: true,
+          metadata: {
+            cliente_id: clienteSeleccionado.id,
+            prestamo_id: prestamoSeleccionado.id,
+            monto: Number(montoAplicado.toFixed(2)),
+            cuota: cuotaSeleccionada.numero_cuota,
+            metodo,
+            route: '/pagos-pendientes',
+          },
         })
 
         if (metodo === 'mp' && mpData?.preference_id && mpData?.init_point) {
@@ -744,13 +753,21 @@ export default function CargarPago() {
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
 
-      await logActivity({
+      await createSystemActivity({
         tipo: 'pago_registrado',
-        clienteId: clienteSeleccionado.id,
-        prestamoId: prestamoSeleccionado.id,
-        pagoId: json?.pago?.id ? String(json.pago.id) : null,
-        descripcion: `Pago aplicado en cuota #${cuotaSeleccionada.numero_cuota}`,
-        metadata: { monto: Number(montoAplicado.toFixed(2)), metodo },
+        titulo: 'Pago registrado',
+        descripcion: `Pago aplicado en cuota #${cuotaSeleccionada.numero_cuota} de ${clienteSeleccionado.nombre}`,
+        entidad_tipo: 'pago',
+        entidad_id: json?.pago?.id ? String(json.pago.id) : null,
+        prioridad: 'normal',
+        visible_en_notificaciones: true,
+        metadata: {
+          cliente_id: clienteSeleccionado.id,
+          prestamo_id: prestamoSeleccionado.id,
+          monto: Number(montoAplicado.toFixed(2)),
+          metodo,
+          route: '/actividad',
+        },
       })
 
       router.replace({

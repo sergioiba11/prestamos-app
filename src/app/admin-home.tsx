@@ -20,6 +20,12 @@ import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
 import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
+import {
+  getTopNotifications,
+  getUnreadNotificationsCount,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+} from '../lib/activity'
 import { supabase } from '../lib/supabase'
 
 function money(v: number) {
@@ -44,6 +50,7 @@ export default function AdminHome() {
   const [search, setSearch] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
     clientesActivos: 0,
@@ -55,18 +62,13 @@ export default function AdminHome() {
   const notificationsButtonRef = useRef<View | null>(null)
 
   const loadNotifications = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('notificaciones')
-      .select('id,titulo,descripcion,leida,created_at')
-      .order('created_at', { ascending: false })
-      .limit(12)
-
-    if (error) {
+    try {
+      const [top, unread] = await Promise.all([getTopNotifications(12), getUnreadNotificationsCount()])
+      setNotifications(top as AdminNotification[])
+      setUnreadCount(unread)
+    } catch (error) {
       console.error('admin-home notificaciones error', error)
-      return
     }
-
-    setNotifications((data || []) as AdminNotification[])
   }, [])
 
   const loadData = useCallback(async () => {
@@ -130,7 +132,7 @@ export default function AdminHome() {
   }
 
   const markAllRead = async () => {
-    await supabase.from('notificaciones').update({ leida: true }).eq('leida', false)
+    await markAllNotificationsAsRead()
     await loadNotifications()
   }
 
@@ -159,7 +161,6 @@ export default function AdminHome() {
     })
   }, [activeClients, search])
 
-  const unreadCount = notifications.filter((n) => !n.leida).length
 
   if (loading) {
     return (
@@ -238,6 +239,15 @@ export default function AdminHome() {
             onMarkAllRead={markAllRead}
             anchorRef={notificationsButtonRef.current}
             onClose={() => setNotificationsOpen(false)}
+            onOpenItem={async (item) => {
+              if (!item.leida) await markNotificationAsRead(item.id)
+              await loadNotifications()
+              const route = item.metadata?.route
+              if (typeof route === 'string' && route.startsWith('/')) {
+                setNotificationsOpen(false)
+                router.push(route as any)
+              }
+            }}
           />
 
           <View style={styles.kpiGrid}>

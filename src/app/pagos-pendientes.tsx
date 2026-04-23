@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import * as Linking from 'expo-linking'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
-import { logActivity } from '../lib/activity'
+import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
 import { supabase } from '../lib/supabase'
 
@@ -133,13 +133,20 @@ export default function PagosPendientesScreen() {
 
       if (error) throw error
 
-      await logActivity({
+      await createSystemActivity({
         tipo: obsModal.action === 'aprobar' ? 'pago_aprobado' : 'pago_rechazado',
-        descripcion: `Pago ${obsModal.payment.id} ${obsModal.action === 'aprobar' ? 'aprobado' : 'rechazado'} por ${adminName}`,
-        pagoId: obsModal.payment.id,
-        clienteId: obsModal.payment.cliente_id,
-        prestamoId: obsModal.payment.prestamo_id,
-        metadata: { observacion_revision: observation.trim() || null },
+        titulo: obsModal.action === 'aprobar' ? 'Pago aprobado' : 'Pago rechazado',
+        descripcion: `Pago ${obsModal.payment.id} ${obsModal.action === 'aprobar' ? 'aprobado' : 'rechazado'} por ${adminName}` ,
+        entidad_tipo: 'pago',
+        entidad_id: obsModal.payment.id,
+        prioridad: obsModal.action === 'aprobar' ? 'normal' : 'alta',
+        visible_en_notificaciones: true,
+        metadata: {
+          observacion_revision: observation.trim() || null,
+          cliente_id: obsModal.payment.cliente_id,
+          prestamo_id: obsModal.payment.prestamo_id,
+          route: '/pagos-pendientes',
+        },
       })
 
       setObservation('')
