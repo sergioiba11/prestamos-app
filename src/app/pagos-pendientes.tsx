@@ -61,9 +61,9 @@ async function callAprobarPago(body: {
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
-if (error) throw error
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
-const token = data.session?.access_token
+if (error) throw error
 
   const url = `${supabaseUrl}/functions/v1/aprobar-pago`
 
@@ -208,6 +208,7 @@ export default function PagosPendientesScreen() {
   const handleAprobar = async (pagoId: string) => {
     try {
       setProcessingId(pagoId)
+      console.log('Aprobando pago:', pagoId)
 
       const result = await callAprobarPago({
         pago_id: pagoId,
@@ -250,6 +251,8 @@ export default function PagosPendientesScreen() {
       if (!pago) return
 
       setProcessingId(pago.id)
+      console.log('Rechazando pago:', pago.id)
+      console.log('Observación rechazo:', currentObservation)
 
       await callAprobarPago({
         pago_id: pago.id,
@@ -276,9 +279,9 @@ export default function PagosPendientesScreen() {
       Alert.alert('Pago rechazado correctamente')
       closeObservationModal()
       await loadData()
-    } catch (err: any) {
-      console.error(err)
-      Alert.alert('Error al rechazar pago', err?.message || 'No se pudo rechazar el pago')
+    } catch (error: any) {
+      console.error(error)
+      Alert.alert('Error al rechazar pago', error?.message || 'No se pudo rechazar el pago')
     } finally {
       setProcessingId(null)
     }
@@ -326,7 +329,13 @@ export default function PagosPendientesScreen() {
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            !isMobile && styles.contentDesktop,
+            isMobile && styles.contentMobile,
+          ]}
+        >
           <Text style={styles.title}>Pagos pendientes</Text>
           <Text style={styles.subtitle}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
 
@@ -425,7 +434,19 @@ export default function PagosPendientesScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32, gap: 12 },
+  content: {
+    flexGrow: 1,
+    width: '100%',
+    padding: 20,
+    gap: 16,
+  },
+  contentDesktop: {
+    marginLeft: 260,
+  },
+  contentMobile: {
+    marginLeft: 0,
+    paddingTop: 84,
+  },
   mobileTopBar: {
     position: 'absolute',
     top: 0,
