@@ -114,8 +114,8 @@ export default function PagosPendientesScreen() {
         .eq('estado', 'pendiente_aprobacion')
         .order('created_at', { ascending: false })
 
-      console.log('pagos pendientes:', data)
-      console.log('error:', error)
+      console.log('lista pagos pendientes:', data)
+      console.log('error lista pagos pendientes:', error)
 
       if (error) {
         setQueryError(error.message)
