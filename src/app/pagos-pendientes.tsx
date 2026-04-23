@@ -55,14 +55,11 @@ export default function PagosPendientesScreen() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [queryError, setQueryError] = useState<string | null>(null)
-  const [selectedPago, setSelectedPago] = useState<PendingPayment | null>(null)
-  const [rejectionComment, setRejectionComment] = useState('')
-  const [obsModal, setObsModal] = useState<{ open: boolean; action: 'aprobar' | 'rechazar'; payment: PendingPayment | null }>({
+  const [obsModal, setObsModal] = useState<{ open: boolean; payment: PendingPayment | null }>({
     open: false,
-    action: 'aprobar',
     payment: null,
   })
-  const [observation, setObservation] = useState('')
+  const [currentObservation, setCurrentObservation] = useState('')
 
   const onNavigate = (key: AdminNavKey) => {
     setMobileMenu(false)
@@ -85,9 +82,8 @@ export default function PagosPendientesScreen() {
   }
 
   const closeObservationModal = () => {
-    setObsModal({ open: false, action: 'aprobar', payment: null })
-    setSelectedPago(null)
-    setRejectionComment('')
+    setObsModal({ open: false, payment: null })
+    setCurrentObservation('')
   }
 
   const loadData = useCallback(async () => {
@@ -145,166 +141,91 @@ export default function PagosPendientesScreen() {
     })
   }, [items, search])
 
-  const handleConfirmApprove = async () => {
-    if (!obsModal.payment) return
-
+  const handleAprobar = async (pagoId: string) => {
     try {
-      setProcessingId(obsModal.payment.id)
-      const payment = obsModal.payment
-      const currentObservation = observation.trim() || null
+      setProcessingId(pagoId)
+      console.log('Aprobando:', pagoId)
       const { data, error } = await supabase.functions.invoke('aprobar-pago', {
         body: {
-          pago_id: payment.id,
+          pago_id: pagoId,
           accion: 'aprobar',
-          observacion_revision: currentObservation,
         },
       })
 
       if (error) throw error
       const decisionResult = (data || {}) as AprobarPagoResponse
+      const payment = items.find((item) => item.id === pagoId) || null
 
-      await createSystemActivity({
-        tipo: 'pago_aprobado',
-        titulo: 'Pago aprobado',
-        descripcion: `Pago ${payment.id} aprobado por ${adminName}` ,
-        entidad_tipo: 'pago',
-        entidad_id: payment.id,
-        prioridad: 'normal',
-        visible_en_notificaciones: true,
-        metadata: {
-          observacion_revision: currentObservation,
-          cliente_id: payment.cliente_id,
-          prestamo_id: payment.prestamo_id,
-          route: '/pagos-pendientes',
-        },
-      })
-
-      setObservation('')
-      closeObservationModal()
-      await loadData()
-
-      const cuotasImpactadas = decisionResult.cuotas_impactadas || []
-      const firstImpact = decisionResult.detalle_aplicacion?.[0] || null
-      Alert.alert(
-        'Pago aprobado',
-        'El pago se aplicó al préstamo. Ahora podés ver el comprobante.',
-        [
-          { text: 'Seguir', style: 'cancel' },
-          {
-            text: 'Ver comprobante',
-            onPress: () =>
-              router.push({
-                pathname: '/pago-aprobado',
-                params: {
-                  monto: String(Number(payment.monto || 0)),
-                  monto_ingresado: String(Number(payment.monto || 0)),
-                  vuelto: '0',
-                  monto_cuota: String(Number(payment.monto || 0)),
-                  metodo: String(payment.metodo || 'transferencia'),
-                  fecha: String(new Date().toISOString()),
-                  saldo_restante: String(Number(decisionResult.saldo_restante || 0)),
-                  saldo_restante_cuota: String(Number(firstImpact?.saldo_cuota_despues || 0)),
-                  cuota_id: '',
-                  numero_cuota: firstImpact?.numero_cuota ? String(firstImpact.numero_cuota) : '',
-                  cuotas_impactadas: JSON.stringify(cuotasImpactadas),
-                  cuotas_impactadas_detalle: JSON.stringify(
-                    (decisionResult.detalle_aplicacion || []).map((item) => ({
-                      numero_cuota: Number(item.numero_cuota || 0),
-                      estado: String(item.estado_resultante || ''),
-                      monto_aplicado: Number(item.monto_aplicado || 0),
-                      saldo_antes: Number(item.saldo_cuota_antes || 0),
-                      saldo_despues: Number(item.saldo_cuota_despues || 0),
-                    }))
-                  ),
-                  estado_comprobante: 'COMPLETO',
-                  proxima_cuota: '',
-                  prestamo_id: String(payment.prestamo_id || ''),
-                  cliente_id: String(payment.cliente_id || ''),
-                  cliente_nombre: String(payment.clientes?.nombre || ''),
-                  cliente_apellido: '',
-                  cliente_dni: String(payment.clientes?.dni || ''),
-                  cliente_email: '',
-                  cliente_telefono: '',
-                  pago_id: String(decisionResult.pago_id || payment.id),
-                  identificador_interno_pago: String(decisionResult.pago_id || payment.id),
-                  observaciones: currentObservation || '',
-                },
-              } as any),
+      if (payment) {
+        await createSystemActivity({
+          tipo: 'pago_aprobado',
+          titulo: 'Pago aprobado',
+          descripcion: `Pago ${payment.id} aprobado por ${adminName}` ,
+          entidad_tipo: 'pago',
+          entidad_id: payment.id,
+          prioridad: 'normal',
+          visible_en_notificaciones: true,
+          metadata: {
+            cliente_id: payment.cliente_id,
+            prestamo_id: payment.prestamo_id,
+            route: '/pagos-pendientes',
           },
-        ]
-      )
+        })
+      }
+
+      await loadData()
+      Alert.alert('Pago aprobado')
+      router.push(`/pago-aprobado?pago_id=${encodeURIComponent(String(decisionResult.pago_id || pagoId))}` as any)
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'No se pudo actualizar el pago')
+      console.error(error)
+      Alert.alert('Error al aprobar', error?.message || 'No se pudo aprobar el pago')
     } finally {
       setProcessingId(null)
     }
   }
 
   const handleConfirmReject = async () => {
-    if (!selectedPago) {
-      Alert.alert('Error', 'No hay pago seleccionado para rechazar.')
-      return
-    }
-
     try {
-      setProcessingId(selectedPago.id)
-      console.log('rechazando pago', selectedPago)
-      console.log('comentario rechazo', rejectionComment)
-
-      const trimmedComment = rejectionComment.trim()
-      const updatePayload: Record<string, unknown> = {
-        estado: 'rechazado',
-        impactado: false,
-      }
-      if (trimmedComment) updatePayload.observacion_validacion = trimmedComment
-
-      let { data, error } = await supabase
-        .from('pagos')
-        .update(updatePayload)
-        .eq('id', selectedPago.id)
-        .select('id, estado')
-
-      if (error && String(error.message || '').toLowerCase().includes('observacion_validacion')) {
-        console.log('observacion_validacion no existe; se rechaza sin guardar comentario')
-        ;({ data, error } = await supabase
-          .from('pagos')
-          .update({
-            estado: 'rechazado',
-            impactado: false,
-          })
-          .eq('id', selectedPago.id)
-          .select('id, estado'))
-      }
-
-      console.log('resultado rechazo', data)
-      console.log('error rechazo', error)
-
-      if (error) {
-        Alert.alert('Error al rechazar pago', error.message || 'No se pudo rechazar el pago')
+      const pago = obsModal?.payment
+      if (!pago) {
+        console.error('No hay pago seleccionado')
         return
       }
+      setProcessingId(pago.id)
+      console.log('Rechazando pago:', pago.id)
+
+      const { error } = await supabase.functions.invoke('aprobar-pago', {
+        body: {
+          pago_id: pago.id,
+          accion: 'rechazar',
+          observacion_revision: currentObservation.trim() || null,
+        },
+      })
+
+      if (error) throw error
 
       await createSystemActivity({
         tipo: 'pago_rechazado',
         titulo: 'Pago rechazado',
-        descripcion: `Pago ${selectedPago.id} rechazado por ${adminName}` ,
+        descripcion: `Pago ${pago.id} rechazado por ${adminName}` ,
         entidad_tipo: 'pago',
-        entidad_id: selectedPago.id,
+        entidad_id: pago.id,
         prioridad: 'alta',
         visible_en_notificaciones: true,
         metadata: {
-          observacion_revision: trimmedComment || null,
-          cliente_id: selectedPago.cliente_id,
-          prestamo_id: selectedPago.prestamo_id,
+          observacion_revision: currentObservation.trim() || null,
+          cliente_id: pago.cliente_id,
+          prestamo_id: pago.prestamo_id,
           route: '/pagos-pendientes',
         },
       })
 
+      Alert.alert('Pago rechazado correctamente')
       closeObservationModal()
       await loadData()
-      Alert.alert('Pago rechazado correctamente')
-    } catch (error: any) {
-      Alert.alert('Error al rechazar pago', error?.message || 'No se pudo rechazar el pago')
+    } catch (err: any) {
+      console.error(err)
+      Alert.alert('Error al rechazar pago', err?.message || 'No se pudo rechazar el pago')
     } finally {
       setProcessingId(null)
     }
@@ -365,7 +286,7 @@ export default function PagosPendientesScreen() {
                 <TouchableOpacity
                   disabled={processingId === item.id}
                   style={[styles.actionBtn, styles.approveBtn]}
-                  onPress={() => setObsModal({ open: true, action: 'aprobar', payment: item })}
+                  onPress={() => void handleAprobar(item.id)}
                 >
                   <Ionicons name="checkmark-circle" size={16} color="#DCFCE7" />
                   <Text style={styles.actionText}>Aprobar</Text>
@@ -373,10 +294,7 @@ export default function PagosPendientesScreen() {
                 <TouchableOpacity
                   disabled={processingId === item.id}
                   style={[styles.actionBtn, styles.rejectBtn]}
-                  onPress={() => {
-                    setSelectedPago(item)
-                    setObsModal({ open: true, action: 'rechazar', payment: item })
-                  }}
+                  onPress={() => setObsModal({ open: true, payment: item })}
                 >
                   <Ionicons name="close-circle" size={16} color="#FEE2E2" />
                   <Text style={styles.actionText}>Rechazar</Text>
@@ -391,19 +309,16 @@ export default function PagosPendientesScreen() {
         <View style={styles.modalWrap}>
           <Pressable style={styles.overlay} onPress={closeObservationModal} />
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{obsModal.action === 'aprobar' ? 'Aprobar pago' : 'Rechazar pago'}</Text>
+            <Text style={styles.modalTitle}>Rechazar pago</Text>
             <TextInput
               style={styles.observationInput}
-              value={obsModal.action === 'aprobar' ? observation : rejectionComment}
-              onChangeText={obsModal.action === 'aprobar' ? setObservation : setRejectionComment}
+              value={currentObservation}
+              onChangeText={setCurrentObservation}
               placeholder="Observación (opcional)"
               placeholderTextColor="#64748B"
               multiline
             />
-            <TouchableOpacity
-              style={styles.confirmBtn}
-              onPress={obsModal.action === 'aprobar' ? handleConfirmApprove : handleConfirmReject}
-            >
+            <TouchableOpacity style={styles.confirmBtn} onPress={() => void handleConfirmReject()}>
               <Text style={styles.confirmText}>{processingId ? 'Procesando...' : 'Confirmar'}</Text>
             </TouchableOpacity>
           </View>
