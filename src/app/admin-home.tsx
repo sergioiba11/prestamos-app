@@ -19,7 +19,6 @@ import { AdminNotificationsPanel, AdminNotification } from '../components/admin/
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { EditClientModal } from '../components/admin/EditClientModal'
 import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
@@ -53,8 +52,6 @@ export default function AdminHome() {
   })
   const [activeClients, setActiveClients] = useState<ClientePrestamoActivo[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
-  const [editingClient, setEditingClient] = useState<ClientePrestamoActivo | null>(null)
-  const [saveToast, setSaveToast] = useState('')
   const notificationsButtonRef = useRef<View | null>(null)
 
   const loadNotifications = useCallback(async () => {
@@ -164,12 +161,6 @@ export default function AdminHome() {
 
   const unreadCount = notifications.filter((n) => !n.leida).length
 
-  const onClientSaved = async () => {
-    await loadData()
-    setSaveToast('Cliente actualizado correctamente')
-    setTimeout(() => setSaveToast(''), 2800)
-  }
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -215,7 +206,6 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}> 
-          {saveToast ? <Text style={styles.toast}>{saveToast}</Text> : null}
           <View style={styles.pageTopRow}>
             <View>
               <Text style={styles.pageTitle}>Panel de administración</Text>
@@ -360,7 +350,7 @@ export default function AdminHome() {
               <AdminClientsTable
                 rows={filteredClients}
                 onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                onEdit={(row) => setEditingClient(row)}
+                onEdit={(row) => { console.log('[admin-home] editar cliente', row.clienteId); router.push(`/cliente/${row.clienteId}` as any) }}
                 onHistory={(row) => router.push({ pathname: '/historial-prestamos', params: { cliente_id: row.clienteId } } as any)}
               />
             )}
@@ -387,28 +377,10 @@ export default function AdminHome() {
         </View>
       </Modal>
 
-      <EditClientModal
-        open={Boolean(editingClient)}
-        client={
-          editingClient
-            ? {
-                id: editingClient.clienteId,
-                usuario_id: editingClient.usuarioId,
-                nombre: editingClient.nombre,
-                dni: editingClient.dni,
-                dni_editado: editingClient.dniEditado,
-                telefono: editingClient.telefono,
-                direccion: editingClient.direccion,
-                email: editingClient.email,
-              }
-            : null
-        }
-        onClose={() => setEditingClient(null)}
-        onSaved={onClientSaved}
-      />
     </View>
   )
 }
+
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
@@ -497,18 +469,6 @@ const styles = StyleSheet.create({
   emptyText: { color: '#94A3B8', paddingBottom: 8 },
   tableCounter: { color: '#64748B', marginTop: 10, fontSize: 12 },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
-  toast: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#065F46',
-    borderColor: '#10B981',
-    borderWidth: 1,
-    color: '#ECFDF5',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 12,
-    fontWeight: '700',
-  },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
