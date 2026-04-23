@@ -19,7 +19,7 @@ import { AdminNotificationsPanel, AdminNotification } from '../components/admin/
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
+import { ClientePrestamoActivo, ClienteAdminListadoItem, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import {
   getTopNotifications,
   getUnreadNotificationsCount,
@@ -59,6 +59,7 @@ export default function AdminHome() {
   })
   const [activeClients, setActiveClients] = useState<ClientePrestamoActivo[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
+  const [pendingPaymentsError, setPendingPaymentsError] = useState<string | null>(null)
   const notificationsButtonRef = useRef<View | null>(null)
 
   const loadNotifications = useCallback(async () => {
@@ -93,22 +94,49 @@ export default function AdminHome() {
       }
 
       const data = await fetchAdminPanelData()
-      const { data: pagosPendientes, error } = await supabase
+      const clientesById = new Map<string, ClienteAdminListadoItem>(
+        data.clientesListado.map((cliente) => [cliente.clienteId, cliente])
+      )
+      const { data: pendingPaymentsData, error: pendingPaymentsErrorResponse } = await supabase
         .from('pagos')
-        .select('id')
+        .select('id, cliente_id, prestamo_id, monto, metodo, created_at, estado, estado_validacion')
         .eq('estado', 'pendiente_aprobacion')
+        .order('created_at', { ascending: false })
 
-      console.log('dashboard pendientes:', pagosPendientes)
-      if (error) console.error('admin-home pagos pendientes error', error)
+      console.log('lista pagos pendientes:', pendingPaymentsData)
+      console.log('error lista pagos pendientes:', pendingPaymentsErrorResponse)
 
-      const totalPagosPendientes = pagosPendientes?.length || 0
+      if (pendingPaymentsErrorResponse) {
+        setPendingPaymentsError(pendingPaymentsErrorResponse.message)
+        setPendingPayments([])
+      } else {
+        setPendingPaymentsError(null)
+        const pendingItems = (pendingPaymentsData || []).map((pago: any) => {
+          const cliente = clientesById.get(String(pago.cliente_id || ''))
+          return {
+            id: String(pago.id),
+            clienteId: String(pago.cliente_id || ''),
+            cliente: cliente?.nombre || String(pago.cliente_id || 'Cliente sin identificar'),
+            dni: cliente?.dni || '—',
+            monto: Number(pago.monto || 0),
+            metodo: String(pago.metodo || 'Sin método'),
+            createdAt: String(pago.created_at || ''),
+            estadoValidacion: String(pago.estado || pago.estado_validacion || 'pendiente_aprobacion'),
+            prestamoId: pago.prestamo_id ? String(pago.prestamo_id) : undefined,
+            telefono: cliente?.telefono || undefined,
+          } as PagoPendienteItem
+        })
+        setPendingPayments(pendingItems)
+      }
+
+      const totalPagosPendientes = pendingPaymentsData?.length || 0
+      console.log('kpi pagos pendientes:', totalPagosPendientes)
 
       setKpis({
         ...data.kpis,
         pagosPendientes: totalPagosPendientes,
       })
       setActiveClients(data.activosCards)
-      setPendingPayments(data.pagosPendientesList)
       await loadNotifications()
     } catch (err: any) {
       console.error('admin-home loadData error', err)
@@ -301,7 +329,15 @@ export default function AdminHome() {
           <View style={styles.twoColumns}>
             <View style={[styles.sectionCard, styles.pendingSection]}>
               <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
-              {pendingPayments.length === 0 ? (
+              {pendingPaymentsError ? (
+                <View style={styles.pendingEmptyWrap}>
+                  <View style={styles.pendingSuccessIcon}>
+                    <Ionicons name="alert-circle" size={22} color="#F97316" />
+                  </View>
+                  <Text style={styles.pendingEmptyTitle}>No se pudo cargar la lista de pagos pendientes.</Text>
+                  <Text style={styles.pendingEmptySubtitle}>Error: {pendingPaymentsError}</Text>
+                </View>
+              ) : pendingPayments.length === 0 ? (
                 <View style={styles.pendingEmptyWrap}>
                   <View style={styles.pendingSuccessIcon}>
                     <Ionicons name="checkmark" size={22} color="#16A34A" />

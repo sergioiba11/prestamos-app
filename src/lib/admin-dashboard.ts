@@ -169,9 +169,8 @@ export type AdminDashboardData = {
 const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
 const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
-const PENDING_VALIDATION_STATES = new Set(['pendiente', 'pendiente_aprobacion', 'en_revision'])
+const PENDING_VALIDATION_STATES = new Set(['pendiente_aprobacion'])
 const APPROVED_VALIDATION_STATES = new Set(['aprobado', 'confirmado', 'acreditado', 'pagado'])
-const TRANSFER_PENDING_METHODS = new Set(['transferencia', 'alias', 'mp_transferencia'])
 
 function low(value?: string | null): string {
   return String(value || '').toLowerCase()
@@ -227,13 +226,11 @@ function isApprovedPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion' | 
   return low(pago.metodo) === 'efectivo'
 }
 
-function isPendingValidationPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion' | 'metodo' | 'created_at'>) {
+function isPendingValidationPayment(pago: Pick<PagoRow, 'estado' | 'estado_validacion'>) {
   const estado = low(pago.estado)
   if (estado) return estado === 'pendiente_aprobacion'
   const estadoValidacion = low(pago.estado_validacion)
-  if (estadoValidacion) return PENDING_VALIDATION_STATES.has(estadoValidacion)
-  const metodo = low(pago.metodo)
-  return TRANSFER_PENDING_METHODS.has(metodo) && Boolean(pago.created_at)
+  return PENDING_VALIDATION_STATES.has(estadoValidacion)
 }
 
 function toListadoItemFromView(row: AdminClientesListadoViewRow): ClienteAdminListadoItem {
