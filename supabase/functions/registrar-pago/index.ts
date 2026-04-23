@@ -54,6 +54,13 @@ function extraerTokenBearer(authHeader: string | null) {
   return limpio
 }
 
+function ocultar(valor: string | null) {
+  const raw = String(valor || '').trim()
+  if (!raw) return '(vacío)'
+  if (raw.length <= 12) return '***'
+  return `${raw.slice(0, 8)}...${raw.slice(-4)}`
+}
+
 function formatearMonto(valor: number) {
   return new Intl.NumberFormat('es-AR', {
     style: 'currency',
@@ -382,6 +389,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
+    console.log('[registrar-pago] payload recibido', JSON.stringify(body))
     const debug = {
       has_api_key: Boolean(Deno.env.get('RESEND_API_KEY')),
       has_from_email: Boolean(
@@ -405,10 +413,10 @@ Deno.serve(async (req) => {
     const comprobanteUrl = String(body?.comprobante_url || body?.comprobante || '').trim() || null
     const mpPreferenceId = String(body?.mp_preference_id || '').trim() || null
 
-    if (!prestamo_id || !cliente_id || !metodo) {
+    if (!prestamo_id || !cliente_id || !metodo || !cuota_id_inicial) {
       return jsonResponse(
         {
-          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, metodo',
+          error: 'Faltan datos obligatorios: prestamo_id, cliente_id, cuota_id, metodo',
         },
         400
       )
@@ -555,7 +563,7 @@ Deno.serve(async (req) => {
         )
       }
 
-      await supabase.from('actividad_sistema').insert({
+      const { error: activityPendienteError } = await supabase.from('actividad_sistema').insert({
         tipo: 'pago_pendiente',
         titulo: 'Pago pendiente de aprobación',
         descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
@@ -566,8 +574,11 @@ Deno.serve(async (req) => {
         visible_en_notificaciones: true,
         metadata: { metodo, monto: montoEntregado, cliente_id, prestamo_id, registrado_por: user.id, route: '/pagos-pendientes' },
       })
+      if (activityPendienteError) {
+        console.error('[registrar-pago] actividad_sistema pago_pendiente error', activityPendienteError)
+      }
 
-      await supabase.from('notificaciones').insert({
+      const { error: notifPendienteError } = await supabase.from('notificaciones').insert({
         tipo: 'pago_pendiente',
         titulo: 'Pago pendiente de aprobación',
         descripcion: `Pago ${metodo} pendiente por ${montoEntregado}`,
@@ -576,6 +587,9 @@ Deno.serve(async (req) => {
         pago_id: pagoPendiente.id,
         metadata: { metodo, monto: montoEntregado, registrado_por: user.id },
       })
+      if (notifPendienteError) {
+        console.error('[registrar-pago] notificaciones pago_pendiente error', notifPendienteError)
+      }
 
       return jsonResponse({
         ok: true,
@@ -923,7 +937,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    await supabase.from('actividad_sistema').insert({
+    const { error: activityError } = await supabase.from('actividad_sistema').insert({
       tipo: 'pago_registrado',
       titulo: 'Pago registrado',
       descripcion: `Pago aplicado por ${formatearMonto(totalAplicado)}`,
@@ -934,16 +948,22 @@ Deno.serve(async (req) => {
       visible_en_notificaciones: true,
       metadata: { metodo, monto_aplicado: totalAplicado, estado_prestamo: nuevoEstadoPrestamo, cliente_id, prestamo_id },
     })
+    if (activityError) {
+      console.error('[registrar-pago] actividad_sistema pago_registrado error', activityError)
+    }
 
-    await supabase.from('notificaciones').insert({
-      tipo: 'pago_aprobado',
-      titulo: 'Pago aprobado',
+    const { error: notifError } = await supabase.from('notificaciones').insert({
+      tipo: 'pago_registrado',
+      titulo: 'Pago registrado',
       descripcion: `Pago aplicado por ${formatearMonto(totalAplicado)}`,
       cliente_id,
       prestamo_id,
       pago_id: pago.id,
       metadata: { metodo, monto_aplicado: totalAplicado, estado_prestamo: nuevoEstadoPrestamo },
     })
+    if (notifError) {
+      console.error('[registrar-pago] notificaciones pago_registrado error', notifError)
+    }
 
     return jsonResponse({
       ok: true,
