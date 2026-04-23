@@ -92,11 +92,6 @@ function getParamString(value: ParamValue, fallback = '') {
   return trimmed || fallback
 }
 
-function getParamNumber(value: ParamValue, fallback = 0) {
-  const parsed = Number(getParamString(value, String(fallback)).replace(',', '.'))
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
 function formatCurrencyArs(value: number) {
   return new Intl.NumberFormat('es-AR', {
     style: 'currency',
@@ -119,39 +114,6 @@ function formatDateTimeLocal(value?: string) {
     dateStyle: 'short',
     timeStyle: 'medium',
   })
-}
-
-function parseCuotasImpactadas(value: string) {
-  if (!value) return [] as number[]
-  try {
-    const parsed = JSON.parse(value)
-    if (Array.isArray(parsed)) {
-      return parsed.map((item) => Number(item)).filter((item) => Number.isFinite(item))
-    }
-  } catch {
-    const number = Number(value)
-    if (Number.isFinite(number)) return [number]
-  }
-  return [] as number[]
-}
-
-function parseCuotasImpactadasDetalle(value: string): CuotaImpactadaDetalle[] {
-  if (!value) return []
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map((item) => ({
-        numero_cuota: Number(item?.numero_cuota || 0),
-        estado: String(item?.estado || ''),
-        monto_aplicado: Number(item?.monto_aplicado || 0),
-        saldo_antes: Number(item?.saldo_antes || 0),
-        saldo_despues: Number(item?.saldo_despues || 0),
-      }))
-      .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
-  } catch {
-    return []
-  }
 }
 
 function formatFallback(value: string, fallback = 'No informado') {
@@ -214,48 +176,30 @@ export default function PagoAprobado() {
   const [cuotasImpactadasDetalleDb, setCuotasImpactadasDetalleDb] = useState<CuotaImpactadaDetalle[]>([])
   const receiptRef = useRef<View | null>(null)
 
-  const montoAplicadoParam = getParamNumber(params.monto)
-  const montoAplicado = Number.isFinite(Number(pago?.monto)) ? Number(pago?.monto || 0) : montoAplicadoParam
-  const montoIngresado = getParamNumber(params.monto_ingresado, montoAplicado)
-  const saldoRestanteParam = getParamNumber(params.saldo_restante)
+  const montoAplicado = Number.isFinite(Number(pago?.monto)) ? Number(pago?.monto || 0) : 0
+  const montoIngresado = montoAplicado
   const saldoRestante = Number.isFinite(Number(saldoRestantePrestamoDb))
     ? Number(saldoRestantePrestamoDb || 0)
-    : saldoRestanteParam
-  const saldoRestanteCuota = getParamNumber(params.saldo_restante_cuota)
+    : 0
 
-  const metodo = String(pago?.metodo || getParamString(params.metodo, 'No informado'))
-  const prestamoId = String(prestamo?.id || pago?.prestamo_id || getParamString(params.prestamo_id))
-  const clienteId = String(cliente?.id || pago?.cliente_id || getParamString(params.cliente_id))
-  const numeroCuota = getParamString(params.numero_cuota)
-  const pagoId = String(pago?.id || getParamString(params.pago_id) || getParamString(params.id))
-  const pagoInternoId = getParamString(params.identificador_interno_pago)
-  const fechaRaw = String(pago?.fecha_pago || pago?.created_at || getParamString(params.fecha))
+  const metodo = String(pago?.metodo || 'No informado')
+  const prestamoId = String(prestamo?.id || pago?.prestamo_id || '')
+  const clienteId = String(cliente?.id || pago?.cliente_id || '')
+  const pagoId = getParamString(params.pago_id)
+  const pagoInternoId = String(pago?.id || '')
+  const fechaRaw = String(pago?.fecha_pago || pago?.created_at || '')
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
-
-  const cuotasImpactadasParams = useMemo(
-    () => parseCuotasImpactadas(getParamString(params.cuotas_impactadas)),
-    [params.cuotas_impactadas]
-  )
-  const cuotasImpactadasDetalleParams = useMemo(
-    () => parseCuotasImpactadasDetalle(getParamString(params.cuotas_impactadas_detalle)),
-    [params.cuotas_impactadas_detalle]
-  )
-  const estadoComprobante = getParamString(params.estado_comprobante, 'COMPLETO').toUpperCase()
-
-  const proximaCuota = proximaCuotaDb || getParamString(params.proxima_cuota)
-  const clienteNombreRaw = useMemo(() => {
-    const nombre = String(cliente?.nombre || getParamString(params.cliente_nombre)).trim()
-    const apellido = String(cliente?.apellido || getParamString(params.cliente_apellido)).trim()
-    if (nombre && apellido) return `${nombre} ${apellido}`
-    if (nombre) return nombre
-    if (apellido) return apellido
-    return ''
-  }, [cliente?.nombre, cliente?.apellido, params.cliente_nombre, params.cliente_apellido])
-  const clienteNombre = formatFallback(clienteNombreRaw, 'Cliente no informado')
-  const clienteDni = String(cliente?.dni || getParamString(params.cliente_dni))
-  const clienteEmail = String(cliente?.email || usuario?.email || getParamString(params.cliente_email))
-  const clienteTelefono = String(cliente?.telefono || getParamString(params.cliente_telefono))
-  const observaciones = getParamString(params.observaciones)
+  const proximaCuota = proximaCuotaDb
+  const nombreCompleto = useMemo(() => {
+    const nombre = String(cliente?.nombre || '').trim()
+    const apellido = String(cliente?.apellido || '').trim()
+    return [nombre, apellido].filter(Boolean).join(' ').trim()
+  }, [cliente?.nombre, cliente?.apellido])
+  const clienteNombre = formatFallback(nombreCompleto, 'Cliente no informado')
+  const dniFinal = String(cliente?.dni || '')
+  const emailFinal = String(cliente?.email || usuario?.email || '')
+  const clienteTelefono = String(cliente?.telefono || '')
+  const observaciones = ''
 
   const isEfectivo = metodo.toLowerCase() === 'efectivo'
   const paymentMethodLabel =
@@ -264,13 +208,11 @@ export default function PagoAprobado() {
       : metodo[0]?.toUpperCase() + metodo.slice(1)
 
   const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
-  const vueltoParam = getParamNumber(params.vuelto, computedVuelto)
-  const vuelto = isEfectivo ? Math.max(vueltoParam, computedVuelto) : 0
+  const vuelto = isEfectivo ? computedVuelto : 0
 
   const cuotasDetalleNormalizadas = useMemo(() => {
     if (cuotasImpactadasDetalleDb.length > 0) return cuotasImpactadasDetalleDb
-    if (cuotasImpactadasDetalleParams.length > 0) return cuotasImpactadasDetalleParams
-    const cuotasBase = cuotasImpactadasDb.length > 0 ? cuotasImpactadasDb : cuotasImpactadasParams
+    const cuotasBase = cuotasImpactadasDb.length > 0 ? cuotasImpactadasDb : []
     if (cuotasBase.length > 0) {
       return cuotasBase.map((numero) => ({
         numero_cuota: numero,
@@ -280,36 +222,17 @@ export default function PagoAprobado() {
         saldo_despues: 0,
       }))
     }
-    if (numeroCuota) {
-      const n = Number(numeroCuota)
-      if (Number.isFinite(n) && n > 0) {
-        return [
-          {
-            numero_cuota: n,
-            estado: estadoComprobante,
-            monto_aplicado: montoAplicado,
-            saldo_antes: montoAplicado + saldoRestanteCuota,
-            saldo_despues: saldoRestanteCuota,
-          },
-        ]
-      }
-    }
     return [] as CuotaImpactadaDetalle[]
   }, [
     cuotasImpactadasDetalleDb,
-    cuotasImpactadasDetalleParams,
     cuotasImpactadasDb,
-    cuotasImpactadasParams,
-    numeroCuota,
-    estadoComprobante,
-    montoAplicado,
-    saldoRestanteCuota,
   ])
 
   const cantidadCuotasImpactadas = cuotasDetalleNormalizadas.length
-  const esPagoParcial = estadoComprobante === 'PARCIAL' || saldoRestanteCuota > 0
-  const esMultiCuota = cantidadCuotasImpactadas > 1
   const cuotaPrincipal = cuotasDetalleNormalizadas[0] || null
+  const saldoRestanteCuota = Number(cuotaPrincipal?.saldo_despues || 0)
+  const esPagoParcial = cuotasDetalleNormalizadas.some((item) => Number(item.saldo_despues || 0) > 0)
+  const esMultiCuota = cantidadCuotasImpactadas > 1
 
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
   const cuotasTexto = cuotasDetalleNormalizadas.length
@@ -338,83 +261,71 @@ export default function PagoAprobado() {
           .eq('id', pagoId)
           .maybeSingle()
         if (pagoError) throw pagoError
-        setPago((pagoData || null) as PagoComprobanteRow | null)
-        console.log('pago comprobante:', pagoData)
+        const pago = (pagoData || null) as PagoComprobanteRow | null
+        if (pago) setPago(pago)
+        console.log('pago comprobante:', pago)
+        console.log('cliente_id comprobante:', pago?.cliente_id)
 
-        const estado = String(pagoData?.estado || '').toLowerCase()
-        const impactado = Boolean(pagoData?.impactado)
+        const estado = String(pago?.estado || '').toLowerCase()
+        const impactado = Boolean(pago?.impactado)
         setPaymentApproved(estado === 'aprobado' && impactado)
 
-        let clienteData: ClienteComprobanteRow | null = null
-        let usuarioData: UsuarioComprobanteRow | null = null
-        if (pagoData?.cliente_id) {
+        let cliente: ClienteComprobanteRow | null = null
+        let usuario: UsuarioComprobanteRow | null = null
+        if (pago?.cliente_id) {
           const { data: clienteQueryData, error: clienteError } = await supabase
             .from('clientes')
             .select('id,nombre,apellido,dni,email,telefono,usuario_id')
-            .eq('id', pagoData.cliente_id)
+            .eq('id', pago.cliente_id)
             .maybeSingle()
           if (clienteError) {
             console.error('Error cargando cliente para comprobante:', clienteError)
+          } else {
+            cliente = (clienteQueryData || null) as ClienteComprobanteRow | null
           }
 
-          clienteData = clienteError ? null : ((clienteQueryData || null) as ClienteComprobanteRow | null)
-
-          if (clienteData?.usuario_id && !String(clienteData.email || '').trim()) {
-            let usuarioLookup: UsuarioComprobanteRow | null = null
-
+          if (cliente?.usuario_id && !String(cliente.email || '').trim()) {
             const { data: usuarioByIdData, error: usuarioByIdError } = await supabase
               .from('usuarios')
               .select('id,usuario_id,email')
-              .eq('id', clienteData.usuario_id)
+              .eq('id', cliente.usuario_id)
               .maybeSingle()
             if (usuarioByIdError) {
               console.error('Error cargando usuario por id para comprobante:', usuarioByIdError)
             } else {
-              usuarioLookup = (usuarioByIdData || null) as UsuarioComprobanteRow | null
+              usuario = (usuarioByIdData || null) as UsuarioComprobanteRow | null
             }
 
-            if (!usuarioLookup) {
-              const { data: usuarioByUsuarioIdData, error: usuarioByUsuarioIdError } = await supabase
-                .from('usuarios')
-                .select('id,usuario_id,email')
-                .eq('usuario_id', clienteData.usuario_id)
-                .maybeSingle()
-              if (!usuarioByUsuarioIdError) {
-                usuarioLookup = (usuarioByUsuarioIdData || null) as UsuarioComprobanteRow | null
-              }
-            }
-
-            usuarioData = usuarioLookup
-            if (usuarioLookup?.email) {
-              clienteData = {
-                ...clienteData,
-                email: String(usuarioLookup.email || clienteData.email || ''),
+            if (usuario?.email) {
+              cliente = {
+                ...cliente,
+                email: String(usuario.email || cliente.email || ''),
               }
             }
           }
         }
-        setCliente(clienteData)
-        setUsuario(usuarioData)
-        console.log('cliente comprobante:', clienteData)
-        console.log('usuario comprobante:', usuarioData)
+        if (cliente) setCliente(cliente)
+        if (usuario) setUsuario(usuario)
+        console.log('cliente comprobante:', cliente)
+        console.log('usuario comprobante:', usuario)
 
-        let prestamoData: PrestamoComprobanteRow | null = null
-        if (pagoData?.prestamo_id) {
+        let prestamo: PrestamoComprobanteRow | null = null
+        if (pago?.prestamo_id) {
           const { data: prestamoQueryData, error: prestamoError } = await supabase
             .from('prestamos')
             .select('id,cliente_id,monto,interes,total_a_pagar,estado,cuotas')
-            .eq('id', pagoData.prestamo_id)
+            .eq('id', pago.prestamo_id)
             .maybeSingle()
           if (prestamoError) {
             console.error('Error cargando préstamo para comprobante:', prestamoError)
           } else {
-            prestamoData = (prestamoQueryData || null) as PrestamoComprobanteRow | null
+            prestamo = (prestamoQueryData || null) as PrestamoComprobanteRow | null
           }
 
           const { data: cuotasData, error: cuotasError } = await supabase
             .from('cuotas')
             .select('id,numero_cuota,saldo_pendiente,estado,fecha_vencimiento')
-            .eq('prestamo_id', pagoData.prestamo_id)
+            .eq('prestamo_id', pago.prestamo_id)
             .in('estado', ['pendiente', 'parcial'])
           if (cuotasError) {
             console.error('Error calculando saldo restante para comprobante:', cuotasError)
@@ -433,7 +344,7 @@ export default function PagoAprobado() {
           const { data: detalleData, error: detalleError } = await supabase
             .from('pagos_detalle')
             .select('cuota_id,numero_cuota,monto_aplicado,saldo_cuota_antes,saldo_cuota_despues')
-            .eq('pago_id', pagoData.id)
+            .eq('pago_id', pago.id)
 
           if (detalleError) {
             console.error('Error cargando cuotas impactadas para comprobante:', detalleError)
@@ -481,8 +392,8 @@ export default function PagoAprobado() {
           setCuotasImpactadasDb([])
           setCuotasImpactadasDetalleDb([])
         }
-        setPrestamo(prestamoData)
-        console.log('prestamo comprobante:', prestamoData)
+        if (prestamo) setPrestamo(prestamo)
+        console.log('prestamo comprobante:', prestamo)
       } catch {
         setPaymentApproved(false)
       } finally {
@@ -517,8 +428,8 @@ export default function PagoAprobado() {
 
   const clientItems: ReceiptLineItem[] = [
     { label: 'Nombre completo', value: clienteNombre },
-    { label: 'DNI', value: formatFallback(clienteDni, 'No registrado') },
-    { label: 'Email', value: formatFallback(clienteEmail, 'No registrado') },
+    { label: 'DNI', value: formatFallback(dniFinal, 'No registrado') },
+    { label: 'Email', value: formatFallback(emailFinal, 'No registrado') },
     { label: 'ID cliente', value: formatFallback(clienteId) },
   ]
 
@@ -552,7 +463,7 @@ export default function PagoAprobado() {
         },
       ]
     : [
-        { label: 'Cuota impactada', value: cuotaPrincipal ? `Cuota #${cuotaPrincipal.numero_cuota}` : formatFallback(numeroCuota, 'No informada') },
+        { label: 'Cuota impactada', value: cuotaPrincipal ? `Cuota #${cuotaPrincipal.numero_cuota}` : 'No informada' },
         {
           label: 'Monto de la cuota',
           value: formatCurrencyArs(cuotaPrincipal ? Number(cuotaPrincipal.saldo_antes || 0) : montoAplicado + saldoRestanteCuota),
