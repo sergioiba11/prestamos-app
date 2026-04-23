@@ -24,6 +24,22 @@ type PendingPayment = {
   clientes?: { nombre: string | null; dni: string | null } | null
 }
 
+type AprobarPagoResponse = {
+  ok?: boolean
+  estado?: string
+  pago_id?: string
+  cuotas_impactadas?: number[]
+  total_aplicado?: number
+  saldo_restante?: number
+  detalle_aplicacion?: Array<{
+    numero_cuota?: number
+    estado_resultante?: string
+    monto_aplicado?: number
+    saldo_cuota_antes?: number
+    saldo_cuota_despues?: number
+  }>
+}
+
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
 }
@@ -123,28 +139,32 @@ export default function PagosPendientesScreen() {
 
     try {
       setProcessingId(obsModal.payment.id)
-      const { error } = await supabase.functions.invoke('aprobar-pago', {
+      const payment = obsModal.payment
+      const action = obsModal.action
+      const currentObservation = observation.trim() || null
+      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
         body: {
-          pago_id: obsModal.payment.id,
-          accion: obsModal.action,
-          observacion_revision: observation.trim() || null,
+          pago_id: payment.id,
+          accion: action,
+          observacion_revision: currentObservation,
         },
       })
 
       if (error) throw error
+      const decisionResult = (data || {}) as AprobarPagoResponse
 
       await createSystemActivity({
-        tipo: obsModal.action === 'aprobar' ? 'pago_aprobado' : 'pago_rechazado',
-        titulo: obsModal.action === 'aprobar' ? 'Pago aprobado' : 'Pago rechazado',
-        descripcion: `Pago ${obsModal.payment.id} ${obsModal.action === 'aprobar' ? 'aprobado' : 'rechazado'} por ${adminName}` ,
+        tipo: action === 'aprobar' ? 'pago_aprobado' : 'pago_rechazado',
+        titulo: action === 'aprobar' ? 'Pago aprobado' : 'Pago rechazado',
+        descripcion: `Pago ${payment.id} ${action === 'aprobar' ? 'aprobado' : 'rechazado'} por ${adminName}` ,
         entidad_tipo: 'pago',
-        entidad_id: obsModal.payment.id,
-        prioridad: obsModal.action === 'aprobar' ? 'normal' : 'alta',
+        entidad_id: payment.id,
+        prioridad: action === 'aprobar' ? 'normal' : 'alta',
         visible_en_notificaciones: true,
         metadata: {
-          observacion_revision: observation.trim() || null,
-          cliente_id: obsModal.payment.cliente_id,
-          prestamo_id: obsModal.payment.prestamo_id,
+          observacion_revision: currentObservation,
+          cliente_id: payment.cliente_id,
+          prestamo_id: payment.prestamo_id,
           route: '/pagos-pendientes',
         },
       })
@@ -152,6 +172,62 @@ export default function PagosPendientesScreen() {
       setObservation('')
       setObsModal({ open: false, action: 'aprobar', payment: null })
       await loadData()
+
+      if (action === 'rechazar') {
+        Alert.alert('Pago rechazado', 'El pago fue rechazado y no impactó cuotas ni saldo del préstamo.')
+        return
+      }
+
+      const cuotasImpactadas = decisionResult.cuotas_impactadas || []
+      const firstImpact = decisionResult.detalle_aplicacion?.[0] || null
+      Alert.alert(
+        'Pago aprobado',
+        'El pago se aplicó al préstamo. Ahora podés ver el comprobante.',
+        [
+          { text: 'Seguir', style: 'cancel' },
+          {
+            text: 'Ver comprobante',
+            onPress: () =>
+              router.push({
+                pathname: '/pago-aprobado',
+                params: {
+                  monto: String(Number(payment.monto || 0)),
+                  monto_ingresado: String(Number(payment.monto || 0)),
+                  vuelto: '0',
+                  monto_cuota: String(Number(payment.monto || 0)),
+                  metodo: String(payment.metodo || 'transferencia'),
+                  fecha: String(new Date().toISOString()),
+                  saldo_restante: String(Number(decisionResult.saldo_restante || 0)),
+                  saldo_restante_cuota: String(Number(firstImpact?.saldo_cuota_despues || 0)),
+                  cuota_id: '',
+                  numero_cuota: firstImpact?.numero_cuota ? String(firstImpact.numero_cuota) : '',
+                  cuotas_impactadas: JSON.stringify(cuotasImpactadas),
+                  cuotas_impactadas_detalle: JSON.stringify(
+                    (decisionResult.detalle_aplicacion || []).map((item) => ({
+                      numero_cuota: Number(item.numero_cuota || 0),
+                      estado: String(item.estado_resultante || ''),
+                      monto_aplicado: Number(item.monto_aplicado || 0),
+                      saldo_antes: Number(item.saldo_cuota_antes || 0),
+                      saldo_despues: Number(item.saldo_cuota_despues || 0),
+                    }))
+                  ),
+                  estado_comprobante: 'COMPLETO',
+                  proxima_cuota: '',
+                  prestamo_id: String(payment.prestamo_id || ''),
+                  cliente_id: String(payment.cliente_id || ''),
+                  cliente_nombre: String(payment.clientes?.nombre || ''),
+                  cliente_apellido: '',
+                  cliente_dni: String(payment.clientes?.dni || ''),
+                  cliente_email: '',
+                  cliente_telefono: '',
+                  pago_id: String(decisionResult.pago_id || payment.id),
+                  identificador_interno_pago: String(decisionResult.pago_id || payment.id),
+                  observaciones: currentObservation || '',
+                },
+              } as any),
+          },
+        ]
+      )
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo actualizar el pago')
     } finally {

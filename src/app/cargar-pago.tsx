@@ -739,6 +739,16 @@ export default function CargarPago() {
             qrUrl: mpData.qr_url || null,
             qrBase64: mpData.qr_base64 || null,
           })
+        } else if (metodo === 'transferencia') {
+          Alert.alert(
+            'Transferencia pendiente',
+            'La transferencia quedó pendiente de validación.'
+          )
+          void cargarCuotasPrestamo(prestamoSeleccionado.id)
+          setMonto('')
+          setComprobante('')
+          router.replace('/pagos-pendientes' as any)
+          return
         } else {
           Alert.alert('Pago registrado', 'Pago enviado para aprobación administrativa.')
         }
@@ -1061,6 +1071,11 @@ export default function CargarPago() {
               {(metodo === 'transferencia' || metodo === 'mp') && (
                 <>
                   <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
+                  {metodo === 'transferencia' && (
+                    <Text style={styles.helperText}>
+                      La transferencia se registrará como pendiente hasta su validación manual.
+                    </Text>
+                  )}
                   <Text style={styles.helperText}>
                     Se registrará para revisión y recién se acreditará al aprobarse.
                   </Text>
