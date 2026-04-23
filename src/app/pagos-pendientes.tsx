@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import * as Linking from 'expo-linking'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
@@ -15,11 +14,7 @@ type PendingPayment = {
   monto: number | null
   metodo: string | null
   estado: string | null
-  estado_validacion: string | null
   impactado: boolean | null
-  comprobante_url: string | null
-  observacion: string | null
-  observacion_validacion: string | null
   created_at: string | null
   clientes?: { nombre: string | null; dni: string | null } | null
 }
@@ -59,6 +54,7 @@ export default function PagosPendientesScreen() {
   const [items, setItems] = useState<PendingPayment[]>([])
   const [mobileMenu, setMobileMenu] = useState(false)
   const [search, setSearch] = useState('')
+  const [queryError, setQueryError] = useState<string | null>(null)
   const [obsModal, setObsModal] = useState<{ open: boolean; action: 'aprobar' | 'rechazar'; payment: PendingPayment | null }>({
     open: false,
     action: 'aprobar',
@@ -103,15 +99,21 @@ export default function PagosPendientesScreen() {
         return
       }
 
+      setQueryError(null)
       const { data, error } = await supabase
         .from('pagos')
-        .select('id,cliente_id,prestamo_id,monto,metodo,estado,estado_validacion,impactado,comprobante_url,observacion,observacion_validacion,created_at,clientes(nombre,dni)')
+        .select('id, prestamo_id, cliente_id, monto, metodo, estado, impactado, created_at')
         .eq('estado', 'pendiente_aprobacion')
         .order('created_at', { ascending: false })
 
-      console.log('[pagos-pendientes] respuesta Supabase pagos:', { data, error })
+      console.log('pagos pendientes:', data)
+      console.log('error:', error)
 
-      if (error) throw error
+      if (error) {
+        setQueryError(error.message)
+        setItems([])
+        return
+      }
       setItems((data || []) as unknown as PendingPayment[])
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo cargar pagos pendientes')
@@ -130,9 +132,8 @@ export default function PagosPendientesScreen() {
     const t = search.trim().toLowerCase()
     if (!t) return items
     return items.filter((item) => {
-      const nombre = String(item.clientes?.nombre || '').toLowerCase()
-      const dni = String(item.clientes?.dni || '').toLowerCase()
-      return nombre.includes(t) || dni.includes(t) || item.id.toLowerCase().includes(t)
+      const metodo = String(item.metodo || '').toLowerCase()
+      return metodo.includes(t) || item.id.toLowerCase().includes(t)
     })
   }, [items, search])
 
@@ -270,27 +271,23 @@ export default function PagosPendientesScreen() {
             value={search}
             onChangeText={setSearch}
             style={styles.searchInput}
-            placeholder="Buscar por cliente, DNI o ID"
+            placeholder="Buscar por método o ID"
             placeholderTextColor="#64748B"
           />
+
+          {queryError ? <Text style={styles.errorText}>Error al cargar pagos: {queryError}</Text> : null}
 
           {filtered.length === 0 ? <Text style={styles.empty}>No hay pagos pendientes para validar.</Text> : null}
 
           {filtered.map((item) => (
             <View key={item.id} style={styles.card}>
               <View style={styles.rowBetween}>
-                <Text style={styles.cardTitle}>{item.clientes?.nombre || 'Cliente'}</Text>
+                <Text style={styles.cardTitle}>Pago pendiente</Text>
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
-              <Text style={styles.meta}>DNI: {item.clientes?.dni || '—'} · Método: {item.metodo || '—'}</Text>
-              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || item.estado_validacion || 'pendiente'}</Text>
+              <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
+              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || 'pendiente'}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
-              {item.comprobante_url ? (
-                <TouchableOpacity onPress={() => Linking.openURL(item.comprobante_url || '')}>
-                  <Text style={[styles.meta, styles.linkText]}>Ver comprobante</Text>
-                </TouchableOpacity>
-              ) : null}
-              {item.observacion ? <Text style={styles.meta}>Obs. carga: {item.observacion}</Text> : null}
 
               <View style={styles.actions}>
                 <TouchableOpacity
@@ -350,12 +347,12 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   amount: { color: '#60A5FA', fontWeight: '800', fontSize: 16 },
   meta: { color: '#94A3B8', fontSize: 12 },
-  linkText: { color: '#93C5FD', textDecorationLine: 'underline' },
   actions: { marginTop: 6, flexDirection: 'row', gap: 8 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   approveBtn: { borderColor: '#166534', backgroundColor: '#052E16' },
   rejectBtn: { borderColor: '#991B1B', backgroundColor: '#450A0A' },
   actionText: { color: '#E2E8F0', fontWeight: '700' },
+  errorText: { color: '#FCA5A5', marginTop: 8 },
   empty: { color: '#94A3B8', marginTop: 8 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817', padding: 20 },
   loadingText: { color: '#CBD5E1', marginTop: 8 },
