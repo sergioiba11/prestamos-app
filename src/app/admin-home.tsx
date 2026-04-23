@@ -19,6 +19,7 @@ import { AdminNotificationsPanel, AdminNotification } from '../components/admin/
 import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
+import { EditClientModal } from '../components/admin/EditClientModal'
 import { ClientePrestamoActivo, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
@@ -52,6 +53,8 @@ export default function AdminHome() {
   })
   const [activeClients, setActiveClients] = useState<ClientePrestamoActivo[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
+  const [editingClient, setEditingClient] = useState<ClientePrestamoActivo | null>(null)
+  const [saveToast, setSaveToast] = useState('')
 
   const loadNotifications = useCallback(async () => {
     const { data, error } = await supabase
@@ -160,6 +163,12 @@ export default function AdminHome() {
 
   const unreadCount = notifications.filter((n) => !n.leida).length
 
+  const onClientSaved = async () => {
+    await loadData()
+    setSaveToast('Cliente actualizado correctamente')
+    setTimeout(() => setSaveToast(''), 2800)
+  }
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -198,6 +207,7 @@ export default function AdminHome() {
 
       <View style={styles.mainWrap}>
         <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}> 
+          {saveToast ? <Text style={styles.toast}>{saveToast}</Text> : null}
           <View style={styles.pageTopRow}>
             <View>
               <Text style={styles.pageTitle}>Panel de administración</Text>
@@ -331,7 +341,7 @@ export default function AdminHome() {
               <AdminClientsTable
                 rows={filteredClients}
                 onView={(row) => router.push({ pathname: '/cliente-detalle', params: { cliente_id: row.clienteId } } as any)}
-                onEdit={(row) => router.push({ pathname: '/clientes', params: { cliente_id: row.clienteId } } as any)}
+                onEdit={(row) => setEditingClient(row)}
                 onHistory={(row) => router.push({ pathname: '/historial-prestamos', params: { cliente_id: row.clienteId } } as any)}
               />
             )}
@@ -357,6 +367,26 @@ export default function AdminHome() {
           />
         </View>
       </Modal>
+
+      <EditClientModal
+        open={Boolean(editingClient)}
+        client={
+          editingClient
+            ? {
+                id: editingClient.clienteId,
+                usuario_id: editingClient.usuarioId,
+                nombre: editingClient.nombre,
+                dni: editingClient.dni,
+                dni_editado: editingClient.dniEditado,
+                telefono: editingClient.telefono,
+                direccion: editingClient.direccion,
+                email: editingClient.email,
+              }
+            : null
+        }
+        onClose={() => setEditingClient(null)}
+        onSaved={onClientSaved}
+      />
     </View>
   )
 }
@@ -370,7 +400,7 @@ const styles = StyleSheet.create({
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 26 },
   pageSubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
-  headerActions: { position: 'relative' },
+  headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
     minHeight: 40,
     paddingHorizontal: 12,
@@ -392,7 +422,7 @@ const styles = StyleSheet.create({
   unreadBadge: { position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  sectionCard: { borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16 },
+  sectionCard: { borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16, overflow: 'visible' },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
   actionsGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
@@ -448,6 +478,18 @@ const styles = StyleSheet.create({
   emptyText: { color: '#94A3B8', paddingBottom: 8 },
   tableCounter: { color: '#64748B', marginTop: 10, fontSize: 12 },
   footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
+  toast: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#065F46',
+    borderColor: '#10B981',
+    borderWidth: 1,
+    color: '#ECFDF5',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })

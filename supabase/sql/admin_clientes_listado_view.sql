@@ -49,6 +49,7 @@ select
   c.usuario_id,
   c.nombre,
   c.dni,
+  c.dni_editado,
   c.telefono,
   c.direccion,
   u.email,

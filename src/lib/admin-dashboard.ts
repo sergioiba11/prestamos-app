@@ -5,6 +5,7 @@ type ClienteRow = {
   usuario_id: string | null
   nombre: string | null
   dni: string | null
+  dni_editado: boolean | null
   telefono: string | null
   direccion: string | null
 }
@@ -58,6 +59,7 @@ type AdminClientesListadoViewRow = {
   usuario_id: string | null
   nombre: string | null
   dni: string | null
+  dni_editado: boolean | null
   telefono: string | null
   direccion: string | null
   email: string | null
@@ -78,6 +80,7 @@ export type ClienteAdminListadoItem = {
   usuarioId: string
   nombre: string
   dni: string
+  dniEditado: boolean
   telefono: string
   direccion: string
   email: string
@@ -107,6 +110,7 @@ export type ClientePrestamoActivo = {
   email: string
   usuarioId: string
   dni: string
+  dniEditado: boolean
   telefono: string
   direccion: string
   prestamoActivo: number
@@ -232,6 +236,7 @@ function toListadoItemFromView(row: AdminClientesListadoViewRow): ClienteAdminLi
     usuarioId: row.usuario_id || '',
     nombre: row.nombre || 'Cliente',
     dni: row.dni || '—',
+    dniEditado: Boolean(row.dni_editado),
     telefono: row.telefono || 'Sin teléfono',
     direccion: row.direccion || 'Sin dirección',
     email: row.email || 'Sin email',
@@ -256,6 +261,7 @@ function toActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
     email: row.email,
     usuarioId: row.usuarioId,
     dni: row.dni,
+    dniEditado: row.dniEditado,
     telefono: row.telefono,
     direccion: row.direccion,
     prestamoActivo: Math.max(row.deudaActiva, row.restante, 0),
@@ -267,7 +273,7 @@ function toActivoCard(row: ClienteAdminListadoItem): ClientePrestamoActivo {
 export async function fetchAdminClientesListadoFromBaseTables(): Promise<ClienteAdminListadoItem[]> {
   const { data: clientesRaw, error: clientesError } = await supabase
     .from('clientes')
-    .select('id,usuario_id,nombre,dni,telefono,direccion')
+    .select('id,usuario_id,nombre,dni,dni_editado,telefono,direccion')
     .order('nombre', { ascending: true })
 
   if (clientesError) {
@@ -376,6 +382,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
       usuarioId: cliente.usuario_id || '',
       nombre: cliente.nombre || 'Cliente',
       dni: cliente.dni || '—',
+      dniEditado: Boolean(cliente.dni_editado),
       telefono: cliente.telefono || 'Sin teléfono',
       direccion: cliente.direccion || 'Sin dirección',
       email: usuario?.email || 'Sin email',
