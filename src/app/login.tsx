@@ -37,6 +37,8 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false)
   const [biometricLoading, setBiometricLoading] = useState(false)
   const [canLoginWithBiometric, setCanLoginWithBiometric] = useState(false)
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('')
+  const [resendLoading, setResendLoading] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -115,13 +117,21 @@ export default function LoginScreen() {
     setLoading(true)
     setError('')
     setSuccess('')
+    setPendingConfirmationEmail('')
 
     try {
-      const user = await signInWithEmailOrDni({
+      const { user, email } = await signInWithEmailOrDni({
         identifier: trimmedIdentifier,
         password,
         mode: 'auto',
       })
+
+      if (!user.email_confirmed_at) {
+        await supabase.auth.signOut()
+        setPendingConfirmationEmail(email)
+        setError('Tenés que confirmar tu correo antes de ingresar.')
+        return
+      }
 
       await askEnableBiometricAfterLogin(user.id)
       await goByRole(user.id)
@@ -129,6 +139,36 @@ export default function LoginScreen() {
       setError(err?.message || 'No se pudo iniciar sesión.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    const emailToResend = pendingConfirmationEmail.trim().toLowerCase()
+
+    if (!emailToResend) {
+      setError('Ingresá tu correo para reenviar la confirmación.')
+      return
+    }
+
+    try {
+      setResendLoading(true)
+      setError('')
+      setSuccess('')
+
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: emailToResend,
+      })
+
+      if (resendError) {
+        throw resendError
+      }
+
+      setSuccess('Te reenviamos el correo de confirmación.')
+    } catch (err: any) {
+      setError(err?.message || 'No se pudo reenviar el correo de confirmación.')
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -237,6 +277,20 @@ export default function LoginScreen() {
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             {success ? <Text style={styles.successText}>{success}</Text> : null}
+
+            {pendingConfirmationEmail ? (
+              <TouchableOpacity
+                style={styles.resendButton}
+                onPress={handleResendConfirmation}
+                disabled={resendLoading}
+              >
+                {resendLoading ? (
+                  <ActivityIndicator color="#1D4ED8" />
+                ) : (
+                  <Text style={styles.resendButtonText}>Reenviar correo de confirmación</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={loading}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Ingresar</Text>}
@@ -375,6 +429,20 @@ const styles = StyleSheet.create({
   createAccountText: {
     color: '#1D4ED8',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  resendButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resendButtonText: {
+    color: '#1D4ED8',
+    fontSize: 14,
     fontWeight: '700',
   },
   dividerRow: {
