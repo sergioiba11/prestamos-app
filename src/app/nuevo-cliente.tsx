@@ -116,17 +116,21 @@ console.log('TOKEN FINAL:', tokenAntes)
         )
       }
 
-      await createSystemActivity({
-        tipo: 'cliente_creado',
-        titulo: 'Nuevo cliente creado',
-        descripcion: `Se creó el cliente ${nombreLimpio}`,
-        entidad_tipo: 'cliente',
-        entidad_id: data?.cliente?.id || null,
-        usuario_id: adminIdAntes,
-        prioridad: 'normal',
-        visible_en_notificaciones: true,
-        metadata: { dni: dniLimpio, email: emailLimpio, telefono: telefonoLimpio },
-      })
+      try {
+        await createSystemActivity({
+          tipo: 'cliente_creado',
+          titulo: 'Nuevo cliente creado',
+          descripcion: `Se creó el cliente ${nombreLimpio}`,
+          entidad_tipo: 'cliente',
+          entidad_id: data?.cliente?.id || null,
+          usuario_id: adminIdAntes,
+          prioridad: 'normal',
+          visible_en_notificaciones: true,
+          metadata: { dni: dniLimpio, email: emailLimpio, telefono: telefonoLimpio },
+        })
+      } catch (activityError) {
+        console.warn('No se pudo registrar actividad desde frontend (backend ya registró):', activityError)
+      }
 
       mostrarMensaje('Éxito', 'Cliente creado correctamente')
 

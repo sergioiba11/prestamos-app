@@ -695,6 +695,7 @@ export default function CargarPago() {
         monto: Number(montoAplicado.toFixed(2)),
         monto_ingresado: Number(montoNormalizado.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
+        comprobante: metodo === 'transferencia' ? comprobante.trim() || null : null,
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
           metodo === 'mp' ? mpData?.preference_id || null : null,
@@ -714,23 +715,27 @@ export default function CargarPago() {
       }
 
       if (json?.pendiente) {
-        await createSystemActivity({
-          tipo: 'pago_pendiente',
-          titulo: 'Pago pendiente de aprobación',
-          descripcion: `Transferencia de ${formatearMoneda(Number(montoAplicado.toFixed(2)))} pendiente para ${clienteSeleccionado.nombre}` ,
-          entidad_tipo: 'pago',
-          entidad_id: json?.pago?.id ? String(json.pago.id) : null,
-          prioridad: 'alta',
-          visible_en_notificaciones: true,
-          metadata: {
-            cliente_id: clienteSeleccionado.id,
-            prestamo_id: prestamoSeleccionado.id,
-            monto: Number(montoAplicado.toFixed(2)),
-            cuota: cuotaSeleccionada.numero_cuota,
-            metodo,
-            route: '/pagos-pendientes',
-          },
-        })
+        try {
+          await createSystemActivity({
+            tipo: 'pago_pendiente',
+            titulo: 'Pago pendiente de aprobación',
+            descripcion: `Transferencia de ${formatearMoneda(Number(montoAplicado.toFixed(2)))} pendiente para ${clienteSeleccionado.nombre}` ,
+            entidad_tipo: 'pago',
+            entidad_id: json?.pago?.id ? String(json.pago.id) : null,
+            prioridad: 'alta',
+            visible_en_notificaciones: true,
+            metadata: {
+              cliente_id: clienteSeleccionado.id,
+              prestamo_id: prestamoSeleccionado.id,
+              monto: Number(montoAplicado.toFixed(2)),
+              cuota: cuotaSeleccionada.numero_cuota,
+              metodo,
+              route: '/pagos-pendientes',
+            },
+          })
+        } catch (activityError) {
+          console.warn('[cargar-pago] createSystemActivity pago_pendiente fallback (registrado server-side)', activityError)
+        }
 
         if (metodo === 'mp' && mpData?.preference_id && mpData?.init_point) {
           setMpCheckout({
@@ -763,22 +768,26 @@ export default function CargarPago() {
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
 
-      await createSystemActivity({
-        tipo: 'pago_registrado',
-        titulo: 'Pago registrado',
-        descripcion: `Pago aplicado en cuota #${cuotaSeleccionada.numero_cuota} de ${clienteSeleccionado.nombre}`,
-        entidad_tipo: 'pago',
-        entidad_id: json?.pago?.id ? String(json.pago.id) : null,
-        prioridad: 'normal',
-        visible_en_notificaciones: true,
-        metadata: {
-          cliente_id: clienteSeleccionado.id,
-          prestamo_id: prestamoSeleccionado.id,
-          monto: Number(montoAplicado.toFixed(2)),
-          metodo,
-          route: '/actividad',
-        },
-      })
+      try {
+        await createSystemActivity({
+          tipo: 'pago_registrado',
+          titulo: 'Pago registrado',
+          descripcion: `Pago aplicado en cuota #${cuotaSeleccionada.numero_cuota} de ${clienteSeleccionado.nombre}`,
+          entidad_tipo: 'pago',
+          entidad_id: json?.pago?.id ? String(json.pago.id) : null,
+          prioridad: 'normal',
+          visible_en_notificaciones: true,
+          metadata: {
+            cliente_id: clienteSeleccionado.id,
+            prestamo_id: prestamoSeleccionado.id,
+            monto: Number(montoAplicado.toFixed(2)),
+            metodo,
+            route: '/actividad',
+          },
+        })
+      } catch (activityError) {
+        console.warn('[cargar-pago] createSystemActivity pago_registrado fallback (registrado server-side)', activityError)
+      }
 
       router.replace({
         pathname: '/pago-aprobado',
@@ -813,7 +822,10 @@ export default function CargarPago() {
       })
     } catch (error: any) {
       console.log('ERROR REGISTRAR PAGO CATCH:', error)
-      Alert.alert('Error', error?.message || 'No se pudo registrar el pago')
+      const detalle = typeof error?.details === 'string' ? error.details : ''
+      const hint = typeof error?.hint === 'string' ? error.hint : ''
+      const mensaje = [error?.message, detalle, hint].filter(Boolean).join('\n')
+      Alert.alert('Error', mensaje || 'No se pudo registrar el pago')
     } finally {
       setGuardando(false)
     }

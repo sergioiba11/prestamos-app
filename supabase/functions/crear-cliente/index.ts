@@ -156,6 +156,8 @@ Deno.serve(async (req) => {
 
     usuarioInserted = true
 
+    let clienteRecordId = String(sameDniCliente?.id || '')
+
     if (sameDniCliente?.id) {
       const { error: updateClienteError } = await adminClient
         .from('clientes')
@@ -172,7 +174,7 @@ Deno.serve(async (req) => {
         throw new Error(updateClienteError.message || 'No se pudo completar el cliente existente.')
       }
     } else {
-      const { error: insertClienteError } = await adminClient
+      const { data: clienteInsertado, error: insertClienteError } = await adminClient
         .from('clientes')
         .insert({
           usuario_id: authUserId,
@@ -181,38 +183,59 @@ Deno.serve(async (req) => {
           direccion: direccion || null,
           dni,
         })
+        .select('id')
+        .single()
 
       if (insertClienteError) {
         console.error('[crear-cliente] clientes insert error', insertClienteError)
         throw new Error(insertClienteError.message || 'No se pudo guardar en clientes.')
       }
+
+      clienteRecordId = String(clienteInsertado?.id || '')
     }
 
-    await adminClient.from('actividad_sistema').insert({
+    if (!clienteRecordId) {
+      const { data: clienteLookup } = await adminClient
+        .from('clientes')
+        .select('id')
+        .eq('usuario_id', authUserId)
+        .maybeSingle()
+      clienteRecordId = String(clienteLookup?.id || '')
+    }
+
+    const metadataActividad = { creado_por: user.id, dni, email, telefono }
+
+    const { error: actividadError } = await adminClient.from('actividad_sistema').insert({
       tipo: 'cliente_creado',
       titulo: 'Nuevo cliente creado',
       descripcion: `Se creó el cliente ${nombre}`,
       entidad_tipo: 'cliente',
-      entidad_id: authUserId,
+      entidad_id: clienteRecordId || null,
       usuario_id: user.id,
       prioridad: 'normal',
       visible_en_notificaciones: true,
-      metadata: { creado_por: user.id, email, dni },
+      metadata: metadataActividad,
     })
+    if (actividadError) {
+      console.error('[crear-cliente] actividad_sistema insert error', actividadError)
+    }
 
-    await adminClient.from('notificaciones').insert({
-      tipo: 'nuevo_cliente',
+    const { error: notificacionError } = await adminClient.from('notificaciones').insert({
+      tipo: 'cliente_creado',
       titulo: 'Nuevo cliente creado',
       descripcion: `Se creó el cliente ${nombre}`,
-      cliente_id: authUserId,
-      metadata: { creado_por: user.id },
+      cliente_id: clienteRecordId || null,
+      metadata: metadataActividad,
     })
+    if (notificacionError) {
+      console.error('[crear-cliente] notificaciones insert error', notificacionError)
+    }
 
     return jsonResponse({
       ok: true,
       message: 'Cliente creado correctamente.',
       cliente: {
-        id: authUserId,
+        id: clienteRecordId || authUserId,
         nombre,
         email,
         telefono,

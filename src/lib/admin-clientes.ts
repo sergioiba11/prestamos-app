@@ -22,7 +22,12 @@ function toFriendlyError(err: any) {
   const msg = String(err?.message || err?.details || 'No se pudo actualizar el cliente.')
   if (msg.toLowerCase().includes('no changes') || msg.toLowerCase().includes('no hay cambios')) return 'No hay cambios para guardar.'
   if (msg.toLowerCase().includes('ya está en uso')) return 'Ese DNI ya está en uso.'
-  if (msg.toLowerCase().includes('could not find the function public.admin_update_cliente')) return 'La función de actualización de cliente no está disponible en Supabase (schema cache). Ejecuta el SQL de admin_update_cliente y recarga el schema cache.'
+  if (
+    msg.toLowerCase().includes('could not find the function public.admin_update_cliente') ||
+    msg.toLowerCase().includes('function public.admin_update_cliente')
+  ) {
+    return 'La función de actualización de cliente no está disponible en Supabase (schema cache). Ejecutá el SQL de admin_update_cliente y recargá el schema cache.'
+  }
   return msg
 }
 
