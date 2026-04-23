@@ -134,18 +134,22 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const pagoId = String(body?.pago_id || '').trim()
+    const pago_id = String(body?.pago_id || '').trim()
     const accion = String(body?.accion || '').trim().toLowerCase()
     const observacionRevision = String(body?.observacion_revision || '').trim() || null
 
-    if (!pagoId || !['aprobar', 'rechazar'].includes(accion)) {
+    console.log('Metodo:', req.method)
+    console.log('Accion:', accion)
+    console.log('Pago:', pago_id)
+
+    if (!pago_id || !['aprobar', 'rechazar'].includes(accion)) {
       return jsonResponse({ error: 'Input inválido. Requerido: pago_id y accion (aprobar|rechazar)' }, 400)
     }
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
       .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id')
-      .eq('id', pagoId)
+      .eq('id', pago_id)
       .maybeSingle()
 
     if (pagoError) {
