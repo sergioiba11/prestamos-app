@@ -53,10 +53,25 @@ export default function LoginScreen() {
       if (!mounted) return
 
       if (sessionData.session?.user?.id) {
+        const { data: userData, error: userError } = await supabase.auth.getUser()
+        if (userError || !userData.user?.email_confirmed_at) {
+          if (!userError) {
+            console.warn('[auth] getUser devolvió email_confirmed_at vacío al abrir login', {
+              email: userData.user?.email || null,
+            })
+            setPendingConfirmationEmail((userData.user?.email || '').toLowerCase())
+            setError('Tenés que confirmar tu correo antes de ingresar.')
+          }
+          await supabase.auth.signOut()
+          setCanLoginWithBiometric(biometricState.enabled)
+          return
+        }
+
         await goByRole(sessionData.session.user.id)
         return
       }
 
+      await supabase.auth.signOut()
       setCanLoginWithBiometric(biometricState.enabled)
     }
 
@@ -121,27 +136,50 @@ export default function LoginScreen() {
     setPendingConfirmationEmail('')
 
     try {
-      const { user, email } = await signInWithEmailOrDni({
+      const { email } = await signInWithEmailOrDni({
         identifier: trimmedIdentifier,
         password,
         mode: 'auto',
       })
 
-      if (!user.email_confirmed_at) {
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError || !userData.user) {
         await supabase.auth.signOut()
-        setPendingConfirmationEmail(email)
+        setError('No se pudo validar tu sesión. Intentá nuevamente.')
+        return
+      }
+
+      if (!userData.user.email_confirmed_at) {
+        console.warn('[auth] getUser devolvió email_confirmed_at vacío', {
+          email: userData.user.email || email,
+        })
+        await supabase.auth.signOut()
+        setPendingConfirmationEmail((userData.user.email || email || '').toLowerCase())
         setError('Tenés que confirmar tu correo antes de ingresar.')
         return
       }
 
-      await askEnableBiometricAfterLogin(user.id)
+      await askEnableBiometricAfterLogin(userData.user.id)
       try {
-        await registerLoginActivity(user.id)
+        await registerLoginActivity(userData.user.id)
       } catch (activityError) {
         console.warn('[login] no se pudo registrar actividad de login', activityError)
       }
-      await goByRole(user.id)
+      await goByRole(userData.user.id)
     } catch (err: any) {
+      const normalizedMessage = String(err?.message || '').toLowerCase()
+      const normalizedCode = String(err?.code || '').toLowerCase()
+      const isEmailNotConfirmed =
+        normalizedMessage.includes('email_not_confirmed') || normalizedCode.includes('email_not_confirmed')
+
+      if (isEmailNotConfirmed) {
+        const resolvedEmail = String(err?.resolvedEmail || '').toLowerCase()
+        setPendingConfirmationEmail(resolvedEmail)
+        await supabase.auth.signOut()
+        setError('Tenés que confirmar tu correo antes de ingresar.')
+        return
+      }
+
       setError(err?.message || 'No se pudo iniciar sesión.')
     } finally {
       setLoading(false)
@@ -165,8 +203,14 @@ export default function LoginScreen() {
         type: 'signup',
         email: emailToResend,
       })
+      // Si no llegan correos, revisar SMTP propio en Supabase Auth
 
       if (resendError) {
+        console.warn('[auth] falló resend de confirmación', {
+          email: emailToResend,
+          code: (resendError as any)?.code || null,
+          message: resendError.message,
+        })
         throw resendError
       }
 

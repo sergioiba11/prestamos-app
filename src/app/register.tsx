@@ -100,10 +100,22 @@ export default function RegisterScreen() {
         email: emailLimpio,
         password: passwordLimpia,
       })
+      console.log('[auth] signUp diagnóstico', {
+        email: emailLimpio,
+        hasUser: Boolean(authData?.user),
+        hasSession: Boolean(authData?.session),
+        hasError: Boolean(signUpError),
+        errorCode: (signUpError as any)?.code || null,
+      })
 
       if (signUpError) {
         setError(mapSignUpErrorMessage(signUpError.message || ''))
         return
+      }
+
+      if (authData.session) {
+        // Si signUp devuelve session, revisar Supabase Auth > Confirm Email
+        console.warn('Confirm Email probablemente está desactivado en Supabase, porque signUp devolvió session.')
       }
 
       const authUserId = authData.user?.id
@@ -112,38 +124,45 @@ export default function RegisterScreen() {
         return
       }
 
-      const { error: usuarioError } = await supabase.from('usuarios').insert({
-        id: authUserId,
-        nombre: nombreLimpio,
-        email: emailLimpio,
-        rol: 'cliente',
-      })
+      try {
+        const { error: usuarioError } = await supabase.from('usuarios').insert({
+          id: authUserId,
+          nombre: nombreLimpio,
+          email: emailLimpio,
+          rol: 'cliente',
+        })
 
-      if (usuarioError) {
-        setError('No se pudo completar el alta en usuarios.')
-        return
-      }
-
-      const { error: clienteError } = await supabase.from('clientes').insert({
-        usuario_id: authUserId,
-        nombre: nombreLimpio,
-        telefono: telefonoLimpio,
-        dni: dniLimpio,
-      })
-
-      if (clienteError) {
-        const clienteMessage = (clienteError.message || '').toLowerCase()
-        if (clienteMessage.includes('dni')) {
-          setError('Ese DNI ya pertenece a un cliente.')
+        if (usuarioError) {
+          setError('No se pudo completar el alta en usuarios.')
           return
         }
 
-        setError('No se pudo completar el alta en clientes.')
-        return
-      }
+        const { error: clienteError } = await supabase.from('clientes').insert({
+          usuario_id: authUserId,
+          nombre: nombreLimpio,
+          telefono: telefonoLimpio,
+          dni: dniLimpio,
+        })
 
-      setSuccess('Te enviamos un correo para confirmar tu cuenta. Revisá tu email antes de iniciar sesión.')
-      setPassword('')
+        if (clienteError) {
+          const clienteMessage = (clienteError.message || '').toLowerCase()
+          if (clienteMessage.includes('dni')) {
+            setError('Ese DNI ya pertenece a un cliente.')
+            return
+          }
+
+          setError('No se pudo completar el alta en clientes.')
+          return
+        }
+
+        setSuccess('Te enviamos un correo para confirmar tu cuenta. Revisá tu email antes de iniciar sesión.')
+        setPassword('')
+      } finally {
+        const { error: signOutError } = await supabase.auth.signOut()
+        if (signOutError) {
+          console.warn('[auth] no se pudo limpiar sesión luego de signUp', signOutError.message)
+        }
+      }
     } catch {
       setError('No se pudo completar el registro en este momento.')
     } finally {
