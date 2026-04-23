@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { getRecoveryRedirectUrl } from '../lib/auth-redirect'
 import { supabase } from '../lib/supabase'
 
 export default function RecoverPasswordScreen() {
@@ -37,7 +38,7 @@ export default function RecoverPasswordScreen() {
     try {
       setLoading(true)
       setError('')
-      const redirectTo = process.env.EXPO_PUBLIC_PASSWORD_RECOVERY_REDIRECT_TO
+      const redirectTo = getRecoveryRedirectUrl()
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         ...(redirectTo ? { redirectTo } : {}),
       })
