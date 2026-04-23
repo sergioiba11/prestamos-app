@@ -15,6 +15,7 @@ import {
   obtenerPrestamoConDetallePorId,
   type PrestamoDetalle,
 } from '../lib/prestamos'
+import { hasValidReceipt } from '../lib/comprobantes'
 import { badgeCuota, badgePago, badgePrestamo } from '../lib/statuses'
 import { supabase } from '../lib/supabase'
 
@@ -244,6 +245,19 @@ export default function ClienteDetalle() {
                       </View>
                     )
                   })()}
+                  {hasValidReceipt(p) ? (
+                    <TouchableOpacity
+                      style={styles.receiptButton}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/pago-aprobado',
+                          params: { pago_id: p.id, prestamo_id: detalle.prestamo.id, cliente_id: cliente.id },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.receiptButtonText}>Ver comprobante</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ))
             )}
@@ -288,6 +302,17 @@ const styles = StyleSheet.create({
   itemMeta: { color: '#94A3B8', fontSize: 12, marginTop: 3 },
   statusBadge: { marginTop: 6, alignSelf: 'flex-start', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: '700' },
+  receiptButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#1E3A8A',
+    borderColor: '#2563EB',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  receiptButtonText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
   actionsRow: { flexDirection: 'row', gap: 8 },
   primaryBtn: { backgroundColor: '#1D4ED8', paddingVertical: 12, borderRadius: 8, alignItems: 'center', flex: 1 },
   primaryText: { color: '#fff', fontWeight: '700' },

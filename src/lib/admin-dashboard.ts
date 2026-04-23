@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { getLatestValidReceiptPayment } from './comprobantes'
 
 type ClienteRow = {
   id: string
@@ -43,6 +44,7 @@ type PagoRow = {
   estado: string | null
   estado_validacion: string | null
   impactado: boolean | null
+  comprobante_url: string | null
 }
 
 type CuotaRow = {
@@ -153,6 +155,7 @@ export type HistorialPrestamoItem = {
   cuotasPendientes: number
   proximaCuotaNumero: number | null
   proximaCuotaVencimiento: string
+  comprobantePagoId: string | null
 }
 
 export type AdminDashboardData = {
@@ -332,7 +335,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: pagosRaw, error: pagosError } = await supabase
     .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado,comprobante_url')
 
   if (pagosError) {
     console.error('[admin-dashboard] pagos fallback error', pagosError)
@@ -484,7 +487,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,estado_validacion,impactado,comprobante_url')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
@@ -557,8 +560,12 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   console.log('[admin-dashboard] pagosPendientesRaw', pagosPendientesRaw)
 
   const pagosByPrestamo = new Map<string, number>()
+  const pagosRowsByPrestamo = new Map<string, PagoRow[]>()
   for (const pago of pagos) {
     if (!pago.prestamo_id) continue
+    const pagosList = pagosRowsByPrestamo.get(pago.prestamo_id) || []
+    pagosList.push(pago)
+    pagosRowsByPrestamo.set(pago.prestamo_id, pagosList)
     if (!isApprovedPayment(pago)) continue
     if (low(pago.metodo) !== 'efectivo' && pago.impactado === false) continue
     const current = pagosByPrestamo.get(pago.prestamo_id) || 0
@@ -590,6 +597,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
     const proximaCuota = cuotasPrestamo
       .filter((c) => PENDING_QUOTA_STATES.has(low(c.estado)) || toNumber(c.saldo_pendiente) > 0)
       .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')))[0]
+    const latestReceiptPayment = getLatestValidReceiptPayment(pagosRowsByPrestamo.get(prestamo.id) || [])
 
     return {
       prestamoId: prestamo.id,
@@ -611,6 +619,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       cuotasPendientes,
       proximaCuotaNumero: proximaCuota?.numero_cuota ? toNumber(proximaCuota.numero_cuota) : null,
       proximaCuotaVencimiento: ymd(proximaCuota?.fecha_vencimiento || null),
+      comprobantePagoId: latestReceiptPayment?.id || null,
     }
   })
 
