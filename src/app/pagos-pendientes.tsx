@@ -56,12 +56,13 @@ async function callAprobarPago(body: {
   accion: 'aprobar' | 'rechazar'
   observacion_revision?: string | null
 }) {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+const { data, error } = await supabase.auth.refreshSession()
 
-  if (sessionError) throw sessionError
+if (error) throw error
 
-  const token = sessionData.session?.access_token
-  if (!token) throw new Error('No hay sesión activa')
+const token = data.session?.access_token
+
+if (!token) throw new Error('No hay sesión válida')
 
   const url = `${supabaseUrl}/functions/v1/aprobar-pago`
 
