@@ -86,6 +86,14 @@ export default function PagosPendientesScreen() {
     setCurrentObservation('')
   }
 
+  const getAccessToken = async () => {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) throw error
+    const token = data.session?.access_token
+    if (!token) throw new Error('No se encontró la sesión activa')
+    return token
+  }
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -93,7 +101,12 @@ export default function PagosPendientesScreen() {
       const userId = auth.user?.id
       if (!userId) throw new Error('Sesión inválida')
 
-      const { data: user } = await supabase.from('usuarios').select('id,nombre,rol').eq('id', userId).maybeSingle()
+      const { data: user } = await supabase
+        .from('usuarios')
+        .select('id,nombre,rol')
+        .eq('id', userId)
+        .maybeSingle()
+
       const role = normalizeRole(user?.rol)
       setAdminRole(role)
       setAdminName(user?.nombre || auth.user?.email?.split('@')[0] || 'Operador')
@@ -118,7 +131,8 @@ export default function PagosPendientesScreen() {
         setItems([])
         return
       }
-      setItems((data || []) as unknown as PendingPayment[])
+
+      setItems((data || []) as PendingPayment[])
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo cargar pagos pendientes')
     } finally {
@@ -145,7 +159,13 @@ export default function PagosPendientesScreen() {
     try {
       setProcessingId(pagoId)
       console.log('Aprobando:', pagoId)
+
+      const accessToken = await getAccessToken()
+
       const { data, error } = await supabase.functions.invoke('aprobar-pago', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: {
           pago_id: pagoId,
           accion: 'aprobar',
@@ -153,6 +173,7 @@ export default function PagosPendientesScreen() {
       })
 
       if (error) throw error
+
       const decisionResult = (data || {}) as AprobarPagoResponse
       const payment = items.find((item) => item.id === pagoId) || null
 
@@ -160,7 +181,7 @@ export default function PagosPendientesScreen() {
         await createSystemActivity({
           tipo: 'pago_aprobado',
           titulo: 'Pago aprobado',
-          descripcion: `Pago ${payment.id} aprobado por ${adminName}` ,
+          descripcion: `Pago ${payment.id} aprobado por ${adminName}`,
           entidad_tipo: 'pago',
           entidad_id: payment.id,
           prioridad: 'normal',
@@ -191,10 +212,16 @@ export default function PagosPendientesScreen() {
         console.error('No hay pago seleccionado')
         return
       }
+
       setProcessingId(pago.id)
       console.log('Rechazando pago:', pago.id)
 
+      const accessToken = await getAccessToken()
+
       const { error } = await supabase.functions.invoke('aprobar-pago', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: {
           pago_id: pago.id,
           accion: 'rechazar',
@@ -207,7 +234,7 @@ export default function PagosPendientesScreen() {
       await createSystemActivity({
         tipo: 'pago_rechazado',
         titulo: 'Pago rechazado',
-        descripcion: `Pago ${pago.id} rechazado por ${adminName}` ,
+        descripcion: `Pago ${pago.id} rechazado por ${adminName}`,
         entidad_tipo: 'pago',
         entidad_id: pago.id,
         prioridad: 'alta',
@@ -254,7 +281,14 @@ export default function PagosPendientesScreen() {
 
   return (
     <View style={styles.page}>
-      <AdminSidebar active="pagos-pendientes" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      <AdminSidebar
+        active="pagos-pendientes"
+        adminName={adminName}
+        adminRole={adminRole}
+        onNavigate={onNavigate}
+        onLogout={onLogout}
+      />
+
       <View style={styles.main}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Pagos pendientes</Text>
@@ -269,7 +303,6 @@ export default function PagosPendientesScreen() {
           />
 
           {queryError ? <Text style={styles.errorText}>Error al cargar pagos: {queryError}</Text> : null}
-
           {filtered.length === 0 ? <Text style={styles.empty}>No hay pagos pendientes para validar.</Text> : null}
 
           {filtered.map((item) => (
@@ -278,6 +311,7 @@ export default function PagosPendientesScreen() {
                 <Text style={styles.cardTitle}>Pago pendiente</Text>
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
+
               <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
               <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || 'pendiente'}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
@@ -289,8 +323,11 @@ export default function PagosPendientesScreen() {
                   onPress={() => void handleAprobar(item.id)}
                 >
                   <Ionicons name="checkmark-circle" size={16} color="#DCFCE7" />
-                  <Text style={styles.actionText}>Aprobar</Text>
+                  <Text style={styles.actionText}>
+                    {processingId === item.id ? 'Procesando...' : 'Aprobar'}
+                  </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   disabled={processingId === item.id}
                   style={[styles.actionBtn, styles.rejectBtn]}
@@ -310,6 +347,7 @@ export default function PagosPendientesScreen() {
           <Pressable style={styles.overlay} onPress={closeObservationModal} />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Rechazar pago</Text>
+
             <TextInput
               style={styles.observationInput}
               value={currentObservation}
@@ -318,8 +356,15 @@ export default function PagosPendientesScreen() {
               placeholderTextColor="#64748B"
               multiline
             />
-            <TouchableOpacity style={styles.confirmBtn} onPress={() => void handleConfirmReject()}>
-              <Text style={styles.confirmText}>{processingId ? 'Procesando...' : 'Confirmar'}</Text>
+
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              disabled={!!processingId}
+              onPress={() => void handleConfirmReject()}
+            >
+              <Text style={styles.confirmText}>
+                {processingId ? 'Procesando...' : 'Confirmar'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -334,30 +379,88 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 32, gap: 12 },
   title: { color: '#fff', fontSize: 28, fontWeight: '800' },
   subtitle: { color: '#94A3B8' },
-  searchInput: { backgroundColor: '#0B1220', borderWidth: 1, borderColor: '#1E293B', color: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
-  card: { backgroundColor: '#0F172A', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', padding: 12, gap: 6 },
+  searchInput: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    color: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  card: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 12,
+    gap: 6,
+  },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   amount: { color: '#60A5FA', fontWeight: '800', fontSize: 16 },
   meta: { color: '#94A3B8', fontSize: 12 },
   actions: { marginTop: 6, flexDirection: 'row', gap: 8 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   approveBtn: { borderColor: '#166534', backgroundColor: '#052E16' },
   rejectBtn: { borderColor: '#991B1B', backgroundColor: '#450A0A' },
   actionText: { color: '#E2E8F0', fontWeight: '700' },
   errorText: { color: '#FCA5A5', marginTop: 8 },
   empty: { color: '#94A3B8', marginTop: 8 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817', padding: 20 },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#020817',
+    padding: 20,
+  },
   loadingText: { color: '#CBD5E1', marginTop: 8 },
   deniedTitle: { color: '#fff', fontWeight: '800', fontSize: 22 },
   deniedText: { color: '#94A3B8', textAlign: 'center', marginTop: 8 },
-  backBtn: { marginTop: 16, backgroundColor: '#1D4ED8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  backBtn: {
+    marginTop: 16,
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   backBtnText: { color: '#fff', fontWeight: '700' },
   modalWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.72)' },
-  modalCard: { width: '90%', maxWidth: 450, backgroundColor: '#0F172A', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', padding: 14, gap: 10 },
+  modalCard: {
+    width: '90%',
+    maxWidth: 450,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 14,
+    gap: 10,
+  },
   modalTitle: { color: '#fff', fontWeight: '700', fontSize: 18 },
-  observationInput: { minHeight: 90, textAlignVertical: 'top', borderWidth: 1, borderColor: '#334155', borderRadius: 10, padding: 10, color: '#E2E8F0', backgroundColor: '#020817' },
-  confirmBtn: { backgroundColor: '#1D4ED8', borderRadius: 10, alignItems: 'center', paddingVertical: 10 },
+  observationInput: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    padding: 10,
+    color: '#E2E8F0',
+    backgroundColor: '#020817',
+  },
+  confirmBtn: {
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
   confirmText: { color: '#fff', fontWeight: '700' },
 })
