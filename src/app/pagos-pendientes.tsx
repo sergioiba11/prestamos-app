@@ -45,6 +45,7 @@ type AprobarPagoResponse = {
     saldo_cuota_antes?: number
     saldo_cuota_despues?: number
   }>
+  error?: string
 }
 
 function money(v: number) {
@@ -60,20 +61,6 @@ function date(v?: string | null) {
     month: 'short',
     year: 'numeric',
   })
-}
-
-async function getAccessToken() {
-  const { data, error } = await supabase.auth.getSession()
-
-  if (error) throw error
-
-  const token = data.session?.access_token
-
-  if (!token) {
-    throw new Error('No hay sesión activa')
-  }
-
-  return token
 }
 
 export default function PagosPendientesScreen() {
@@ -191,15 +178,9 @@ export default function PagosPendientesScreen() {
     try {
       setProcessingId(pagoId)
       console.log('Aprobando:', pagoId)
-
-      const token = await getAccessToken()
-      console.log('Token:', token)
       console.log('Invocando aprobar-pago')
 
       const { data, error } = await supabase.functions.invoke('aprobar-pago', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: {
           pago_id: pagoId,
           accion: 'aprobar',
@@ -209,6 +190,11 @@ export default function PagosPendientesScreen() {
       if (error) throw error
 
       const decisionResult = (data || {}) as AprobarPagoResponse
+
+      if (decisionResult?.error) {
+        throw new Error(decisionResult.error)
+      }
+
       const payment = items.find((item) => item.id === pagoId) || null
 
       if (payment) {
@@ -252,15 +238,9 @@ export default function PagosPendientesScreen() {
 
       setProcessingId(pago.id)
       console.log('Rechazando pago:', pago.id)
-
-      const token = await getAccessToken()
-      console.log('Token:', token)
       console.log('Invocando aprobar-pago')
 
-      const { error } = await supabase.functions.invoke('aprobar-pago', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const { data, error } = await supabase.functions.invoke('aprobar-pago', {
         body: {
           pago_id: pago.id,
           accion: 'rechazar',
@@ -269,6 +249,12 @@ export default function PagosPendientesScreen() {
       })
 
       if (error) throw error
+
+      const result = (data || {}) as AprobarPagoResponse
+
+      if (result?.error) {
+        throw new Error(result.error)
+      }
 
       await createSystemActivity({
         tipo: 'pago_rechazado',
