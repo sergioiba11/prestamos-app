@@ -15,8 +15,6 @@ import {
 } from 'react-native'
 import { supabase } from '../lib/supabase'
 
-type ParamValue = string | string[] | undefined
-
 type ReceiptLineItem = {
   label: string
   value: string
@@ -47,7 +45,14 @@ type ClienteComprobanteRow = {
   id: string
   nombre: string | null
   apellido: string | null
+  nombre_completo?: string | null
+  razon_social?: string | null
+  full_name?: string | null
+  name?: string | null
   dni: string | null
+  documento?: string | null
+  numero_documento?: string | null
+  cedula?: string | null
   email: string | null
   telefono: string | null
   usuario_id: string | null
@@ -67,6 +72,7 @@ type UsuarioComprobanteRow = {
   id?: string | null
   usuario_id?: string | null
   email?: string | null
+  correo?: string | null
 }
 
 type CuotaDbRow = {
@@ -83,13 +89,6 @@ type PagoDetalleRow = {
   monto_aplicado: number | null
   saldo_cuota_antes: number | null
   saldo_cuota_despues: number | null
-}
-
-function getParamString(value: ParamValue, fallback = '') {
-  const raw = Array.isArray(value) ? value[0] : value
-  if (typeof raw !== 'string') return fallback
-  const trimmed = raw.trim()
-  return trimmed || fallback
 }
 
 function formatCurrencyArs(value: number) {
@@ -166,6 +165,7 @@ export default function PagoAprobado() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [validatingPayment, setValidatingPayment] = useState(true)
   const [paymentApproved, setPaymentApproved] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [pago, setPago] = useState<PagoComprobanteRow | null>(null)
   const [cliente, setCliente] = useState<ClienteComprobanteRow | null>(null)
   const [usuario, setUsuario] = useState<UsuarioComprobanteRow | null>(null)
@@ -182,22 +182,48 @@ export default function PagoAprobado() {
     ? Number(saldoRestantePrestamoDb || 0)
     : 0
 
-  const metodo = String(pago?.metodo || 'No informado')
+  const metodo = String(pago?.metodo || '')
   const prestamoId = String(prestamo?.id || pago?.prestamo_id || '')
   const clienteId = String(cliente?.id || pago?.cliente_id || '')
-  const pagoId = getParamString(params.pago_id)
+  const pagoIdParam = Array.isArray(params.pago_id) ? params.pago_id[0] : params.pago_id
+  const pagoId = typeof pagoIdParam === 'string' ? pagoIdParam.trim() : ''
   const pagoInternoId = String(pago?.id || '')
   const fechaRaw = String(pago?.fecha_pago || pago?.created_at || '')
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
   const proximaCuota = proximaCuotaDb
-  const nombreCompleto = useMemo(() => {
+  const nombreFinal = useMemo(() => {
+    const nombreCompleto = String(cliente?.nombre_completo || '').trim()
     const nombre = String(cliente?.nombre || '').trim()
     const apellido = String(cliente?.apellido || '').trim()
-    return [nombre, apellido].filter(Boolean).join(' ').trim()
-  }, [cliente?.nombre, cliente?.apellido])
-  const clienteNombre = formatFallback(nombreCompleto, 'Cliente no informado')
-  const dniFinal = String(cliente?.dni || '')
-  const emailFinal = String(cliente?.email || usuario?.email || '')
+    const razonSocial = String(cliente?.razon_social || '').trim()
+    const fullName = String(cliente?.full_name || '').trim()
+    const name = String(cliente?.name || '').trim()
+    return (
+      nombreCompleto ||
+      [nombre, apellido].filter(Boolean).join(' ').trim() ||
+      razonSocial ||
+      fullName ||
+      name ||
+      'Cliente no informado'
+    )
+  }, [
+    cliente?.apellido,
+    cliente?.full_name,
+    cliente?.name,
+    cliente?.nombre,
+    cliente?.nombre_completo,
+    cliente?.razon_social,
+  ])
+  const clienteNombre = nombreFinal
+  const dniFinal =
+    String(
+      cliente?.dni ||
+      cliente?.documento ||
+      cliente?.numero_documento ||
+      cliente?.cedula ||
+      'No registrado'
+    )
+  const emailFinal = String(cliente?.email || usuario?.email || usuario?.correo || 'No registrado')
   const clienteTelefono = String(cliente?.telefono || '')
   const observaciones = ''
 
@@ -205,7 +231,9 @@ export default function PagoAprobado() {
   const paymentMethodLabel =
     metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
       ? 'Mercado Pago'
-      : metodo[0]?.toUpperCase() + metodo.slice(1)
+      : metodo
+        ? metodo[0]?.toUpperCase() + metodo.slice(1)
+        : 'No informado'
 
   const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
   const vuelto = isEfectivo ? computedVuelto : 0
@@ -249,35 +277,55 @@ export default function PagoAprobado() {
 
   useEffect(() => {
     const loadReceiptData = async () => {
+      console.log('PARAMS pago-aprobado:', params)
+      console.log('PAGO ID usado:', pagoId)
       try {
+        setLoadError('')
         if (!pagoId) {
+          setPago(null)
           setPaymentApproved(false)
+          setLoadError('No se recibió pago_id')
           return
         }
 
-        const { data: pagoData, error: pagoError } = await supabase
+        const { data: pago, error: pagoError } = await supabase
           .from('pagos')
-          .select('id,prestamo_id,cliente_id,monto,metodo,estado,impactado,created_at,fecha_pago')
+          .select('*')
           .eq('id', pagoId)
           .maybeSingle()
-        if (pagoError) throw pagoError
-        const pago = (pagoData || null) as PagoComprobanteRow | null
-        if (pago) setPago(pago)
         console.log('pago comprobante:', pago)
+        console.log('error pago comprobante:', pagoError)
+        if (pagoError) {
+          setPago(null)
+          setPaymentApproved(false)
+          setLoadError(pagoError.message || 'Error al cargar el pago.')
+          return
+        }
+        if (!pago) {
+          setPago(null)
+          setPaymentApproved(false)
+          setLoadError(`No se encontró el pago con ID: ${pagoId}`)
+          return
+        }
+        const pagoNormalizado = pago as PagoComprobanteRow
+        setPago(pagoNormalizado)
         console.log('cliente_id comprobante:', pago?.cliente_id)
 
-        const estado = String(pago?.estado || '').toLowerCase()
-        const impactado = Boolean(pago?.impactado)
+        const estado = String(pagoNormalizado.estado || '').toLowerCase()
+        const impactado = Boolean(pagoNormalizado.impactado)
         setPaymentApproved(estado === 'aprobado' && impactado)
 
         let cliente: ClienteComprobanteRow | null = null
         let usuario: UsuarioComprobanteRow | null = null
-        if (pago?.cliente_id) {
+        if (pagoNormalizado.cliente_id) {
+          console.log('cliente_id usado:', pagoNormalizado.cliente_id)
           const { data: clienteQueryData, error: clienteError } = await supabase
             .from('clientes')
-            .select('id,nombre,apellido,dni,email,telefono,usuario_id')
-            .eq('id', pago.cliente_id)
+            .select('*')
+            .eq('id', pagoNormalizado.cliente_id)
             .maybeSingle()
+          console.log('cliente completo comprobante:', clienteQueryData)
+          console.log('cliente error comprobante:', clienteError)
           if (clienteError) {
             console.error('Error cargando cliente para comprobante:', clienteError)
           } else {
@@ -287,7 +335,7 @@ export default function PagoAprobado() {
           if (cliente?.usuario_id && !String(cliente.email || '').trim()) {
             const { data: usuarioByIdData, error: usuarioByIdError } = await supabase
               .from('usuarios')
-              .select('id,usuario_id,email')
+              .select('*')
               .eq('id', cliente.usuario_id)
               .maybeSingle()
             if (usuarioByIdError) {
@@ -310,11 +358,11 @@ export default function PagoAprobado() {
         console.log('usuario comprobante:', usuario)
 
         let prestamo: PrestamoComprobanteRow | null = null
-        if (pago?.prestamo_id) {
+        if (pagoNormalizado.prestamo_id) {
           const { data: prestamoQueryData, error: prestamoError } = await supabase
             .from('prestamos')
             .select('id,cliente_id,monto,interes,total_a_pagar,estado,cuotas')
-            .eq('id', pago.prestamo_id)
+            .eq('id', pagoNormalizado.prestamo_id)
             .maybeSingle()
           if (prestamoError) {
             console.error('Error cargando préstamo para comprobante:', prestamoError)
@@ -325,7 +373,7 @@ export default function PagoAprobado() {
           const { data: cuotasData, error: cuotasError } = await supabase
             .from('cuotas')
             .select('id,numero_cuota,saldo_pendiente,estado,fecha_vencimiento')
-            .eq('prestamo_id', pago.prestamo_id)
+            .eq('prestamo_id', pagoNormalizado.prestamo_id)
             .in('estado', ['pendiente', 'parcial'])
           if (cuotasError) {
             console.error('Error calculando saldo restante para comprobante:', cuotasError)
@@ -344,7 +392,7 @@ export default function PagoAprobado() {
           const { data: detalleData, error: detalleError } = await supabase
             .from('pagos_detalle')
             .select('cuota_id,numero_cuota,monto_aplicado,saldo_cuota_antes,saldo_cuota_despues')
-            .eq('pago_id', pago.id)
+            .eq('pago_id', pagoNormalizado.id)
 
           if (detalleError) {
             console.error('Error cargando cuotas impactadas para comprobante:', detalleError)
@@ -394,8 +442,10 @@ export default function PagoAprobado() {
         }
         if (prestamo) setPrestamo(prestamo)
         console.log('prestamo comprobante:', prestamo)
-      } catch {
+      } catch (error) {
+        setPago(null)
         setPaymentApproved(false)
+        setLoadError(error instanceof Error ? error.message : 'Error inesperado al cargar el comprobante.')
       } finally {
         setValidatingPayment(false)
       }
@@ -631,9 +681,7 @@ export default function PagoAprobado() {
     return (
       <View style={styles.loadingWrap}>
         <Text style={styles.deniedTitle}>Comprobante no disponible</Text>
-        <Text style={styles.deniedText}>
-          Esta pantalla solo muestra pagos aprobados e impactados.
-        </Text>
+        <Text style={styles.deniedText}>{loadError || 'Esta pantalla solo muestra pagos aprobados e impactados.'}</Text>
         <Pressable style={styles.backButton} onPress={() => router.replace('/pagos-pendientes' as any)}>
           <Text style={styles.backButtonText}>Ir a pagos pendientes</Text>
         </Pressable>
