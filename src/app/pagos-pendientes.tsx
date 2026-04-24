@@ -388,6 +388,8 @@ export default function PagosPendientesScreen() {
 
       <View style={styles.mainWrap}>
         <ScrollView
+          horizontal={false}
+          showsHorizontalScrollIndicator={false}
           contentContainerStyle={[
             styles.content,
             !isMobile && styles.contentDesktop,
@@ -422,8 +424,8 @@ export default function PagosPendientesScreen() {
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
 
-              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || 'Cliente no informado'}</Text>
-              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || 'No registrado'}</Text>
+              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || item.cliente_id || 'Cliente no informado'}</Text>
+              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || item.cliente_id || 'No registrado'}</Text>
               <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
               <Text style={styles.meta}>Fecha: {date(item.created_at)}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
@@ -508,7 +510,9 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   contentDesktop: {
-    marginLeft: 260,
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
   },
   contentMobile: {
     marginLeft: 0,
@@ -547,6 +551,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
+    maxWidth: 800,
+    alignSelf: 'center',
+    width: '100%',
     padding: 14,
     gap: 8,
     shadowColor: '#000000',
