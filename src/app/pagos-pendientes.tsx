@@ -22,12 +22,25 @@ import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 type PendingPayment = {
   id: string
   cliente_id: string | null
+  cliente_nombre?: string | null
+  cliente_dni?: string | null
   prestamo_id: string | null
   monto: number | null
   metodo: string | null
   estado: string | null
   impactado: boolean | null
   created_at: string | null
+}
+
+type ClienteLite = {
+  id: string
+  nombre?: string | null
+  apellido?: string | null
+  nombre_completo?: string | null
+  dni?: string | null
+  documento?: string | null
+  numero_documento?: string | null
+  cedula?: string | null
 }
 
 type FunctionResponse = {
@@ -37,7 +50,12 @@ type FunctionResponse = {
 }
 
 function money(v: number) {
-  return `$${Number(v || 0).toLocaleString('es-AR')}`
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(v) ? v : 0)
 }
 
 function date(v?: string | null) {
@@ -182,7 +200,47 @@ export default function PagosPendientesScreen() {
         return
       }
 
-      setItems((data || []) as PendingPayment[])
+      const pagos = (data || []) as PendingPayment[]
+      const clienteIds = Array.from(
+        new Set(pagos.map((item) => item.cliente_id).filter(Boolean) as string[])
+      )
+
+      let clientesById = new Map<string, ClienteLite>()
+      if (clienteIds.length > 0) {
+        const { data: clientesData, error: clientesError } = await supabase
+          .from('clientes')
+          .select('id,nombre,apellido,nombre_completo,dni,documento,numero_documento,cedula')
+          .in('id', clienteIds)
+
+        if (clientesError) {
+          console.error('error clientes pagos pendientes:', clientesError)
+        } else {
+          clientesById = new Map(((clientesData || []) as ClienteLite[]).map((cliente) => [cliente.id, cliente]))
+        }
+      }
+
+      const pagosConCliente = pagos.map((item) => {
+        const cliente = item.cliente_id ? clientesById.get(item.cliente_id) : null
+        const nombreCompleto = String(cliente?.nombre_completo || '').trim()
+        const nombre = String(cliente?.nombre || '').trim()
+        const apellido = String(cliente?.apellido || '').trim()
+        const clienteNombre = nombreCompleto || [nombre, apellido].filter(Boolean).join(' ').trim() || null
+        const clienteDni = String(
+          cliente?.dni ||
+          cliente?.documento ||
+          cliente?.numero_documento ||
+          cliente?.cedula ||
+          ''
+        ).trim()
+
+        return {
+          ...item,
+          cliente_nombre: clienteNombre,
+          cliente_dni: clienteDni || null,
+        }
+      })
+
+      setItems(pagosConCliente)
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudo cargar pagos pendientes')
     } finally {
@@ -353,12 +411,21 @@ export default function PagosPendientesScreen() {
           {filtered.map((item) => (
             <View key={item.id} style={styles.card}>
               <View style={styles.rowBetween}>
-                <Text style={styles.cardTitle}>Pago pendiente</Text>
+                <View style={styles.titleBlock}>
+                  <Text style={styles.cardTitle}>Pago pendiente</Text>
+                  {item.estado === 'pendiente_aprobacion' ? (
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusBadgeText}>Pendiente aprobación</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
 
+              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || 'Cliente no informado'}</Text>
+              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || 'No registrado'}</Text>
               <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
-              <Text style={styles.meta}>Fecha: {date(item.created_at)} · Estado: {item.estado || 'pendiente'}</Text>
+              <Text style={styles.meta}>Fecha: {date(item.created_at)}</Text>
               <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
 
               <View style={styles.actions}>
@@ -369,7 +436,7 @@ export default function PagosPendientesScreen() {
                 >
                   <Ionicons name="checkmark-circle" size={16} color="#DCFCE7" />
                   <Text style={styles.actionText}>
-                    {processingId === item.id ? 'Procesando...' : 'Aprobar'}
+                    {processingId === item.id ? 'Procesando...' : '✔ Aprobar'}
                   </Text>
                 </TouchableOpacity>
 
@@ -379,7 +446,7 @@ export default function PagosPendientesScreen() {
                   onPress={() => setObsModal({ open: true, payment: item })}
                 >
                   <Ionicons name="close-circle" size={16} color="#FEE2E2" />
-                  <Text style={styles.actionText}>Rechazar</Text>
+                  <Text style={styles.actionText}>✖ Rechazar</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -477,15 +544,36 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#0F172A',
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
-    padding: 12,
-    gap: 6,
+    padding: 14,
+    gap: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  amount: { color: '#60A5FA', fontWeight: '800', fontSize: 16 },
+  titleBlock: {
+    flex: 1,
+    gap: 8,
+    paddingRight: 10,
+  },
+  cardTitle: { color: '#CBD5E1', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  amount: { color: '#93C5FD', fontWeight: '900', fontSize: 28, lineHeight: 32, textAlign: 'right', flexShrink: 1 },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  statusBadgeText: { color: '#92400E', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  clientMeta: { color: '#E2E8F0', fontSize: 13, fontWeight: '700' },
   meta: { color: '#94A3B8', fontSize: 12 },
   actions: { marginTop: 6, flexDirection: 'row', gap: 8 },
   actionBtn: {
