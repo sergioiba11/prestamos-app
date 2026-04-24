@@ -45,7 +45,14 @@ type ClienteComprobanteRow = {
   id: string
   nombre: string | null
   apellido: string | null
+  nombre_completo?: string | null
+  razon_social?: string | null
+  full_name?: string | null
+  name?: string | null
   dni: string | null
+  documento?: string | null
+  numero_documento?: string | null
+  cedula?: string | null
   email: string | null
   telefono: string | null
   usuario_id: string | null
@@ -65,6 +72,7 @@ type UsuarioComprobanteRow = {
   id?: string | null
   usuario_id?: string | null
   email?: string | null
+  correo?: string | null
 }
 
 type CuotaDbRow = {
@@ -183,14 +191,39 @@ export default function PagoAprobado() {
   const fechaRaw = String(pago?.fecha_pago || pago?.created_at || '')
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
   const proximaCuota = proximaCuotaDb
-  const nombreCompleto = useMemo(() => {
+  const nombreFinal = useMemo(() => {
+    const nombreCompleto = String(cliente?.nombre_completo || '').trim()
     const nombre = String(cliente?.nombre || '').trim()
     const apellido = String(cliente?.apellido || '').trim()
-    return [nombre, apellido].filter(Boolean).join(' ').trim()
-  }, [cliente?.nombre, cliente?.apellido])
-  const clienteNombre = formatFallback(nombreCompleto, 'Cliente no informado')
-  const dniFinal = String(cliente?.dni || '')
-  const emailFinal = String(cliente?.email || usuario?.email || '')
+    const razonSocial = String(cliente?.razon_social || '').trim()
+    const fullName = String(cliente?.full_name || '').trim()
+    const name = String(cliente?.name || '').trim()
+    return (
+      nombreCompleto ||
+      [nombre, apellido].filter(Boolean).join(' ').trim() ||
+      razonSocial ||
+      fullName ||
+      name ||
+      'Cliente no informado'
+    )
+  }, [
+    cliente?.apellido,
+    cliente?.full_name,
+    cliente?.name,
+    cliente?.nombre,
+    cliente?.nombre_completo,
+    cliente?.razon_social,
+  ])
+  const clienteNombre = nombreFinal
+  const dniFinal =
+    String(
+      cliente?.dni ||
+      cliente?.documento ||
+      cliente?.numero_documento ||
+      cliente?.cedula ||
+      'No registrado'
+    )
+  const emailFinal = String(cliente?.email || usuario?.email || usuario?.correo || 'No registrado')
   const clienteTelefono = String(cliente?.telefono || '')
   const observaciones = ''
 
@@ -285,11 +318,14 @@ export default function PagoAprobado() {
         let cliente: ClienteComprobanteRow | null = null
         let usuario: UsuarioComprobanteRow | null = null
         if (pagoNormalizado.cliente_id) {
+          console.log('cliente_id usado:', pagoNormalizado.cliente_id)
           const { data: clienteQueryData, error: clienteError } = await supabase
             .from('clientes')
-            .select('id,nombre,apellido,dni,email,telefono,usuario_id')
+            .select('*')
             .eq('id', pagoNormalizado.cliente_id)
             .maybeSingle()
+          console.log('cliente completo comprobante:', clienteQueryData)
+          console.log('cliente error comprobante:', clienteError)
           if (clienteError) {
             console.error('Error cargando cliente para comprobante:', clienteError)
           } else {
@@ -299,7 +335,7 @@ export default function PagoAprobado() {
           if (cliente?.usuario_id && !String(cliente.email || '').trim()) {
             const { data: usuarioByIdData, error: usuarioByIdError } = await supabase
               .from('usuarios')
-              .select('id,usuario_id,email')
+              .select('*')
               .eq('id', cliente.usuario_id)
               .maybeSingle()
             if (usuarioByIdError) {
