@@ -1,4 +1,6 @@
 import { Image } from 'expo-image'
+import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -14,12 +16,6 @@ import {
   View,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
-
-type ReceiptLineItem = {
-  label: string
-  value: string
-  emphasize?: boolean
-}
 
 type CuotaImpactadaDetalle = {
   numero_cuota: number
@@ -155,6 +151,11 @@ function estadoCuotaLabel(item: CuotaImpactadaDetalle) {
 
 function describirCuotasImpactadas(cuotas: CuotaImpactadaDetalle[]) {
   if (!cuotas.length) return 'Sin detalle de cuotas impactadas'
+  if (cuotas.length === 1) {
+    const cuota = cuotas[0]
+    const estado = estadoCuotaLabel(cuota).includes('parcial') ? 'parcial' : 'pagada'
+    return `Cuota #${cuota.numero_cuota} ${estado}`
+  }
   return cuotas
     .map((item) => `Cuota #${item.numero_cuota} ${estadoCuotaLabel(item)}`)
     .join(', ')
@@ -519,79 +520,16 @@ export default function PagoAprobado() {
     `Saldo restante del préstamo: ${formatCurrencyArs(saldoRestante)}`,
   ].join('\n')
 
-  const receiptMetaItems: ReceiptLineItem[] = [
-    {
-      label: 'Estado',
-      value: esPagoFinal ? 'Pago finalizado / Préstamo cancelado' : 'Pago aprobado',
-      emphasize: true,
-    },
-    { label: 'Recibo N.º', value: receiptNumber },
-    { label: 'Fecha y hora', value: fechaFormateada },
-    { label: 'ID préstamo', value: formatFallback(prestamoId) },
-  ]
-
-  const clientItems: ReceiptLineItem[] = [
-    { label: 'Nombre completo', value: clienteNombre },
-    { label: 'DNI', value: formatFallback(dniFinal, 'No registrado') },
-    { label: 'Email', value: formatFallback(emailFinal, 'No registrado') },
-    { label: 'ID cliente', value: formatFallback(clienteId) },
-  ]
-
-  const paymentItems: ReceiptLineItem[] = [
-    { label: 'Método de pago', value: formatFallback(paymentMethodLabel) },
-    {
-      label: 'Cuotas impactadas',
-      value: cantidadCuotasImpactadas ? cuotasTexto : 'No informado',
-    },
-    { label: 'Próxima cuota pendiente', value: proximaCuotaTexto },
-    ...(esPagoParcial
-      ? [
-          {
-            label: 'Resultado de aplicación',
-            value: 'Pago parcial: quedó saldo pendiente en al menos una cuota.',
-            emphasize: true,
-          },
-        ]
-      : []),
-  ]
-
-  const financeItems: ReceiptLineItem[] = esMultiCuota
-    ? [
-        { label: 'Monto total aplicado', value: formatCurrencyArs(montoAplicado), emphasize: true },
-        { label: isEfectivo ? 'Monto entregado' : 'Monto acreditado', value: formatCurrencyArs(montoIngresado) },
-        ...(isEfectivo ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }] : []),
-        {
-          label: 'Saldo restante del préstamo',
-          value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
-          emphasize: saldoRestante <= 0,
-        },
-      ]
-    : [
-        { label: 'Cuota impactada', value: cuotaPrincipal ? `Cuota #${cuotaPrincipal.numero_cuota}` : 'No informada' },
-        {
-          label: 'Monto de la cuota',
-          value: formatCurrencyArs(cuotaPrincipal ? Number(cuotaPrincipal.saldo_antes || 0) : montoAplicado + saldoRestanteCuota),
-        },
-        { label: 'Monto aplicado', value: formatCurrencyArs(montoAplicado), emphasize: true },
-        { label: isEfectivo ? 'Monto entregado' : 'Monto acreditado', value: formatCurrencyArs(montoIngresado) },
-        ...(isEfectivo ? [{ label: 'Vuelto', value: formatCurrencyArs(vuelto) }] : []),
-        {
-          label: 'Saldo restante de la cuota',
-          value: saldoRestanteCuota > 0 ? formatCurrencyArs(saldoRestanteCuota) : 'Cuota saldada',
-          emphasize: saldoRestanteCuota <= 0,
-        },
-        {
-          label: 'Saldo restante del préstamo',
-          value: saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante),
-          emphasize: saldoRestante <= 0,
-        },
-      ]
-
   const backToPrestamoUrl = prestamoId
     ? `/cliente/${clienteId}?prestamo_id=${prestamoId}`
     : `/cliente/${clienteId}`
 
   const paymentIdentifier = formatFallback(pagoInternoId || pagoId, 'No disponible')
+  const estadoPago = esPagoFinal
+    ? { label: 'Préstamo cancelado', style: styles.statusBadgeSuccessStrong, icon: 'checkmark-done-circle' as const }
+    : esPagoParcial
+      ? { label: 'Pago parcial', style: styles.statusBadgeWarning, icon: 'warning' as const }
+      : { label: 'Cuota pagada', style: styles.statusBadgeSuccess, icon: 'checkmark-circle' as const }
 
   const onPrint = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -747,83 +685,97 @@ export default function PagoAprobado() {
     <View style={styles.screen} nativeID="creditodo-recibo-root">
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.paper} nativeID="creditodo-recibo-paper" ref={receiptRef}>
-          <View style={styles.header}>
+          <LinearGradient
+            colors={['#0F172A', '#1E3A8A', '#2563EB']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.header}
+          >
             <Image
               source={require('../../assets/images/logo-root.png')}
               style={styles.logo}
               contentFit="contain"
             />
             <View style={styles.headerTextWrap}>
-              <Text style={styles.brandName}>Creditodo</Text>
               <Text style={styles.title}>Recibo de pago</Text>
               <Text style={styles.subtitle}>Comprobante financiero</Text>
             </View>
-          </View>
+          </LinearGradient>
 
-          <View style={styles.metaGrid}>
-            {receiptMetaItems.map((item) => (
-              <View key={item.label} style={styles.metaItem}>
-                <Text style={styles.metaLabel}>{item.label}</Text>
-                <Text style={[styles.metaValue, item.emphasize && styles.approvedValue]}>{item.value}</Text>
-              </View>
-            ))}
+          <View style={[styles.statusBadge, estadoPago.style]}>
+            <Ionicons name={estadoPago.icon} size={18} color="#fff" />
+            <Text style={styles.statusBadgeText}>{estadoPago.label}</Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Datos del cliente</Text>
-            {clientItems.map((item) => (
-              <View key={item.label} style={styles.row}>
-                <Text style={styles.rowLabel}>{item.label}</Text>
-                <Text style={styles.rowValue}>{item.value}</Text>
-              </View>
-            ))}
+            <Text style={styles.sectionTitle}>Información general</Text>
+            <View style={styles.row}><Text style={styles.rowLabel}>Recibo N°</Text><Text style={styles.rowValue}>{receiptNumber}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>Fecha</Text><Text style={styles.rowValue}>{fechaFormateada}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>ID préstamo</Text><Text style={styles.rowValue}>{formatFallback(prestamoId)}</Text></View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Datos del pago</Text>
-            {paymentItems.map((item) => (
-              <View key={item.label} style={styles.row}>
-                <Text style={styles.rowLabel}>{item.label}</Text>
-                <Text style={styles.rowValue}>{item.value}</Text>
-              </View>
-            ))}
+            <Text style={styles.sectionTitle}>Cliente</Text>
+            <View style={styles.row}><Text style={styles.rowLabel}>Nombre</Text><Text style={styles.rowValue}>{clienteNombre}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>DNI</Text><Text style={styles.rowValue}>{formatFallback(dniFinal, 'No registrado')}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>Email</Text><Text style={styles.rowValue}>{formatFallback(emailFinal, 'No registrado')}</Text></View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Detalle financiero</Text>
-            {financeItems.map((item) => (
-              <View key={item.label} style={styles.row}>
-                <Text style={styles.rowLabel}>{item.label}</Text>
-                <Text style={[styles.rowValue, item.emphasize && styles.highlightValue]}>{item.value}</Text>
-              </View>
-            ))}
+            <Text style={styles.sectionTitle}>Pago</Text>
+            <View style={styles.row}><Text style={styles.rowLabel}>Método</Text><Text style={styles.rowValue}>{formatFallback(paymentMethodLabel)}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>Cuotas impactadas</Text><Text style={styles.rowValue}>{cantidadCuotasImpactadas ? cuotasTexto : 'No informado'}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>Próxima cuota</Text><Text style={styles.rowValue}>{proximaCuotaTexto}</Text></View>
           </View>
 
-          {esPagoFinal && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Estado del préstamo</Text>
-              <View style={styles.row}>
-                <Text style={[styles.rowValue, styles.loanPaidOffText]}>✔ Préstamo completamente saldado</Text>
-              </View>
+          {esPagoParcial && (
+            <View style={styles.partialInfoCard}>
+              <Ionicons name="information-circle" size={18} color="#FACC15" />
+              <Text style={styles.partialInfoText}>
+                El pago se distribuyó automáticamente y quedaron saldos pendientes en algunas cuotas.
+              </Text>
             </View>
           )}
 
-          {esMultiCuota ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Detalle por cuota impactada</Text>
-              {cuotasDetalleNormalizadas.map((item) => (
-                <View key={`cuota-impactada-${item.numero_cuota}`} style={styles.row}>
-                  <Text style={styles.rowValue}>Cuota #{item.numero_cuota}</Text>
-                  <Text style={styles.rowLabel}>Monto aplicado: {formatCurrencyArs(item.monto_aplicado || 0)}</Text>
-                  <Text style={styles.rowLabel}>Saldo previo: {formatCurrencyArs(item.saldo_antes || 0)}</Text>
-                  <Text style={styles.rowLabel}>Saldo posterior: {formatCurrencyArs(item.saldo_despues || 0)}</Text>
-                  <Text style={[styles.rowLabel, styles.resultingState]}>
-                    Estado resultante: {formatFallback(String(item.estado || '').toUpperCase(), 'NO INFORMADO')}
-                  </Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {esMultiCuota ? 'Detalle por cuota impactada' : 'Detalle de la cuota'}
+            </Text>
+            {cuotasDetalleNormalizadas.map((item) => {
+              const pendiente = Number(item.saldo_despues || 0) > 0.009
+              return (
+                <View key={`cuota-impactada-${item.numero_cuota}`} style={styles.cuotaMiniCard}>
+                  <View style={styles.cuotaHeaderRow}>
+                    <Text style={styles.cuotaTitle}>Cuota #{item.numero_cuota}</Text>
+                    <View style={[styles.cuotaStateBadge, pendiente ? styles.cuotaStatePartial : styles.cuotaStatePaid]}>
+                      <Text style={styles.cuotaStateText}>{pendiente ? 'PARCIAL' : 'PAGADA'}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.miniCardText}>Monto aplicado: {formatCurrencyArs(item.monto_aplicado || 0)}</Text>
+                  <Text style={styles.miniCardText}>Saldo antes: {formatCurrencyArs(item.saldo_antes || 0)}</Text>
+                  <Text style={styles.miniCardText}>Saldo después: {formatCurrencyArs(item.saldo_despues || 0)}</Text>
                 </View>
-              ))}
+              )
+            })}
+          </View>
+
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryTitleRow}>
+              <Ionicons name="wallet" size={18} color="#60A5FA" />
+              <Text style={styles.summaryTitle}>Resumen final</Text>
             </View>
-          ) : null}
+            <View style={styles.row}><Text style={styles.rowLabel}>Monto entregado</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoIngresado)}</Text></View>
+            <View style={styles.row}><Text style={styles.rowLabel}>Monto aplicado</Text><Text style={[styles.rowValue, styles.highlightValue]}>{formatCurrencyArs(montoAplicado)}</Text></View>
+            {vuelto > 0 && <View style={styles.row}><Text style={styles.rowLabel}>Vuelto</Text><Text style={styles.rowValue}>{formatCurrencyArs(vuelto)}</Text></View>}
+            <View style={styles.row}><Text style={styles.rowLabel}>Saldo restante préstamo</Text><Text style={[styles.rowValue, esPagoFinal && styles.highlightValue]}>{saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante)}</Text></View>
+          </View>
+
+          {esPagoFinal && (
+            <View style={styles.loanPaidOffCard}>
+              <Text style={styles.loanPaidOffTitle}>✔ Préstamo completamente saldado</Text>
+              <Text style={styles.loanPaidOffSubtitle}>Este pago cancela la totalidad de la deuda.</Text>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Observaciones</Text>
@@ -837,20 +789,17 @@ export default function PagoAprobado() {
         </View>
 
         <View style={styles.actions} nativeID="creditodo-recibo-actions">
-          <Pressable style={styles.actionPrimary} onPress={onPrint}>
-            <Text style={styles.actionPrimaryText}>Imprimir</Text>
-          </Pressable>
-          <Pressable style={styles.actionSecondary} onPress={() => void onShare()}>
-            <Text style={styles.actionSecondaryText}>Compartir comprobante</Text>
-          </Pressable>
           <Pressable
-            style={[styles.actionPdf, downloadingPdf && styles.actionPdfDisabled]}
+            style={[styles.actionPrimary, downloadingPdf && styles.actionPdfDisabled]}
             disabled={downloadingPdf}
             onPress={() => void handleDownloadPDF()}
           >
-            <Text style={styles.actionPdfText}>
+            <Text style={styles.actionPrimaryText}>
               {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
             </Text>
+          </Pressable>
+          <Pressable style={styles.actionSecondary} onPress={() => void onShare()}>
+            <Text style={styles.actionSecondaryText}>Compartir comprobante</Text>
           </Pressable>
           <Pressable
             style={styles.actionGhost}
@@ -858,6 +807,9 @@ export default function PagoAprobado() {
             nativeID="creditodo-recibo-back"
           >
             <Text style={styles.actionGhostText}>Volver al préstamo</Text>
+          </Pressable>
+          <Pressable style={styles.actionPrint} onPress={onPrint}>
+            <Text style={styles.actionPrintText}>Imprimir</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -868,98 +820,88 @@ export default function PagoAprobado() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#020817',
   },
   scrollContent: {
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 10,
+    gap: 12,
     alignItems: 'center',
   },
   paper: {
     width: '100%',
     maxWidth: 820,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    gap: 14,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    borderColor: '#1D4ED8',
+    padding: 14,
+    gap: 12,
+    shadowColor: '#1E3A8A',
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
   },
   logo: {
-    width: 60,
-    height: 60,
+    width: 52,
+    height: 52,
   },
   headerTextWrap: {
     flex: 1,
     gap: 2,
   },
-  brandName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
-    color: '#1E3A8A',
+    color: '#F8FAFC',
   },
   subtitle: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  metaGrid: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  metaItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    gap: 2,
-  },
-  metaLabel: {
     fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    color: '#64748B',
-    fontWeight: '700',
+    color: '#BFDBFE',
+    fontWeight: '600',
   },
-  metaValue: {
-    fontSize: 15,
-    color: '#0F172A',
-    fontWeight: '700',
+  statusBadge: {
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  approvedValue: {
-    color: '#166534',
+  statusBadgeSuccess: {
+    backgroundColor: '#15803D',
+  },
+  statusBadgeSuccessStrong: {
+    backgroundColor: '#166534',
+  },
+  statusBadgeWarning: {
+    backgroundColor: '#CA8A04',
+  },
+  statusBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   section: {
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E293B',
     borderRadius: 14,
     overflow: 'hidden',
+    backgroundColor: '#0B1220',
   },
   sectionTitle: {
-    backgroundColor: '#F8FAFC',
-    color: '#1E293B',
+    backgroundColor: '#111C35',
+    color: '#E2E8F0',
     fontWeight: '800',
     fontSize: 13,
     paddingHorizontal: 12,
@@ -967,59 +909,148 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E293B',
   },
   row: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#1E293B',
     gap: 4,
   },
   rowLabel: {
-    color: '#64748B',
+    color: '#94A3B8',
     fontSize: 12,
     fontWeight: '600',
   },
   rowValue: {
-    color: '#0F172A',
+    color: '#F8FAFC',
     fontSize: 15,
     fontWeight: '700',
   },
   highlightValue: {
-    color: '#14532D',
+    color: '#86EFAC',
   },
-  loanPaidOffText: {
-    color: '#15803D',
+  partialInfoCard: {
+    backgroundColor: '#1E293B',
+    borderColor: '#FACC15',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  partialInfoText: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    lineHeight: 19,
+    flex: 1,
+  },
+  cuotaMiniCard: {
+    margin: 10,
+    marginTop: 0,
+    backgroundColor: '#111C35',
+    borderWidth: 1,
+    borderColor: '#23345A',
+    borderRadius: 12,
+    padding: 10,
+    gap: 4,
+  },
+  cuotaHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  cuotaTitle: {
+    color: '#E2E8F0',
+    fontSize: 15,
     fontWeight: '700',
   },
-
-  resultingState: {
-    color: '#1D4ED8',
+  cuotaStateBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+  },
+  cuotaStatePaid: {
+    backgroundColor: '#166534',
+  },
+  cuotaStatePartial: {
+    backgroundColor: '#B45309',
+  },
+  cuotaStateText: {
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '700',
+  },
+  miniCardText: {
+    color: '#BFDBFE',
+    fontSize: 12,
+  },
+  summaryCard: {
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 14,
+    backgroundColor: '#0B1730',
+    overflow: 'hidden',
+  },
+  summaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1D4ED8',
+    backgroundColor: '#0A1E46',
+  },
+  summaryTitle: {
+    color: '#DBEAFE',
+    fontSize: 14,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  loanPaidOffCard: {
+    backgroundColor: '#052E16',
+    borderWidth: 1,
+    borderColor: '#16A34A',
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  loanPaidOffTitle: {
+    color: '#BBF7D0',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  loanPaidOffSubtitle: {
+    color: '#DCFCE7',
+    fontSize: 13,
   },
   notes: {
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#0F172A',
+    color: '#E2E8F0',
     lineHeight: 20,
   },
   footer: {
     borderTopWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E293B',
     paddingTop: 12,
     gap: 4,
   },
   footerLabel: {
-    color: '#64748B',
+    color: '#94A3B8',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   footerValue: {
-    color: '#0F172A',
+    color: '#F8FAFC',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1031,7 +1062,7 @@ const styles = StyleSheet.create({
   },
   actionPrimary: {
     backgroundColor: '#1D4ED8',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 13,
     alignItems: 'center',
   },
@@ -1041,41 +1072,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   actionSecondary: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
+    backgroundColor: '#172554',
+    borderRadius: 14,
     paddingVertical: 13,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2563EB',
   },
   actionSecondaryText: {
-    color: '#FFFFFF',
+    color: '#DBEAFE',
     fontWeight: '700',
     fontSize: 14,
-  },
-  actionPdf: {
-    borderWidth: 1,
-    borderColor: '#1D4ED8',
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
   },
   actionPdfDisabled: {
     opacity: 0.6,
   },
-  actionPdfText: {
-    color: '#1E3A8A',
-    fontWeight: '700',
-    fontSize: 14,
-  },
   actionGhost: {
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#94A3B8',
+    borderColor: '#475569',
+    backgroundColor: '#0B1220',
   },
   actionGhostText: {
-    color: '#1E293B',
+    color: '#CBD5E1',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  actionPrint: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#111827',
+  },
+  actionPrintText: {
+    color: '#94A3B8',
     fontWeight: '700',
     fontSize: 14,
   },
@@ -1083,21 +1117,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#020817',
     padding: 20,
     gap: 10,
   },
   loadingText: {
-    color: '#334155',
+    color: '#CBD5E1',
     fontWeight: '600',
   },
   deniedTitle: {
-    color: '#0F172A',
+    color: '#F8FAFC',
     fontSize: 20,
     fontWeight: '800',
   },
   deniedText: {
-    color: '#475569',
+    color: '#94A3B8',
     textAlign: 'center',
   },
   backButton: {
