@@ -119,6 +119,46 @@ function formatFallback(value: string, fallback = 'No informado') {
   return value.trim() ? value : fallback
 }
 
+function parseNumberParam(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string') return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDetalleParam(value: string | string[] | undefined): CuotaImpactadaDetalle[] {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (!raw || typeof raw !== 'string') return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => ({
+        numero_cuota: Number(item?.numero_cuota || 0),
+        estado: String(item?.estado_resultante || item?.estado || ''),
+        monto_aplicado: Number(item?.monto_aplicado || 0),
+        saldo_antes: Number(item?.saldo_cuota_antes ?? item?.saldo_antes ?? 0),
+        saldo_despues: Number(item?.saldo_cuota_despues ?? item?.saldo_despues ?? 0),
+      }))
+      .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
+  } catch {
+    return []
+  }
+}
+
+
+function estadoCuotaLabel(item: CuotaImpactadaDetalle) {
+  const estado = String(item.estado || '').toLowerCase()
+  const estaPagada = estado === 'pagada' || estado === 'paga' || Number(item.saldo_despues || 0) <= 0.009
+  return estaPagada ? 'pagada completamente' : 'con pago parcial'
+}
+
+function describirCuotasImpactadas(cuotas: CuotaImpactadaDetalle[]) {
+  if (!cuotas.length) return 'Sin detalle de cuotas impactadas'
+  return cuotas
+    .map((item) => `Cuota #${item.numero_cuota} ${estadoCuotaLabel(item)}`)
+    .join(', ')
+}
 function normalizePhone(value: string) {
   return value.replace(/[^\d]/g, '')
 }
@@ -177,10 +217,21 @@ export default function PagoAprobado() {
   const receiptRef = useRef<View | null>(null)
 
   const montoAplicado = Number.isFinite(Number(pago?.monto)) ? Number(pago?.monto || 0) : 0
-  const montoIngresado = montoAplicado
+  const montoIngresadoParam = parseNumberParam(params.monto_ingresado)
+  const vueltoParam = parseNumberParam(params.vuelto)
+  const saldoRestanteParam = parseNumberParam(params.saldo_restante)
+  const cuotasDetalleParam = useMemo(
+    () => parseDetalleParam(params.cuotas_impactadas_detalle),
+    [params.cuotas_impactadas_detalle]
+  )
+  const montoIngresado = Number.isFinite(Number(montoIngresadoParam))
+    ? Number(montoIngresadoParam)
+    : montoAplicado
   const saldoRestante = Number.isFinite(Number(saldoRestantePrestamoDb))
     ? Number(saldoRestantePrestamoDb || 0)
-    : 0
+    : Number.isFinite(Number(saldoRestanteParam))
+      ? Number(saldoRestanteParam)
+      : 0
 
   const metodo = String(pago?.metodo || '')
   const prestamoId = String(prestamo?.id || pago?.prestamo_id || '')
@@ -236,10 +287,15 @@ export default function PagoAprobado() {
         : 'No informado'
 
   const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
-  const vuelto = isEfectivo ? computedVuelto : 0
+  const vuelto = isEfectivo
+    ? Number.isFinite(Number(vueltoParam))
+      ? Number(vueltoParam)
+      : computedVuelto
+    : 0
 
   const cuotasDetalleNormalizadas = useMemo(() => {
     if (cuotasImpactadasDetalleDb.length > 0) return cuotasImpactadasDetalleDb
+    if (cuotasDetalleParam.length > 0) return cuotasDetalleParam
     const cuotasBase = cuotasImpactadasDb.length > 0 ? cuotasImpactadasDb : []
     if (cuotasBase.length > 0) {
       return cuotasBase.map((numero) => ({
@@ -254,6 +310,7 @@ export default function PagoAprobado() {
   }, [
     cuotasImpactadasDetalleDb,
     cuotasImpactadasDb,
+    cuotasDetalleParam,
   ])
 
   const cantidadCuotasImpactadas = cuotasDetalleNormalizadas.length
@@ -261,19 +318,16 @@ export default function PagoAprobado() {
   const saldoRestanteCuota = Number(cuotaPrincipal?.saldo_despues || 0)
   const esPagoParcial = cuotasDetalleNormalizadas.some((item) => Number(item.saldo_despues || 0) > 0)
   const esMultiCuota = cantidadCuotasImpactadas > 1
+  const esPagoFinal = Number.isFinite(Number(saldoRestante)) && Number(saldoRestante) <= 0.009
 
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
-  const cuotasTexto = cuotasDetalleNormalizadas.length
-    ? cuotasDetalleNormalizadas
-        .map((item) => `#${item.numero_cuota}${item.estado ? ` (${String(item.estado || '').toUpperCase()})` : ''}`)
-        .join(', ')
-    : 'Sin detalle de cuotas impactadas'
+  const cuotasTexto = describirCuotasImpactadas(cuotasDetalleNormalizadas)
 
-  const proximaCuotaTexto = proximaCuota
-    ? `Cuota #${proximaCuota}`
-    : saldoRestante <= 0
-      ? 'Préstamo saldado / sin saldo pendiente'
-      : 'Sin próxima cuota informada'
+  const proximaCuotaTexto = esPagoFinal
+    ? 'Préstamo saldado / sin saldo pendiente'
+    : proximaCuota
+      ? `Cuota #${proximaCuota}`
+      : 'Cuota no informada'
 
   useEffect(() => {
     const loadReceiptData = async () => {
@@ -468,7 +522,7 @@ export default function PagoAprobado() {
   const receiptMetaItems: ReceiptLineItem[] = [
     {
       label: 'Estado',
-      value: esPagoParcial ? 'Pago aprobado (PARCIAL)' : 'Pago aprobado (COMPLETO)',
+      value: esPagoFinal ? 'Pago finalizado / Préstamo cancelado' : 'Pago aprobado',
       emphasize: true,
     },
     { label: 'Recibo N.º', value: receiptNumber },
@@ -487,7 +541,7 @@ export default function PagoAprobado() {
     { label: 'Método de pago', value: formatFallback(paymentMethodLabel) },
     {
       label: 'Cuotas impactadas',
-      value: cantidadCuotasImpactadas ? `${cantidadCuotasImpactadas} (${cuotasTexto})` : 'No informado',
+      value: cantidadCuotasImpactadas ? cuotasTexto : 'No informado',
     },
     { label: 'Próxima cuota pendiente', value: proximaCuotaTexto },
     ...(esPagoParcial
@@ -745,6 +799,15 @@ export default function PagoAprobado() {
             ))}
           </View>
 
+          {esPagoFinal && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Estado del préstamo</Text>
+              <View style={styles.row}>
+                <Text style={[styles.rowValue, styles.loanPaidOffText]}>✔ Préstamo completamente saldado</Text>
+              </View>
+            </View>
+          )}
+
           {esMultiCuota ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Detalle por cuota impactada</Text>
@@ -926,6 +989,11 @@ const styles = StyleSheet.create({
   highlightValue: {
     color: '#14532D',
   },
+  loanPaidOffText: {
+    color: '#15803D',
+    fontWeight: '700',
+  },
+
   resultingState: {
     color: '#1D4ED8',
     fontWeight: '700',
