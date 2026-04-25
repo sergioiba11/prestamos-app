@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -246,6 +246,8 @@ async function obtenerAccessTokenValido() {
 
 export default function CargarPago() {
   const params = useLocalSearchParams()
+  const scrollRef = useRef<ScrollView | null>(null)
+  const paymentFormYRef = useRef(0)
 
   const clienteIdParam = useMemo(() => {
     const raw = params.cliente_id
@@ -266,6 +268,8 @@ export default function CargarPago() {
   const [prestamoSeleccionado, setPrestamoSeleccionado] = useState<Prestamo | null>(null)
   const [cuotaSeleccionada, setCuotaSeleccionada] = useState<Cuota | null>(null)
   const [mostrarTodasCuotas, setMostrarTodasCuotas] = useState(false)
+  const [prestamoExpandidoId, setPrestamoExpandidoId] = useState<string | null>(null)
+  const [cuotasPorPrestamo, setCuotasPorPrestamo] = useState<Record<string, Cuota[]>>({})
 
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
@@ -310,6 +314,8 @@ export default function CargarPago() {
       setPrestamoSeleccionado(null)
       setCuotas([])
       setCuotaSeleccionada(null)
+      setPrestamoExpandidoId(null)
+      setCuotasPorPrestamo({})
       setMonto('')
     }
   }, [clienteSeleccionado])
@@ -439,13 +445,52 @@ export default function CargarPago() {
       const lista = (data || []) as Prestamo[]
       setPrestamos(lista)
       setPrestamoSeleccionado(lista[0] || null)
+      setPrestamoExpandidoId(lista[0]?.id || null)
+      void cargarResumenCuotasPrestamos(lista.map((prestamo) => prestamo.id))
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudieron cargar los préstamos')
       setPrestamos([])
       setPrestamoSeleccionado(null)
+      setPrestamoExpandidoId(null)
     } finally {
       setLoading(false)
     }
+  }
+
+  const cargarResumenCuotasPrestamos = async (prestamosIds: string[]) => {
+    if (!prestamosIds.length) {
+      setCuotasPorPrestamo({})
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('cuotas')
+      .select(`
+        id,
+        prestamo_id,
+        cliente_id,
+        numero_cuota,
+        fecha_vencimiento,
+        monto_cuota,
+        saldo_pendiente,
+        estado
+      `)
+      .in('prestamo_id', prestamosIds)
+      .in('estado', ['pendiente', 'parcial'])
+      .order('numero_cuota', { ascending: true })
+
+    if (error) {
+      console.log('[cargar-pago] no se pudo precargar cuotas por préstamo', error)
+      return
+    }
+
+    const mapa = ((data || []) as Cuota[]).reduce<Record<string, Cuota[]>>((acc, cuota) => {
+      if (!acc[cuota.prestamo_id]) acc[cuota.prestamo_id] = []
+      acc[cuota.prestamo_id].push(cuota)
+      return acc
+    }, {})
+
+    setCuotasPorPrestamo(mapa)
   }
 
   const cargarCuotasPrestamo = async (prestamoId: string) => {
@@ -478,6 +523,7 @@ export default function CargarPago() {
       const lista = (data || []) as Cuota[]
       setCuotas(lista)
       setCuotaSeleccionada(lista[0] || null)
+      setCuotasPorPrestamo((prev) => ({ ...prev, [prestamoId]: lista }))
       setMonto('')
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'No se pudieron cargar las cuotas')
@@ -500,6 +546,46 @@ export default function CargarPago() {
       )
     })
   }, [clientes, busquedaDebounced])
+
+  const filtroCoincideClienteSeleccionado = useMemo(() => {
+    if (!busquedaDebounced || !clienteSeleccionado) return true
+    const texto = busquedaDebounced
+    return (
+      clienteSeleccionado.nombre?.toLowerCase().includes(texto) ||
+      clienteSeleccionado.dni?.toLowerCase().includes(texto) ||
+      clienteSeleccionado.email?.toLowerCase().includes(texto)
+    )
+  }, [busquedaDebounced, clienteSeleccionado])
+
+  const prestamosFiltrados = useMemo(() => {
+    if (!busquedaDebounced) return prestamos
+    const texto = busquedaDebounced
+
+    return prestamos.filter((prestamo) => {
+      const cuotasPrestamo = cuotasPorPrestamo[prestamo.id] || []
+      const coincidePrestamo = prestamo.id.toLowerCase().includes(texto)
+      const coincideCliente = filtroCoincideClienteSeleccionado
+      const coincideCuota = cuotasPrestamo.some((cuota) =>
+        String(cuota.numero_cuota).includes(texto.replace(/\D/g, ''))
+      )
+      return coincidePrestamo || coincideCliente || coincideCuota
+    })
+  }, [prestamos, cuotasPorPrestamo, busquedaDebounced, filtroCoincideClienteSeleccionado])
+
+  const cuotasFiltradas = useMemo(() => {
+    if (!prestamoSeleccionado) return []
+    const base = cuotas
+    if (!busquedaDebounced) return base
+
+    const texto = busquedaDebounced
+    const soloDigitos = texto.replace(/\D/g, '')
+
+    return base.filter((cuota) => {
+      if (String(cuota.numero_cuota).includes(soloDigitos)) return true
+      if (prestamoSeleccionado.id.toLowerCase().includes(texto)) return true
+      return filtroCoincideClienteSeleccionado
+    })
+  }, [cuotas, prestamoSeleccionado, busquedaDebounced, filtroCoincideClienteSeleccionado])
 
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
   const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
@@ -546,6 +632,8 @@ export default function CargarPago() {
     setCuotas([])
     setCuotaSeleccionada(null)
     setMostrarTodasCuotas(false)
+    setPrestamoExpandidoId(null)
+    setCuotasPorPrestamo({})
     setBusqueda('')
     setMonto('')
     setMetodo('efectivo')
@@ -880,6 +968,7 @@ export default function CargarPago() {
   return (
     <>
       <ScrollView
+      ref={scrollRef}
       keyboardShouldPersistTaps="always"
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -891,18 +980,17 @@ export default function CargarPago() {
 
       <Text style={styles.title}>Cargar pago</Text>
       <Text style={styles.subtitle}>Registrá un pago por cuota</Text>
+      <TextInput
+        value={busqueda}
+        onChangeText={setBusqueda}
+        placeholder="Buscar por cliente, DNI, ID préstamo o cuota"
+        placeholderTextColor="#64748B"
+        style={styles.input}
+      />
 
       {!clienteSeleccionado ? (
         <>
           <Text style={styles.label}>Paso 1 · Seleccioná cliente</Text>
-
-          <TextInput
-            value={busqueda}
-            onChangeText={setBusqueda}
-            placeholder="Nombre, DNI o email"
-            placeholderTextColor="#64748B"
-            style={styles.input}
-          />
 
           <View style={styles.listBox}>
             {clientesFiltrados.length === 0 ? (
@@ -940,106 +1028,148 @@ export default function CargarPago() {
 
           <Text style={styles.label}>Paso 2 · Seleccioná préstamo</Text>
 
-          {prestamos.length === 0 ? (
+          {prestamosFiltrados.length === 0 ? (
             <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
           ) : (
             <View style={styles.listBox}>
-              {prestamos.map((prestamo) => {
+              {prestamosFiltrados.map((prestamo) => {
                 const seleccionado = prestamoSeleccionado?.id === prestamo.id
+                const expandido = prestamoExpandidoId === prestamo.id
+                const cuotasPrestamo = cuotasPorPrestamo[prestamo.id] || []
+                const saldoPendientePrestamo = cuotasPrestamo.reduce(
+                  (acc, cuota) => acc + Number(cuota.saldo_pendiente || 0),
+                  0
+                )
+                const proximaCuota = cuotasPrestamo[0]
 
                 return (
-                  <TouchableOpacity
+                  <View
                     key={prestamo.id}
                     style={[
                       styles.selectCard,
+                      styles.loanCardCompact,
                       seleccionado && styles.selectCardActive,
                     ]}
-                    onPress={() => {
-                      setPrestamoSeleccionado(prestamo)
-                      setCuotaSeleccionada(null)
-                      setMonto('')
-                    }}
                   >
-                    <Text style={styles.selectName}>
-                      {prestamo.modalidad === 'diario'
-                        ? 'Préstamo diario'
-                        : 'Préstamo mensual'}
-                    </Text>
-                    <Text style={styles.selectMeta}>
-                      Total préstamo: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}
-                    </Text>
-                    <Text style={styles.selectMeta}>
-                      Fecha límite: {formatearFecha(prestamo.fecha_limite)}
-                    </Text>
-                    <Text style={styles.selectMeta}>
-                      Estado: {prestamo.estado || 'activo'}
-                    </Text>
-                  </TouchableOpacity>
+                    <View style={styles.loanHeaderRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.selectName}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
+                        <Text style={styles.selectMeta}>
+                          Saldo pendiente: {formatearMoneda(saldoPendientePrestamo)}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Próxima cuota pendiente:{' '}
+                          {proximaCuota
+                            ? `#${proximaCuota.numero_cuota} · ${formatearFecha(proximaCuota.fecha_vencimiento)}`
+                            : 'Sin cuotas pendientes'}
+                        </Text>
+                        <Text style={styles.selectMeta}>
+                          Estado: {prestamo.estado || 'activo'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.compactActionButton}
+                      onPress={() => {
+                        const siguienteExpandido = expandido ? null : prestamo.id
+                        setPrestamoExpandidoId(siguienteExpandido)
+                        setPrestamoSeleccionado(prestamo)
+                        setCuotaSeleccionada(null)
+                        setMonto('')
+                        if (!expandido) {
+                          void cargarCuotasPrestamo(prestamo.id)
+                        }
+                      }}
+                    >
+                      <Text style={styles.compactActionButtonText}>
+                        {expandido ? 'Ocultar cuotas' : 'Ver cuotas'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {expandido && (
+                      <View style={styles.compactQuotaList}>
+                        {cuotasFiltradas.length === 0 && (
+                          <Text style={styles.emptyText}>
+                            Este préstamo no tiene cuotas pendientes para mostrar.
+                          </Text>
+                        )}
+                        {(mostrarTodasCuotas ? cuotasFiltradas : cuotasFiltradas.slice(0, 5)).map((cuota) => {
+                          const selected = cuotaSeleccionada?.id === cuota.id
+                          return (
+                            <View
+                              key={cuota.id}
+                              style={[styles.compactQuotaCard, selected && styles.selectCardActive]}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.compactQuotaTitle}>
+                                  Cuota #{cuota.numero_cuota} · {cuota.estado || 'pendiente'}
+                                </Text>
+                                <Text style={styles.selectMeta}>
+                                  Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}
+                                </Text>
+                                <Text style={styles.selectMeta}>
+                                  Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                style={styles.compactActionButton}
+                                onPress={() => {
+                                  setCuotaSeleccionada(cuota)
+                                  setPrestamoSeleccionado(prestamo)
+                                  setPrestamoExpandidoId(null)
+                                  setMostrarTodasCuotas(false)
+                                  requestAnimationFrame(() => {
+                                    scrollRef.current?.scrollTo({
+                                      y: Math.max(0, paymentFormYRef.current - 24),
+                                      animated: true,
+                                    })
+                                  })
+                                }}
+                              >
+                                <Text style={styles.compactActionButtonText}>Seleccionar cuota</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )
+                        })}
+
+                        {cuotasFiltradas.length > 5 && (
+                          <TouchableOpacity
+                            style={styles.changeButton}
+                            onPress={() => setMostrarTodasCuotas((prev) => !prev)}
+                          >
+                            <Text style={styles.changeButtonText}>
+                              {mostrarTodasCuotas
+                                ? 'Ver menos cuotas'
+                                : `Ver ${cuotasFiltradas.length - 5} cuotas más`}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                  </View>
                 )
               })}
             </View>
           )}
 
-          {prestamoSeleccionado && (
-            <>
-              <Text style={styles.label}>Paso 3 · Seleccioná una cuota</Text>
-
-              {cuotas.length > 0 && (
-                <View style={styles.listBox}>
-                  {(mostrarTodasCuotas ? cuotas : cuotas.slice(0, 6)).map((cuota) => {
-                    const selected = cuotaSeleccionada?.id === cuota.id
-                    return (
-                      <TouchableOpacity
-                        key={cuota.id}
-                        style={[styles.selectCard, selected && styles.selectCardActive]}
-                        onPress={() => setCuotaSeleccionada(cuota)}
-                      >
-                        <Text style={styles.selectName}>Cuota #{cuota.numero_cuota}</Text>
-                        <Text style={styles.selectMeta}>
-                          Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Saldo pendiente: {formatearMoneda(Number(cuota.saldo_pendiente || 0))}
-                        </Text>
-                        <Text style={styles.selectMeta}>Estado: {cuota.estado || 'pendiente'}</Text>
-                      </TouchableOpacity>
-                    )
-                  })}
-
-                  {cuotas.length > 6 && (
-                    <TouchableOpacity
-                      style={styles.changeButton}
-                      onPress={() => setMostrarTodasCuotas((prev) => !prev)}
-                    >
-                      <Text style={styles.changeButtonText}>
-                        {mostrarTodasCuotas ? 'Ver menos cuotas' : `Ver ${cuotas.length - 6} cuotas más`}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              <Text style={styles.label}>Paso 4 · Resumen de cuota</Text>
-
-              {!cuotaSeleccionada ? (
-                <Text style={styles.emptyText}>Este préstamo no tiene cuotas pendientes.</Text>
-              ) : (
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoName}>Cuota #{cuotaSeleccionada.numero_cuota}</Text>
-                  <Text style={styles.infoMeta}>Vence: {formatearFecha(cuotaSeleccionada.fecha_vencimiento)}</Text>
-                  <Text style={styles.infoMeta}>Monto cuota: {formatearMoneda(Number(cuotaSeleccionada.monto_cuota || 0))}</Text>
-                  <Text style={styles.infoMeta}>Saldo pendiente: {formatearMoneda(Number(cuotaSeleccionada.saldo_pendiente || 0))}</Text>
-                  <Text style={styles.infoMeta}>Estado: {cuotaSeleccionada.estado || 'pendiente'}</Text>
-                </View>
-              )}
-            </>
-          )}
-
           {cuotaSeleccionada && (
-            <>
+            <View
+              onLayout={(event) => {
+                paymentFormYRef.current = event.nativeEvent.layout.y
+              }}
+            >
+              <Text style={styles.label}>Paso 3 · Resumen de cuota</Text>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoName}>
+                  Pagando cuota #{cuotaSeleccionada.numero_cuota} del préstamo #{prestamoSeleccionado?.id.slice(0, 8)}
+                </Text>
+                <Text style={styles.infoMeta}>Vence: {formatearFecha(cuotaSeleccionada.fecha_vencimiento)}</Text>
+                <Text style={styles.infoMeta}>Monto cuota: {formatearMoneda(Number(cuotaSeleccionada.monto_cuota || 0))}</Text>
+                <Text style={styles.infoMeta}>Saldo pendiente: {formatearMoneda(Number(cuotaSeleccionada.saldo_pendiente || 0))}</Text>
+                <Text style={styles.infoMeta}>Estado: {cuotaSeleccionada.estado || 'pendiente'}</Text>
+              </View>
+
               <Text style={styles.label}>Paso 5 · Método de pago</Text>
 
               <View style={styles.methodsRow}>
@@ -1252,7 +1382,7 @@ export default function CargarPago() {
                   {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
                 </Text>
               </TouchableOpacity>
-            </>
+            </View>
           )}
         </>
       )}
@@ -1417,6 +1547,47 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
     borderRadius: 16,
     padding: 14,
+  },
+  loanCardCompact: {
+    padding: 12,
+  },
+  loanHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  compactQuotaList: {
+    marginTop: 10,
+    gap: 8,
+  },
+  compactQuotaCard: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  compactQuotaTitle: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  compactActionButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: '#1D4ED8',
+  },
+  compactActionButtonText: {
+    color: '#DBEAFE',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   selectCardActive: {
