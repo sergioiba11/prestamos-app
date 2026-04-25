@@ -58,6 +58,7 @@ type Cuota = {
 
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
+type AccionSobrante = 'dar_vuelto' | 'aplicar_sobrante'
 
 type MercadoPagoEstado = {
   connected: boolean
@@ -73,7 +74,15 @@ type RegistrarPagoResponse = {
   error?: string
   detalle?: string
   pago?: any
-  cuotas_impactadas?: number[]
+  cuotas_impactadas?: Array<{
+    cuota_id: string
+    numero_cuota: number
+    saldo_previo: number
+    monto_aplicado: number
+    saldo_posterior: number
+    estado_resultante: string
+  }> | number[]
+  cuotas_numeros_impactados?: number[]
   estado_comprobante?: string
   detalle_aplicacion?: Array<{
     cuota_id: string
@@ -85,8 +94,11 @@ type RegistrarPagoResponse = {
   }>
   total_aplicado?: number
   monto_ingresado?: number
+  monto_recibido?: number
+  monto_aplicado?: number
   vuelto?: number
   saldo_restante?: number
+  saldo_restante_prestamo?: number
   cuota_actualizada?: {
     cuota_id: string
     numero_cuota: number
@@ -268,6 +280,7 @@ export default function CargarPago() {
 
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
+  const [accionSobrante, setAccionSobrante] = useState<AccionSobrante>('dar_vuelto')
   const [comprobante, setComprobante] = useState('')
   const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
     connected: false,
@@ -500,15 +513,36 @@ export default function CargarPago() {
   }, [clientes, busquedaDebounced])
 
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
+  const deudaDesdeCuotaSeleccionada = useMemo(() => {
+    if (!cuotaSeleccionada?.id) return 0
+    const index = cuotas.findIndex((cuota) => cuota.id === cuotaSeleccionada.id)
+    if (index === -1) return deudaActual
+    return cuotas
+      .slice(index)
+      .reduce((acc, cuota) => acc + Number(cuota.saldo_pendiente || 0), 0)
+  }, [cuotaSeleccionada?.id, cuotas, deudaActual])
   const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
   const montoNormalizado = metodo === 'transferencia'
     ? transferenciaMontoAutomatico
     : textoAMonto(monto)
-  const montoAplicado = Math.min(montoNormalizado, deudaActual)
-  const vuelto = Math.max(0, montoNormalizado - deudaActual)
-  const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicado)
+  const mostrarOpcionesSobrante =
+    metodo === 'efectivo' &&
+    Boolean(cuotaSeleccionada?.id) &&
+    montoNormalizado > deudaActual
+  const limiteAplicacion = metodo === 'efectivo'
+    ? (mostrarOpcionesSobrante && accionSobrante === 'dar_vuelto'
+      ? deudaActual
+      : deudaDesdeCuotaSeleccionada)
+    : deudaActual
+  const montoAplicado = Math.min(montoNormalizado, Math.max(0, limiteAplicacion))
+  const vuelto = metodo === 'efectivo' ? Math.max(0, montoNormalizado - montoAplicado) : 0
+  const montoAplicadoCuotaSeleccionada = Math.min(montoNormalizado, deudaActual)
+  const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicadoCuotaSeleccionada)
   const cuotaPendienteValida = Boolean(cuotaSeleccionada?.id) && deudaActual > 0
   const mpDisponible = mpEstado.connected
+  const aplicarAMultiples = metodo === 'efectivo'
+    ? !mostrarOpcionesSobrante || accionSobrante === 'aplicar_sobrante'
+    : true
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -536,6 +570,7 @@ export default function CargarPago() {
     setBusqueda('')
     setMonto('')
     setMetodo('efectivo')
+    setAccionSobrante('dar_vuelto')
     setComprobante('')
     setMpCheckout(null)
   }
@@ -701,7 +736,8 @@ export default function CargarPago() {
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
           metodo === 'mp' ? mpData?.preference_id || null : null,
-        aplicar_a_multiples: true,
+        aplicar_a_multiples: aplicarAMultiples,
+        sobrante_accion: metodo === 'efectivo' ? accionSobrante : null,
       }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
@@ -779,10 +815,27 @@ export default function CargarPago() {
         return
       }
 
-      const saldoRestantePrestamo = Number(json?.saldo_restante || 0)
+      const saldoRestantePrestamo = Number(
+        json?.saldo_restante_prestamo ?? json?.saldo_restante ?? 0
+      )
       const saldoRestanteCuota = Number(
         json?.cuota_actualizada?.saldo_despues ?? saldoLuegoDelPagoCuota
       )
+      const montoAplicadoFinal = Number(json?.monto_aplicado ?? json?.total_aplicado ?? montoAplicado)
+      const montoRecibidoFinal = Number(json?.monto_recibido ?? json?.monto_ingresado ?? montoNormalizado)
+      const vueltoFinal = Number(json?.vuelto ?? vuelto)
+      const cuotasImpactadasDetalle = Array.isArray(json?.cuotas_impactadas_detalle)
+        ? json.cuotas_impactadas_detalle
+        : Array.isArray(json?.detalle_aplicacion)
+          ? json.detalle_aplicacion
+          : Array.isArray(json?.cuotas_impactadas)
+            ? json.cuotas_impactadas
+            : []
+      const cuotasImpactadasNumeros = Array.isArray(json?.cuotas_numeros_impactados)
+        ? json.cuotas_numeros_impactados
+        : cuotasImpactadasDetalle
+            .map((item: any) => Number(item?.numero_cuota || 0))
+            .filter((numero: number) => Number.isFinite(numero) && numero > 0)
 
       try {
         await createSystemActivity({
@@ -797,6 +850,7 @@ export default function CargarPago() {
             cliente_id: clienteSeleccionado.id,
             prestamo_id: prestamoSeleccionado.id,
             monto: Number(montoAplicado.toFixed(2)),
+            monto_recibido: Number(montoRecibidoFinal.toFixed(2)),
             metodo,
             route: '/actividad',
           },
@@ -814,9 +868,9 @@ export default function CargarPago() {
         pathname: '/pago-aprobado',
         params: {
           id: String(json.pago.id),
-          monto: String(Number(montoAplicado.toFixed(2))),
-          monto_ingresado: String(Number(montoNormalizado.toFixed(2))),
-          vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
+          monto: String(Number(montoAplicadoFinal.toFixed(2))),
+          monto_ingresado: String(Number(montoRecibidoFinal.toFixed(2))),
+          vuelto: String(Number(vueltoFinal).toFixed(2)),
           monto_cuota: String(Number(cuotaSeleccionada.monto_cuota ?? montoAplicado)),
           metodo,
           fecha: new Date().toLocaleString('es-AR'),
@@ -824,8 +878,8 @@ export default function CargarPago() {
           saldo_restante_cuota: String(saldoRestanteCuota),
           cuota_id: cuotaSeleccionada.id,
           numero_cuota: String(cuotaSeleccionada.numero_cuota),
-          cuotas_impactadas: JSON.stringify(json?.cuotas_impactadas || []),
-          cuotas_impactadas_detalle: JSON.stringify(json?.detalle_aplicacion || []),
+          cuotas_impactadas: JSON.stringify(cuotasImpactadasNumeros),
+          cuotas_impactadas_detalle: JSON.stringify(cuotasImpactadasDetalle),
           estado_comprobante: String(json?.estado_comprobante || 'COMPLETO'),
           proxima_cuota: json?.proxima_cuota?.numero_cuota
             ? String(json.proxima_cuota.numero_cuota)
@@ -1126,6 +1180,41 @@ export default function CargarPago() {
                 </Text>
               )}
 
+              {mostrarOpcionesSobrante && (
+                <View style={styles.sobranteCard}>
+                  <Text style={styles.sobranteTitle}>Sobrante detectado</Text>
+                  <Text style={styles.sobranteText}>
+                    Recibiste más dinero que el saldo de esta cuota.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sobranteOption,
+                      accionSobrante === 'dar_vuelto' && styles.sobranteOptionActive,
+                    ]}
+                    onPress={() => setAccionSobrante('dar_vuelto')}
+                  >
+                    <Text style={styles.sobranteOptionTitle}>Dar vuelto</Text>
+                    <Text style={styles.sobranteOptionText}>
+                      Aplica solo {formatearMoneda(deudaActual)} a la cuota #{cuotaSeleccionada.numero_cuota} y devuelve {formatearMoneda(vuelto)}.
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sobranteOption,
+                      accionSobrante === 'aplicar_sobrante' && styles.sobranteOptionActive,
+                    ]}
+                    onPress={() => setAccionSobrante('aplicar_sobrante')}
+                  >
+                    <Text style={styles.sobranteOptionTitle}>Aplicar sobrante a próximas cuotas</Text>
+                    <Text style={styles.sobranteOptionText}>
+                      Se aplicará {formatearMoneda(montoAplicado)} desde la cuota seleccionada hacia adelante. Vuelto: {formatearMoneda(vuelto)}.
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <Text style={styles.helperText}>
                 Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
                 {formatearMoneda(deudaActual)}
@@ -1192,7 +1281,13 @@ export default function CargarPago() {
                 disabled={guardando || !cuotaPendienteValida}
               >
                 <Text style={styles.saveButtonText}>
-                  {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
+                  {guardando
+                    ? 'Guardando...'
+                    : mostrarOpcionesSobrante
+                      ? accionSobrante === 'dar_vuelto'
+                        ? 'Registrar pago y dar vuelto'
+                        : 'Registrar pago aplicando sobrante'
+                      : 'Registrar pago de cuota'}
                 </Text>
               </TouchableOpacity>
             </>
@@ -1257,6 +1352,9 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 30,
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
   },
 
   loadingContainer: {
@@ -1424,6 +1522,53 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 8,
     fontSize: 13,
+  },
+
+  sobranteCard: {
+    marginTop: 12,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 16,
+    padding: 12,
+    gap: 8,
+  },
+
+  sobranteTitle: {
+    color: '#FDE68A',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  sobranteText: {
+    color: '#CBD5E1',
+    fontSize: 13,
+  },
+
+  sobranteOption: {
+    backgroundColor: '#020817',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 10,
+    gap: 3,
+  },
+
+  sobranteOptionActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#172554',
+  },
+
+  sobranteOptionTitle: {
+    color: '#E2E8F0',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+
+  sobranteOptionText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 17,
   },
 
   methodsRow: {

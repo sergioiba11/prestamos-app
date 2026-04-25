@@ -492,7 +492,11 @@ Deno.serve(async (req) => {
     const montoEntregado = redondear(
       Number(body?.monto_entregado ?? body?.monto_ingresado ?? body?.monto)
     )
-    const aplicarAMultiples = body?.aplicar_a_multiples !== false
+    const accionSobrante = String(body?.sobrante_accion || '').trim().toLowerCase()
+    const aplicarAMultiples =
+      body?.aplicar_a_multiples !== undefined
+        ? body?.aplicar_a_multiples !== false
+        : accionSobrante !== 'dar_vuelto'
     console.log('[registrar-pago] metodo recibido:', metodo)
 
     if (!prestamo_id || !cliente_id || !metodo || !cuota_id_inicial) {
@@ -572,7 +576,7 @@ Deno.serve(async (req) => {
         0
       )
     )
-    if (montoEntregado > deudaPendienteTotal + 0.009) {
+    if (metodo !== 'efectivo' && montoEntregado > deudaPendienteTotal + 0.009) {
       return jsonResponse(
         { error: `El monto supera la deuda pendiente (${deudaPendienteTotal})` },
         400
@@ -1020,10 +1024,19 @@ Deno.serve(async (req) => {
     const successResponse = {
       ok: true,
       pago,
+      pago_id: pago.id,
       estado: 'aprobado',
       impactado: true,
       redirect_to: `/pago-aprobado?id=${pago.id}`,
-      cuotas_impactadas: cuotasImpactadas,
+      cuotas_impactadas: detalleAplicacion.map((item) => ({
+        cuota_id: item.cuota_id,
+        numero_cuota: item.numero_cuota,
+        saldo_previo: item.saldo_cuota_antes,
+        monto_aplicado: item.monto_aplicado,
+        saldo_posterior: item.saldo_cuota_despues,
+        estado_resultante: item.estado_resultante,
+      })),
+      cuotas_numeros_impactados: cuotasImpactadas,
       cuotas_impactadas_detalle: detalleAplicacion.map((item) => ({
         numero_cuota: item.numero_cuota,
         estado: item.estado_resultante,
@@ -1034,10 +1047,13 @@ Deno.serve(async (req) => {
       detalle_aplicacion: detalleAplicacion,
       estado_comprobante: estadoComprobante,
       total_aplicado: totalAplicado,
+      monto_aplicado: totalAplicado,
       monto_ingresado: montoEntregado,
+      monto_recibido: montoEntregado,
       monto_entregado: montoEntregado,
       vuelto,
       saldo_restante: saldoRestante,
+      saldo_restante_prestamo: saldoRestante,
       cuota_actualizada: cuotaActualizada,
       proxima_cuota: proximaCuota,
       prestamo_estado: nuevoEstadoPrestamo,

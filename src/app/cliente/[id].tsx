@@ -14,6 +14,27 @@ function date(value?: string | null) {
   return y && m && d ? `${d}/${m}/${y}` : String(value)
 }
 
+function loanBadge(estado?: string | null, saldoPendiente?: number) {
+  const estadoNormalizado = String(estado || '').toLowerCase()
+  const saldo = Number(saldoPendiente || 0)
+  const saldoSaldado = Number.isFinite(saldo) && saldo <= 0
+
+  if (saldoSaldado) {
+    return { label: 'Saldado', bg: '#052E16', border: '#166534', text: '#86EFAC', kind: 'saldado' as const }
+  }
+
+  if (estadoNormalizado === 'rechazado' || estadoNormalizado === 'cancelado') {
+    return { label: 'Rechazado', bg: '#450A0A', border: '#991B1B', text: '#FCA5A5', kind: 'rechazado' as const }
+  }
+
+  if (estadoNormalizado === 'activo' && saldo > 0) {
+    return { label: 'Activo', bg: '#172554', border: '#1D4ED8', text: '#93C5FD', kind: 'activo' as const }
+  }
+
+  const fallback = badgePrestamo(estado)
+  return { ...fallback, kind: 'otro' as const }
+}
+
 export default function ClienteDetalleUnificadoScreen() {
   const params = useLocalSearchParams()
   const clienteId = useMemo(() => {
@@ -31,6 +52,34 @@ export default function ClienteDetalleUnificadoScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [detalle, setDetalle] = useState<ClienteDetalleConsolidado | null>(null)
+
+  const prestamosActivosReales = useMemo(() => {
+    if (!detalle) return []
+    return detalle.prestamosActivos.filter((prestamo) => loanBadge(prestamo.estado, prestamo.saldoPendiente).kind === 'activo')
+  }, [detalle])
+
+  const historialPrestamosConSaldados = useMemo(() => {
+    if (!detalle) return []
+    const merged = [...detalle.historialPrestamos]
+    const ids = new Set(merged.map((item) => item.id))
+    for (const prestamo of detalle.prestamosActivos) {
+      const kind = loanBadge(prestamo.estado, prestamo.saldoPendiente).kind
+      if (kind !== 'activo' && !ids.has(prestamo.id)) {
+        merged.push(prestamo)
+        ids.add(prestamo.id)
+      }
+    }
+    return merged
+  }, [detalle])
+
+  const pagosOrdenados = useMemo(() => {
+    if (!detalle) return []
+    return [...detalle.pagosCliente].sort((a, b) => {
+      const aTime = new Date(a.createdAt || '').getTime()
+      const bTime = new Date(b.createdAt || '').getTime()
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0)
+    })
+  }, [detalle])
 
   const cargar = useCallback(async () => {
     try {
@@ -110,34 +159,47 @@ export default function ClienteDetalleUnificadoScreen() {
         <Text style={styles.backBtnText}>← Volver</Text>
       </TouchableOpacity>
 
-      <View style={styles.card}>
-        <Text style={styles.title}>Detalle de cliente</Text>
-        <Text style={styles.meta}>Nombre: {detalle.cliente.nombre}</Text>
-        <Text style={styles.meta}>DNI: {detalle.cliente.dni}</Text>
-        <Text style={styles.meta}>Teléfono: {detalle.cliente.telefono}</Text>
-        <Text style={styles.meta}>Email: {detalle.cliente.email}</Text>
-        <Text style={styles.meta}>Préstamos activos (panel): {detalle.cliente.cantidadPrestamosActivos}</Text>
-        <Text style={styles.meta}>Préstamos activos (detalle): {detalle.prestamosActivos.length}</Text>
+      <View style={styles.clientCard}>
+        <Text style={styles.title}>Cliente</Text>
+        <Text style={styles.clientName}>{detalle.cliente.nombre || 'Sin nombre'}</Text>
+        <View style={styles.clientGrid}>
+          <View style={styles.clientCell}>
+            <Text style={styles.clientLabel}>DNI</Text>
+            <Text style={styles.clientValue}>{detalle.cliente.dni || 'No registrado'}</Text>
+          </View>
+          <View style={styles.clientCell}>
+            <Text style={styles.clientLabel}>Teléfono</Text>
+            <Text style={styles.clientValue}>{detalle.cliente.telefono || 'No registrado'}</Text>
+          </View>
+          <View style={styles.clientCell}>
+            <Text style={styles.clientLabel}>Email</Text>
+            <Text style={styles.clientValue}>{detalle.cliente.email || 'No registrado'}</Text>
+          </View>
+          <View style={styles.clientCell}>
+            <Text style={styles.clientLabel}>Activos reales</Text>
+            <Text style={styles.clientValue}>{prestamosActivosReales.length}</Text>
+          </View>
+        </View>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Préstamos activos reales</Text>
-        {detalle.prestamosActivos.length === 0 ? (
+        {prestamosActivosReales.length === 0 ? (
           <Text style={styles.empty}>No hay préstamos activos para este cliente.</Text>
         ) : (
-          detalle.prestamosActivos.map((prestamo) => {
-            const badge = badgePrestamo(prestamo.estado)
+          prestamosActivosReales.map((prestamo) => {
+            const badge = loanBadge(prestamo.estado, prestamo.saldoPendiente)
             return (
-              <View key={prestamo.id} style={styles.item}>
-                <Text style={styles.itemTitle}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
-                <Text style={styles.itemMeta}>Estado: {prestamo.estado}</Text>
-                <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)}</Text>
-                <Text style={styles.itemMeta}>Total: {money(prestamo.totalAPagar)}</Text>
+              <View key={prestamo.id} style={styles.itemCard}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.itemTitle}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
+                  <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                  </View>
+                </View>
+                <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)} · Total: {money(prestamo.totalAPagar)}</Text>
                 <Text style={styles.itemMeta}>Saldo pendiente: {money(prestamo.saldoPendiente)}</Text>
                 <Text style={styles.itemMeta}>Inicio: {date(prestamo.fechaInicio)} · Límite: {date(prestamo.fechaLimite)}</Text>
-                <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
-                  <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                </View>
               </View>
             )
           })
@@ -146,34 +208,51 @@ export default function ClienteDetalleUnificadoScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Historial de préstamos</Text>
-        {detalle.historialPrestamos.length === 0 ? (
+        {historialPrestamosConSaldados.length === 0 ? (
           <Text style={styles.empty}>Sin préstamos registrados.</Text>
         ) : (
-          detalle.historialPrestamos.map((prestamo) => (
-            <View key={prestamo.id} style={styles.item}>
-              <Text style={styles.itemTitle}>#{prestamo.id.slice(0, 8)} · {prestamo.estado}</Text>
-              <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)} · Total: {money(prestamo.totalAPagar)}</Text>
-              <Text style={styles.itemMeta}>Saldo: {money(prestamo.saldoPendiente)} · Inicio: {date(prestamo.fechaInicio)}</Text>
-            </View>
-          ))
+          historialPrestamosConSaldados.map((prestamo) => {
+            const badge = loanBadge(prestamo.estado, prestamo.saldoPendiente)
+            return (
+              <View key={prestamo.id} style={styles.itemCard}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.itemTitle}>#{prestamo.id.slice(0, 8)}</Text>
+                  <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                  </View>
+                </View>
+                <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)} · Total: {money(prestamo.totalAPagar)}</Text>
+                <Text style={styles.itemMeta}>Saldo: {money(prestamo.saldoPendiente)} · Inicio: {date(prestamo.fechaInicio)}</Text>
+              </View>
+            )
+          })
         )}
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Pagos del cliente</Text>
-        {detalle.pagosCliente.length === 0 ? (
+        {pagosOrdenados.length === 0 ? (
           <Text style={styles.empty}>Sin pagos registrados.</Text>
         ) : (
-          detalle.pagosCliente.map((pago) => {
+          pagosOrdenados.map((pago) => {
             const badge = badgePago(pago.estado)
+            const prestamoShort = pago.prestamoId ? `#${String(pago.prestamoId).slice(0, 8)}` : '—'
+            const isRechazado = String(pago.estado || '').toLowerCase() === 'rechazado'
+            const motivo = String(pago.observacionRevision || '').trim()
             return (
-              <View key={pago.id} style={styles.item}>
-                <Text style={styles.itemTitle}>{date(pago.createdAt)} · {money(pago.monto)}</Text>
-                <Text style={styles.itemMeta}>Método: {pago.metodo || '—'} · Estado: {pago.estado || '—'}</Text>
-                <Text style={styles.itemMeta}>Préstamo: {pago.prestamoId || '—'}</Text>
-                <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
-                  <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+              <View key={pago.id} style={styles.itemCard}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.itemTitle}>{date(pago.createdAt)}</Text>
+                  <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                    <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                  </View>
                 </View>
+                <Text style={styles.itemAmount}>{money(pago.monto)}</Text>
+                <Text style={styles.itemMeta}>Método: {pago.metodo || '—'}</Text>
+                <Text style={styles.itemMeta}>Préstamo: {prestamoShort}</Text>
+                {isRechazado && motivo ? (
+                  <Text style={styles.rejectReason}>Motivo de rechazo: {motivo}</Text>
+                ) : null}
               </View>
             )
           })
@@ -181,20 +260,20 @@ export default function ClienteDetalleUnificadoScreen() {
       </View>
 
       <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push(`/cliente/${detalle.cliente!.clienteId}/editar` as any)}>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push(`/cliente/${detalle.cliente.clienteId}/editar` as any)}>
           <Text style={styles.primaryText}>Editar cliente</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => router.push({ pathname: '/cargar-pago', params: { cliente_id: detalle.cliente!.clienteId } } as any)}
+          style={styles.secondaryBlueBtn}
+          onPress={() => router.push({ pathname: '/cargar-pago', params: { cliente_id: detalle.cliente.clienteId } } as any)}
         >
-          <Text style={styles.primaryText}>Cargar pago</Text>
+          <Text style={styles.secondaryBlueText}>Cargar pago</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => router.push({ pathname: '/historial-prestamos', params: { cliente_id: detalle.cliente!.clienteId } } as any)}
+          style={styles.ghostBtn}
+          onPress={() => router.push({ pathname: '/historial-prestamos', params: { cliente_id: detalle.cliente.clienteId } } as any)}
         >
-          <Text style={styles.secondaryText}>Ver historial</Text>
+          <Text style={styles.ghostText}>Ver historial</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -203,7 +282,7 @@ export default function ClienteDetalleUnificadoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#020817' },
-  content: { padding: 16, gap: 10, paddingBottom: 26 },
+  content: { padding: 16, gap: 12, paddingBottom: 26, width: '100%', maxWidth: 960, alignSelf: 'center' },
   center: { flex: 1, backgroundColor: '#020817', alignItems: 'center', justifyContent: 'center', padding: 20 },
   loading: { color: '#94A3B8', marginTop: 10 },
   error: { color: '#FCA5A5', textAlign: 'center' },
@@ -211,19 +290,30 @@ const styles = StyleSheet.create({
   retryText: { color: '#fff', fontWeight: '700' },
   backBtn: { alignSelf: 'flex-start', borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#0B1220' },
   backBtnText: { color: '#E2E8F0', fontWeight: '700' },
+  clientCard: { backgroundColor: '#0B1220', borderWidth: 1, borderColor: '#1E293B', borderRadius: 16, padding: 16, gap: 8 },
   card: { backgroundColor: '#0B1220', borderWidth: 1, borderColor: '#1E293B', borderRadius: 14, padding: 14, gap: 6 },
-  title: { color: '#F8FAFC', fontWeight: '800', fontSize: 22 },
+  title: { color: '#93C5FD', fontWeight: '800', fontSize: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
+  clientName: { color: '#F8FAFC', fontWeight: '900', fontSize: 24 },
+  clientGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  clientCell: { backgroundColor: '#020817', borderColor: '#1E293B', borderWidth: 1, borderRadius: 12, padding: 10, minWidth: 150, flexGrow: 1 },
+  clientLabel: { color: '#94A3B8', fontSize: 11, textTransform: 'uppercase', fontWeight: '700' },
+  clientValue: { color: '#E2E8F0', fontSize: 14, fontWeight: '700', marginTop: 2 },
   sectionTitle: { color: '#DBEAFE', fontWeight: '800', fontSize: 16, marginBottom: 4 },
   meta: { color: '#CBD5E1' },
   empty: { color: '#94A3B8' },
-  item: { borderTopWidth: 1, borderTopColor: '#1E293B', paddingTop: 10, marginTop: 6, gap: 3 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  itemCard: { borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#020817', borderRadius: 12, padding: 12, marginTop: 6, gap: 4 },
   itemTitle: { color: '#F8FAFC', fontWeight: '700' },
+  itemAmount: { color: '#93C5FD', fontWeight: '900', fontSize: 22, marginTop: 2, marginBottom: 2 },
   itemMeta: { color: '#94A3B8' },
+  rejectReason: { color: '#FCA5A5', fontWeight: '700', marginTop: 4 },
   badge: { borderWidth: 1, borderRadius: 999, alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4, marginTop: 6 },
   badgeText: { fontWeight: '700', fontSize: 11, textTransform: 'capitalize' },
   actionsRow: { gap: 8, marginTop: 2 },
-  primaryBtn: { borderRadius: 10, backgroundColor: '#2563EB', paddingVertical: 12, alignItems: 'center' },
+  primaryBtn: { borderRadius: 12, backgroundColor: '#2563EB', paddingVertical: 12, alignItems: 'center' },
   primaryText: { color: '#fff', fontWeight: '800' },
-  secondaryBtn: { borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#0B1220', paddingVertical: 12, alignItems: 'center' },
-  secondaryText: { color: '#E2E8F0', fontWeight: '800' },
+  secondaryBlueBtn: { borderRadius: 12, borderWidth: 1, borderColor: '#1D4ED8', backgroundColor: '#1E3A8A', paddingVertical: 12, alignItems: 'center' },
+  secondaryBlueText: { color: '#DBEAFE', fontWeight: '800' },
+  ghostBtn: { borderRadius: 12, borderWidth: 1, borderColor: '#334155', backgroundColor: '#0B1220', paddingVertical: 12, alignItems: 'center' },
+  ghostText: { color: '#E2E8F0', fontWeight: '800' },
 })
