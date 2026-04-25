@@ -58,6 +58,7 @@ type Cuota = {
 
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
+type OpcionSobranteEfectivo = 'dar_vuelto' | 'aplicar_proximas'
 
 type MercadoPagoEstado = {
   connected: boolean
@@ -269,6 +270,7 @@ export default function CargarPago() {
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
   const [comprobante, setComprobante] = useState('')
+  const [opcionSobranteEfectivo, setOpcionSobranteEfectivo] = useState<OpcionSobranteEfectivo>('aplicar_proximas')
   const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
     connected: false,
     aliasCuenta: null,
@@ -509,6 +511,10 @@ export default function CargarPago() {
   const saldoLuegoDelPagoCuota = Math.max(0, deudaActual - montoAplicado)
   const cuotaPendienteValida = Boolean(cuotaSeleccionada?.id) && deudaActual > 0
   const mpDisponible = mpEstado.connected
+  const haySobranteEfectivo = metodo === 'efectivo' && deudaActual > 0 && montoNormalizado > deudaActual + 0.009
+  const aplicarAMultiples = haySobranteEfectivo
+    ? opcionSobranteEfectivo === 'aplicar_proximas'
+    : true
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -525,6 +531,13 @@ export default function CargarPago() {
       setMonto(formatearMonedaInput(String(transferenciaMontoAutomatico)))
     }
   }, [metodo, cuotaSeleccionada, transferenciaMontoAutomatico])
+
+
+  useEffect(() => {
+    if (!haySobranteEfectivo) {
+      setOpcionSobranteEfectivo('aplicar_proximas')
+    }
+  }, [haySobranteEfectivo])
 
   const limpiarTodo = () => {
     setClienteSeleccionado(null)
@@ -701,7 +714,7 @@ export default function CargarPago() {
         comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
           metodo === 'mp' ? mpData?.preference_id || null : null,
-        aplicar_a_multiples: true,
+        aplicar_a_multiples: aplicarAMultiples,
       }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
@@ -1131,6 +1144,50 @@ export default function CargarPago() {
                 {formatearMoneda(deudaActual)}
               </Text>
 
+              {haySobranteEfectivo && (
+                <View style={styles.sobranteCard}>
+                  <Text style={styles.sobranteTitle}>Sobrante detectado</Text>
+                  <Text style={styles.sobranteText}>
+                    Elegí cómo querés resolver el excedente de {formatearMoneda(vuelto)}.
+                  </Text>
+                  <View style={styles.sobranteOptions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sobranteOption,
+                        opcionSobranteEfectivo === 'dar_vuelto' && styles.sobranteOptionActive,
+                      ]}
+                      onPress={() => setOpcionSobranteEfectivo('dar_vuelto')}
+                    >
+                      <Text
+                        style={[
+                          styles.sobranteOptionText,
+                          opcionSobranteEfectivo === 'dar_vuelto' && styles.sobranteOptionTextActive,
+                        ]}
+                      >
+                        Dar vuelto
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.sobranteOption,
+                        opcionSobranteEfectivo === 'aplicar_proximas' && styles.sobranteOptionActive,
+                      ]}
+                      onPress={() => setOpcionSobranteEfectivo('aplicar_proximas')}
+                    >
+                      <Text
+                        style={[
+                          styles.sobranteOptionText,
+                          opcionSobranteEfectivo === 'aplicar_proximas' && styles.sobranteOptionTextActive,
+                        ]}
+                      >
+                        Aplicar a próximas cuotas
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {!mpDisponible ? (
                 <Text style={styles.mpDisabledHelper}>
                   Primero conectá Mercado Pago en Configuraciones
@@ -1511,6 +1568,52 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  sobranteCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    padding: 12,
+    gap: 8,
+  },
+  sobranteTitle: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sobranteText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  sobranteOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sobranteOption: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    backgroundColor: '#0F172A',
+  },
+  sobranteOptionActive: {
+    borderColor: '#22C55E',
+    backgroundColor: '#052E16',
+  },
+  sobranteOptionText: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  sobranteOptionTextActive: {
+    color: '#BBF7D0',
   },
 
   modalOverlay: {

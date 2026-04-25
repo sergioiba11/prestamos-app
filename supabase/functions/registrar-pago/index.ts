@@ -572,7 +572,8 @@ Deno.serve(async (req) => {
         0
       )
     )
-    if (montoEntregado > deudaPendienteTotal + 0.009) {
+
+    if (metodo === 'transferencia' && montoEntregado > deudaPendienteTotal + 0.009) {
       return jsonResponse(
         { error: `El monto supera la deuda pendiente (${deudaPendienteTotal})` },
         400
