@@ -196,6 +196,40 @@ function formatearFecha(fecha?: string | null) {
   return `${partes[2]}/${partes[1]}/${partes[0]}`
 }
 
+function estadoPrestamoUI(estado?: string | null) {
+  const normalizado = String(estado || 'activo').toLowerCase()
+  if (normalizado.includes('pagad') || normalizado.includes('saldad')) {
+    return { label: 'Saldado', bg: '#052E16', text: '#86EFAC', border: '#16A34A' }
+  }
+  if (normalizado.includes('atras') || normalizado.includes('mora') || normalizado.includes('venc')) {
+    return { label: 'Atrasado', bg: '#450A0A', text: '#FCA5A5', border: '#DC2626' }
+  }
+  return { label: 'Activo', bg: '#172554', text: '#BFDBFE', border: '#2563EB' }
+}
+
+function estadoCuotaUI(cuota: Cuota) {
+  const estado = String(cuota.estado || 'pendiente').toLowerCase()
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+  const fechaVenc = cuota.fecha_vencimiento ? new Date(cuota.fecha_vencimiento) : null
+  const vencida = Boolean(
+    fechaVenc &&
+    fechaVenc.getTime() < hoy.getTime() &&
+    (estado === 'pendiente' || estado === 'parcial')
+  )
+
+  if (vencida) {
+    return { label: 'Vencida', bg: '#450A0A', text: '#FCA5A5', border: '#DC2626' }
+  }
+  if (estado === 'pagada') {
+    return { label: 'Pagada', bg: '#052E16', text: '#86EFAC', border: '#16A34A' }
+  }
+  if (estado === 'parcial') {
+    return { label: 'Parcial', bg: '#422006', text: '#FDE68A', border: '#CA8A04' }
+  }
+  return { label: 'Pendiente', bg: '#1E293B', text: '#CBD5E1', border: '#334155' }
+}
+
 function obtenerFunctionsUrl() {
   const baseUrl = supabaseUrl || SUPABASE_URL
   if (!baseUrl) {
@@ -601,6 +635,58 @@ export default function CargarPago() {
   const aplicarAMultiples = haySobranteEfectivo
     ? opcionSobranteEfectivo === 'aplicar_proximas'
     : true
+  const estadoPrestamoBadge = estadoPrestamoUI(prestamoSeleccionado?.estado)
+  const cuotasBasePrestamo = cuotasPorPrestamo[prestamoSeleccionado?.id || ''] || cuotas
+  const saldoRestantePrestamoActual = cuotasBasePrestamo.reduce(
+    (acc, cuota) => acc + Number(cuota.saldo_pendiente || 0),
+    0
+  )
+  const totalAPagarPrestamo = Number(prestamoSeleccionado?.total_a_pagar || 0)
+  const totalPagadoPrestamo = Math.max(0, totalAPagarPrestamo - saldoRestantePrestamoActual)
+  const proximaCuotaId = cuotasFiltradas[0]?.id
+
+  const resumenPagoEnVivo = useMemo(() => {
+    const cuotasOrdenadas = [...cuotasFiltradas].sort((a, b) => a.numero_cuota - b.numero_cuota)
+    let restante = Number(montoNormalizado || 0)
+    const aplicadas: Array<{ numero: number; monto: number; total: number }> = []
+    let parcial: { numero: number; saldo: number } | null = null
+
+    if (!cuotasOrdenadas.length || restante <= 0) {
+      return { aplicadas, parcial, saldoNuevo: saldoRestantePrestamoActual }
+    }
+
+    const cuotasARecorrer =
+      metodo === 'efectivo' && aplicarAMultiples
+        ? cuotasOrdenadas
+        : cuotasOrdenadas.filter((cuota) => cuota.id === cuotaSeleccionada?.id)
+
+    for (const cuota of cuotasARecorrer) {
+      if (restante <= 0) break
+      const saldo = Number(cuota.saldo_pendiente || 0)
+      if (saldo <= 0) continue
+      const aplicado = Math.min(restante, saldo)
+      restante -= aplicado
+      aplicadas.push({ numero: cuota.numero_cuota, monto: aplicado, total: saldo })
+      if (aplicado < saldo) {
+        parcial = { numero: cuota.numero_cuota, saldo: Number((saldo - aplicado).toFixed(2)) }
+        break
+      }
+    }
+
+    const totalAplicado = aplicadas.reduce((acc, item) => acc + item.monto, 0)
+    return {
+      aplicadas,
+      parcial,
+      saldoNuevo: Math.max(0, Number((saldoRestantePrestamoActual - totalAplicado).toFixed(2))),
+    }
+  }, [
+    cuotasFiltradas,
+    montoNormalizado,
+    saldoRestantePrestamoActual,
+    metodo,
+    aplicarAMultiples,
+    cuotaSeleccionada?.id,
+  ])
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -1014,12 +1100,23 @@ export default function CargarPago() {
         </>
       ) : (
         <>
-          <Text style={styles.label}>Paso 1 · Cliente seleccionado</Text>
-          <View style={styles.infoCard}>
-            <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
-            <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
-            <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email || 'Sin email'}</Text>
-            <Text style={styles.infoMeta}>Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}</Text>
+          <View style={styles.clientHeaderCard}>
+            <View style={styles.clientHeaderTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.clientHeaderName}>{clienteSeleccionado.nombre}</Text>
+                <Text style={styles.clientHeaderDni}>DNI: {clienteSeleccionado.dni || '—'}</Text>
+              </View>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: estadoPrestamoBadge.bg, borderColor: estadoPrestamoBadge.border },
+                ]}
+              >
+                <Text style={[styles.statusBadgeText, { color: estadoPrestamoBadge.text }]}>
+                  {estadoPrestamoBadge.label}
+                </Text>
+              </View>
+            </View>
           </View>
 
           <TouchableOpacity style={styles.changeButton} onPress={limpiarTodo}>
@@ -1096,21 +1193,39 @@ export default function CargarPago() {
                         )}
                         {(mostrarTodasCuotas ? cuotasFiltradas : cuotasFiltradas.slice(0, 5)).map((cuota) => {
                           const selected = cuotaSeleccionada?.id === cuota.id
+                          const estadoBadge = estadoCuotaUI(cuota)
+                          const proxima = cuota.id === proximaCuotaId
                           return (
                             <View
                               key={cuota.id}
-                              style={[styles.compactQuotaCard, selected && styles.selectCardActive]}
+                              style={[
+                                styles.cuotaCard,
+                                selected && styles.selectCardActive,
+                                proxima && styles.cuotaCardProxima,
+                                estadoBadge.label === 'Vencida' && styles.cuotaCardVencida,
+                              ]}
                             >
                               <View style={{ flex: 1 }}>
-                                <Text style={styles.compactQuotaTitle}>
-                                  Cuota #{cuota.numero_cuota} · {cuota.estado || 'pendiente'}
-                                </Text>
-                                <Text style={styles.selectMeta}>
-                                  Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}
-                                </Text>
-                                <Text style={styles.selectMeta}>
-                                  Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
-                                </Text>
+                                <View style={styles.cuotaCardHeader}>
+                                  <Text style={styles.compactQuotaTitle}>Cuota #{cuota.numero_cuota}</Text>
+                                  <View
+                                    style={[
+                                      styles.statusBadge,
+                                      styles.statusBadgeSmall,
+                                      {
+                                        backgroundColor: estadoBadge.bg,
+                                        borderColor: estadoBadge.border,
+                                      },
+                                    ]}
+                                  >
+                                    <Text style={[styles.statusBadgeText, { color: estadoBadge.text }]}>
+                                      {estadoBadge.label.toUpperCase()}
+                                    </Text>
+                                  </View>
+                                </View>
+                                {proxima && <Text style={styles.nextInstallmentText}>Próxima cuota</Text>}
+                                <Text style={styles.selectMeta}>Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}</Text>
+                                <Text style={styles.selectMeta}>Fecha: {formatearFecha(cuota.fecha_vencimiento)}</Text>
                               </View>
                               <TouchableOpacity
                                 style={styles.compactActionButton}
@@ -1153,13 +1268,32 @@ export default function CargarPago() {
             </View>
           )}
 
+          {prestamoSeleccionado && (
+            <View style={styles.mainSummaryCard}>
+              <Text style={styles.mainSummaryLabel}>Total a pagar</Text>
+              <Text style={styles.mainSummaryValue}>{formatearMoneda(totalAPagarPrestamo)}</Text>
+              <View style={styles.mainSummaryGrid}>
+                <View style={styles.mainSummaryMiniCard}>
+                  <Text style={styles.mainSummaryMiniLabel}>Total pagado</Text>
+                  <Text style={styles.mainSummaryMiniValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
+                </View>
+                <View style={styles.mainSummaryMiniCard}>
+                  <Text style={styles.mainSummaryMiniLabel}>Saldo restante</Text>
+                  <Text style={styles.mainSummaryMiniValueStrong}>
+                    {formatearMoneda(saldoRestantePrestamoActual)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
           {cuotaSeleccionada && (
             <View
               onLayout={(event) => {
                 paymentFormYRef.current = event.nativeEvent.layout.y
               }}
             >
-              <Text style={styles.label}>Paso 3 · Resumen de cuota</Text>
+              <Text style={styles.label}>Resumen de cuota seleccionada</Text>
               <View style={styles.infoCard}>
                 <Text style={styles.infoName}>
                   Pagando cuota #{cuotaSeleccionada.numero_cuota} del préstamo #{prestamoSeleccionado?.id.slice(0, 8)}
@@ -1170,80 +1304,58 @@ export default function CargarPago() {
                 <Text style={styles.infoMeta}>Estado: {cuotaSeleccionada.estado || 'pendiente'}</Text>
               </View>
 
-              <Text style={styles.label}>Paso 5 · Método de pago</Text>
+              <View style={styles.paymentCard}>
+                <Text style={styles.paymentCardTitle}>Registrar pago</Text>
 
-              <View style={styles.methodsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'efectivo' && styles.methodButtonActive,
-                  ]}
-                  onPress={() => setMetodo('efectivo')}
-                >
-                  <Text
+                <View style={styles.methodsRow}>
+                  <TouchableOpacity
                     style={[
-                      styles.methodButtonText,
-                      metodo === 'efectivo' && styles.methodButtonTextActive,
+                      styles.methodButton,
+                      styles.methodButtonSwitch,
+                      metodo === 'efectivo' && styles.methodButtonActive,
                     ]}
+                    onPress={() => setMetodo('efectivo')}
                   >
-                    Efectivo
-                  </Text>
-                </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.methodButtonText,
+                        metodo === 'efectivo' && styles.methodButtonTextActive,
+                      ]}
+                    >
+                      Efectivo
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'transferencia' && styles.methodButtonActive,
-                  ]}
-                  onPress={() => setMetodo('transferencia')}
-                >
-                  <Text
+                  <TouchableOpacity
                     style={[
-                      styles.methodButtonText,
-                      metodo === 'transferencia' && styles.methodButtonTextActive,
+                      styles.methodButton,
+                      styles.methodButtonSwitch,
+                      metodo === 'transferencia' && styles.methodButtonActive,
                     ]}
+                    onPress={() => setMetodo('transferencia')}
                   >
-                    Transferencia
-                  </Text>
-                </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.methodButtonText,
+                        metodo === 'transferencia' && styles.methodButtonTextActive,
+                      ]}
+                    >
+                      Transferencia
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'mp' && styles.methodButtonActive,
-                    !mpDisponible && styles.methodButtonDisabled,
-                  ]}
-                  onPress={() => {
-                    if (!mpDisponible) {
-                      Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
-                      return
-                    }
-                    setMetodo('mp')
-                  }}
-                  activeOpacity={mpDisponible ? 0.8 : 1}
-                >
-                  <Text
-                    style={[
-                      styles.methodButtonText,
-                      metodo === 'mp' && styles.methodButtonTextActive,
-                    ]}
-                  >
-                    MP
-                  </Text>
-                </TouchableOpacity>
+                <Text style={styles.labelInline}>Monto entregado</Text>
+                <TextInput
+                  value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
+                  onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
+                  placeholder="$0"
+                  placeholderTextColor="#64748B"
+                  keyboardType="decimal-pad"
+                  style={[styles.input, styles.inputLarge, metodo === 'transferencia' && styles.inputDisabled]}
+                  editable={metodo !== 'transferencia'}
+                />
               </View>
-
-              <Text style={styles.label}>Paso 6 · Monto</Text>
-
-              <TextInput
-                value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
-                onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
-                placeholder="$0"
-                placeholderTextColor="#64748B"
-                keyboardType="decimal-pad"
-                style={[styles.input, metodo === 'transferencia' && styles.inputDisabled]}
-                editable={metodo !== 'transferencia'}
-              />
 
               {(metodo === 'transferencia' || metodo === 'mp') && (
                 <>
@@ -1264,9 +1376,12 @@ export default function CargarPago() {
                 </>
               )}
               {metodo === 'efectivo' && (
-                <Text style={styles.helperText}>
-                  El pago en efectivo se acredita al instante.
-                </Text>
+                <View style={styles.liveMiniCard}>
+                  <Text style={styles.helperTextStrong}>Monto aplicado: {formatearMoneda(montoAplicado)}</Text>
+                  <Text style={[styles.helperTextStrong, vuelto > 0 && styles.greenText]}>
+                    Vuelto: {formatearMoneda(vuelto)}
+                  </Text>
+                </View>
               )}
 
               <Text style={styles.helperText}>
@@ -1325,6 +1440,10 @@ export default function CargarPago() {
               ) : null}
 
               {metodo === 'transferencia' && (
+                <Text style={styles.helperText}>El pago quedará pendiente de validación.</Text>
+              )}
+
+              {metodo === 'transferencia' && (
                 <>
                   <Text style={styles.label}>Comprobante (texto o URL opcional)</Text>
                   <TextInput
@@ -1343,50 +1462,62 @@ export default function CargarPago() {
                 </Text>
               )}
 
-              <Text style={styles.label}>Paso 7 · Resumen final</Text>
+              <Text style={styles.label}>Resumen en vivo</Text>
 
               <View style={styles.resumeCard}>
+                {resumenPagoEnVivo.aplicadas.map((item) => (
+                  <View key={item.numero} style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Cuota #{item.numero} a pagar</Text>
+                    <Text style={styles.resumeValue}>
+                      {formatearMoneda(item.monto)} / {formatearMoneda(item.total)}
+                    </Text>
+                  </View>
+                ))}
+                {!resumenPagoEnVivo.aplicadas.length && (
+                  <Text style={styles.resumeLabel}>Ingresá un monto para ver la simulación del impacto.</Text>
+                )}
+                {resumenPagoEnVivo.parcial && (
+                  <Text style={styles.helperText}>
+                    Queda parcial la cuota #{resumenPagoEnVivo.parcial.numero} con saldo de{' '}
+                    {formatearMoneda(resumenPagoEnVivo.parcial.saldo)}.
+                  </Text>
+                )}
+                <View style={styles.resumeDivider} />
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Recibido</Text>
+                  <Text style={styles.resumeLabel}>Monto ingresado</Text>
                   <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
                 </View>
-
                 <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>{metodo === 'efectivo' ? 'Se aplica a cuota' : 'Monto a acreditar (pendiente)'}</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
-                </View>
-
-                {metodo === 'efectivo' && (
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Vuelto</Text>
-                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
-                  </View>
-                )}
-
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
+                  <Text style={styles.resumeLabel}>Nuevo saldo del préstamo</Text>
                   <Text style={styles.resumeValue}>
-                    {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
+                    {formatearMoneda(resumenPagoEnVivo.saldoNuevo)}
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.label}>Paso 8 · Confirmación</Text>
-
-              <TouchableOpacity
-                style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
-                onPress={registrarPago}
-                disabled={guardando || !cuotaPendienteValida}
-              >
-                <Text style={styles.saveButtonText}>
-                  {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
+              {resumenPagoEnVivo.aplicadas.length > 1 && (
+                <Text style={styles.multiInstallmentInfo}>
+                  Este pago cubrirá múltiples cuotas automáticamente.
                 </Text>
-              </TouchableOpacity>
+              )}
             </View>
           )}
         </>
       )}
       </ScrollView>
+      {cuotaSeleccionada ? (
+        <View style={styles.bottomActionBar}>
+          <TouchableOpacity
+            style={[styles.saveButton, styles.saveButtonBottom, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+            onPress={registrarPago}
+            disabled={guardando || !cuotaPendienteValida}
+          >
+            <Text style={styles.saveButtonText}>
+              {guardando ? 'Guardando...' : 'Registrar pago'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <Modal
         visible={Boolean(mpCheckout)}
         transparent
@@ -1443,7 +1574,7 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 16,
-    paddingBottom: 30,
+    paddingBottom: 120,
   },
 
   loadingContainer: {
@@ -1507,6 +1638,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 10,
   },
+  labelInline: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 14,
+    marginBottom: 8,
+  },
 
   input: {
     backgroundColor: '#0F172A',
@@ -1569,6 +1707,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  cuotaCard: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 14,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cuotaCardProxima: {
+    borderColor: '#2563EB',
+    backgroundColor: '#111B35',
+  },
+  cuotaCardVencida: {
+    borderColor: '#DC2626',
+  },
+  cuotaCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
   compactQuotaTitle: {
     color: '#E2E8F0',
@@ -1669,6 +1830,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
+  methodButtonSwitch: {
+    flex: 1,
+    alignItems: 'center',
+  },
 
   methodButtonActive: {
     borderColor: '#2563EB',
@@ -1705,6 +1870,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 10,
   },
+  resumeDivider: {
+    height: 1,
+    backgroundColor: '#1E293B',
+    marginVertical: 4,
+  },
 
   resumeRow: {
     flexDirection: 'row',
@@ -1729,6 +1899,10 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 18,
+  },
+  saveButtonBottom: {
+    marginTop: 0,
+    width: '100%',
   },
 
   saveButtonDisabled: {
@@ -1826,5 +2000,150 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: 14,
     backgroundColor: '#fff',
+  },
+  clientHeaderCard: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 18,
+    padding: 16,
+  },
+  clientHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  clientHeaderName: {
+    color: '#F8FAFC',
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  clientHeaderDni: {
+    color: '#94A3B8',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  statusBadgeSmall: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  statusBadgeText: {
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 0.3,
+  },
+  mainSummaryCard: {
+    marginTop: 14,
+    backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 18,
+    padding: 18,
+  },
+  mainSummaryLabel: {
+    color: '#94A3B8',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  mainSummaryValue: {
+    color: '#F8FAFC',
+    fontSize: 32,
+    fontWeight: '900',
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  mainSummaryGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  mainSummaryMiniCard: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 10,
+  },
+  mainSummaryMiniLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  mainSummaryMiniValue: {
+    color: '#E2E8F0',
+    fontSize: 17,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  mainSummaryMiniValueStrong: {
+    color: '#DBEAFE',
+    fontSize: 19,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  nextInstallmentText: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  paymentCard: {
+    marginTop: 16,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 18,
+    padding: 16,
+  },
+  paymentCardTitle: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  inputLarge: {
+    fontSize: 24,
+    fontWeight: '800',
+    paddingVertical: 16,
+  },
+  liveMiniCard: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: '#0B1220',
+    gap: 6,
+  },
+  helperTextStrong: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  greenText: {
+    color: '#4ADE80',
+  },
+  multiInstallmentInfo: {
+    marginTop: 10,
+    color: '#93C5FD',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bottomActionBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(2, 8, 23, 0.95)',
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
 })
