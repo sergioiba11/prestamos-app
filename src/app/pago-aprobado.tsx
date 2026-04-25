@@ -119,6 +119,33 @@ function formatFallback(value: string, fallback = 'No informado') {
   return value.trim() ? value : fallback
 }
 
+function parseNumberParam(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string') return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDetalleParam(value: string | string[] | undefined): CuotaImpactadaDetalle[] {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (!raw || typeof raw !== 'string') return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => ({
+        numero_cuota: Number(item?.numero_cuota || 0),
+        estado: String(item?.estado_resultante || item?.estado || ''),
+        monto_aplicado: Number(item?.monto_aplicado || 0),
+        saldo_antes: Number(item?.saldo_cuota_antes ?? item?.saldo_antes ?? 0),
+        saldo_despues: Number(item?.saldo_cuota_despues ?? item?.saldo_despues ?? 0),
+      }))
+      .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
+  } catch {
+    return []
+  }
+}
+
 function normalizePhone(value: string) {
   return value.replace(/[^\d]/g, '')
 }
@@ -177,7 +204,15 @@ export default function PagoAprobado() {
   const receiptRef = useRef<View | null>(null)
 
   const montoAplicado = Number.isFinite(Number(pago?.monto)) ? Number(pago?.monto || 0) : 0
-  const montoIngresado = montoAplicado
+  const montoIngresadoParam = parseNumberParam(params.monto_ingresado)
+  const vueltoParam = parseNumberParam(params.vuelto)
+  const cuotasDetalleParam = useMemo(
+    () => parseDetalleParam(params.cuotas_impactadas_detalle),
+    [params.cuotas_impactadas_detalle]
+  )
+  const montoIngresado = Number.isFinite(Number(montoIngresadoParam))
+    ? Number(montoIngresadoParam)
+    : montoAplicado
   const saldoRestante = Number.isFinite(Number(saldoRestantePrestamoDb))
     ? Number(saldoRestantePrestamoDb || 0)
     : 0
@@ -236,10 +271,15 @@ export default function PagoAprobado() {
         : 'No informado'
 
   const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
-  const vuelto = isEfectivo ? computedVuelto : 0
+  const vuelto = isEfectivo
+    ? Number.isFinite(Number(vueltoParam))
+      ? Number(vueltoParam)
+      : computedVuelto
+    : 0
 
   const cuotasDetalleNormalizadas = useMemo(() => {
     if (cuotasImpactadasDetalleDb.length > 0) return cuotasImpactadasDetalleDb
+    if (cuotasDetalleParam.length > 0) return cuotasDetalleParam
     const cuotasBase = cuotasImpactadasDb.length > 0 ? cuotasImpactadasDb : []
     if (cuotasBase.length > 0) {
       return cuotasBase.map((numero) => ({
@@ -254,6 +294,7 @@ export default function PagoAprobado() {
   }, [
     cuotasImpactadasDetalleDb,
     cuotasImpactadasDb,
+    cuotasDetalleParam,
   ])
 
   const cantidadCuotasImpactadas = cuotasDetalleNormalizadas.length
