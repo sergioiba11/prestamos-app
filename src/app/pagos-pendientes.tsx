@@ -16,8 +16,9 @@ import {
 } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { createSystemActivity } from '../lib/activity'
+import { buildAprobacionRedirect, invocarAprobarPago } from '../lib/aprobar-pago'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
-import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 type PendingPayment = {
   id: string
@@ -30,6 +31,10 @@ type PendingPayment = {
   estado: string | null
   impactado: boolean | null
   created_at: string | null
+  cuota_numero?: number | null
+  dias_mora?: number | null
+  porcentaje_mora?: number | null
+  monto_mora?: number | null
 }
 
 type ClienteLite = {
@@ -46,8 +51,10 @@ type ClienteLite = {
 type FunctionResponse = {
   ok?: boolean
   pago_id?: string
+  redirect_to?: string
   error?: string
 }
+
 
 function money(v: number) {
   return new Intl.NumberFormat('es-AR', {
@@ -69,52 +76,10 @@ function date(v?: string | null) {
   })
 }
 
-async function callAprobarPago(body: {
-  pago_id: string
-  accion: 'aprobar' | 'rechazar'
-  observacion_revision?: string | null
-}) {
-  const { error: refreshError } = await supabase.auth.refreshSession()
-  if (refreshError) throw refreshError
-
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-  if (sessionError) throw sessionError
-
-  const token = sessionData.session?.access_token
-  if (!token) throw new Error('No hay sesión activa')
-
-  const url = `${supabaseUrl}/functions/v1/aprobar-pago`
-
-  console.log('SUPABASE URL:', url)
-  console.log('Invocando aprobar-pago:', url)
-  console.log('Tiene token:', !!token)
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      apikey: supabaseAnonKey,
-    },
-    body: JSON.stringify(body),
-  })
-
-  let json: FunctionResponse | null = null
-
-  try {
-    json = await response.json()
-  } catch {
-    json = null
-  }
-
-  console.log('Status aprobar-pago:', response.status)
-  console.log('Respuesta:', json)
-
-  if (!response.ok) {
-    throw new Error(json?.error || `Error HTTP ${response.status}`)
-  }
-
-  return json || {}
+function shortId(value?: string | null) {
+  if (!value) return '—'
+  const raw = String(value)
+  return raw.length <= 8 ? raw : `${raw.slice(0, 8)}...`
 }
 
 export default function PagosPendientesScreen() {
@@ -219,6 +184,35 @@ export default function PagosPendientesScreen() {
         }
       }
 
+      let detalleByPago = new Map<string, {
+        cuota_numero: number | null
+        dias_mora: number | null
+        porcentaje_mora: number | null
+        monto_mora: number | null
+      }>()
+      const pagoIds = pagos.map((item) => item.id)
+      if (pagoIds.length > 0) {
+        const { data: detalleData, error: detalleError } = await supabase
+          .from('pagos_detalle')
+          .select('pago_id,numero_cuota,dias_mora,porcentaje_mora,monto_mora')
+          .in('pago_id', pagoIds)
+
+        if (detalleError) {
+          console.error('error pagos_detalle pendientes:', detalleError)
+        } else {
+          for (const row of (detalleData || []) as any[]) {
+            const pagoId = String(row?.pago_id || '')
+            if (!pagoId || detalleByPago.has(pagoId)) continue
+            detalleByPago.set(pagoId, {
+              cuota_numero: Number(row?.numero_cuota || 0) || null,
+              dias_mora: Number(row?.dias_mora || 0) || null,
+              porcentaje_mora: Number(row?.porcentaje_mora || 0) || null,
+              monto_mora: Number(row?.monto_mora || 0) || null,
+            })
+          }
+        }
+      }
+
       const pagosConCliente = pagos.map((item) => {
         const cliente = item.cliente_id ? clientesById.get(item.cliente_id) : null
         const nombreCompleto = String(cliente?.nombre_completo || '').trim()
@@ -232,11 +226,16 @@ export default function PagosPendientesScreen() {
           cliente?.cedula ||
           ''
         ).trim()
+        const detalle = detalleByPago.get(item.id)
 
         return {
           ...item,
           cliente_nombre: clienteNombre,
           cliente_dni: clienteDni || null,
+          cuota_numero: detalle?.cuota_numero ?? null,
+          dias_mora: detalle?.dias_mora ?? null,
+          porcentaje_mora: detalle?.porcentaje_mora ?? null,
+          monto_mora: detalle?.monto_mora ?? null,
         }
       })
 
@@ -268,7 +267,7 @@ export default function PagosPendientesScreen() {
       setProcessingId(pagoId)
       console.log('Aprobando pago:', pagoId)
 
-      const result = await callAprobarPago({
+      const result: FunctionResponse = await invocarAprobarPago({
         pago_id: pagoId,
         accion: 'aprobar',
       })
@@ -294,7 +293,7 @@ export default function PagosPendientesScreen() {
 
       await loadData()
       Alert.alert('Pago aprobado')
-      router.push(`/pago-aprobado?pago_id=${encodeURIComponent(String(result.pago_id || pagoId))}` as any)
+      router.push(buildAprobacionRedirect(result, pagoId) as any)
     } catch (error: any) {
       console.error(error)
       Alert.alert('Error al aprobar', error?.message || 'No se pudo aprobar el pago')
@@ -312,7 +311,7 @@ export default function PagosPendientesScreen() {
       console.log('Rechazando pago:', pago.id)
       console.log('Observación rechazo:', currentObservation)
 
-      await callAprobarPago({
+      await invocarAprobarPago({
         pago_id: pago.id,
         accion: 'rechazar',
         observacion_revision: currentObservation.trim() || null,
@@ -424,11 +423,17 @@ export default function PagosPendientesScreen() {
                 <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
               </View>
 
-              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || item.cliente_id || 'Cliente no informado'}</Text>
-              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || item.cliente_id || 'No registrado'}</Text>
+              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || 'Cliente sin nombre'}</Text>
+              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || 'DNI no disponible'}</Text>
               <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
               <Text style={styles.meta}>Fecha: {date(item.created_at)}</Text>
-              <Text style={styles.meta}>Préstamo: {item.prestamo_id || '—'}</Text>
+              <Text style={styles.meta}>Préstamo: {shortId(item.prestamo_id)}</Text>
+              {item.cuota_numero ? <Text style={styles.meta}>Cuota: #{item.cuota_numero}</Text> : null}
+              {(Number(item.dias_mora || 0) > 0 || Number(item.porcentaje_mora || 0) > 0 || Number(item.monto_mora || 0) > 0) ? (
+                <Text style={styles.meta}>
+                  Mora: {Number(item.dias_mora || 0)} días · {Number(item.porcentaje_mora || 0).toFixed(2)}% · {money(Number(item.monto_mora || 0))}
+                </Text>
+              ) : null}
 
               <View style={styles.actions}>
                 <TouchableOpacity

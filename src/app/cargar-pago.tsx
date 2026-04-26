@@ -345,6 +345,7 @@ export default function CargarPago() {
   const { width } = useWindowDimensions()
   const contentMaxWidth = 1280
   const isDesktop = width >= 1024
+  const isSmallMobile = width < 420
 
   useEffect(() => {
     cargarClientes()
@@ -1493,7 +1494,7 @@ export default function CargarPago() {
                 </View>
 
                 <Text style={styles.label}>Método de pago</Text>
-                <View style={styles.methodsRow}>
+                <View style={[styles.methodsRow, isSmallMobile && styles.methodsRowMobile]}>
                   <TouchableOpacity
                     style={[
                       styles.methodButton,
@@ -1505,6 +1506,7 @@ export default function CargarPago() {
                     <Text
                       style={[
                         styles.methodButtonText,
+                        isSmallMobile && styles.methodButtonTextMobile,
                         metodo === 'efectivo' && styles.methodButtonTextActive,
                       ]}
                     >
@@ -1523,6 +1525,7 @@ export default function CargarPago() {
                     <Text
                       style={[
                         styles.methodButtonText,
+                        isSmallMobile && styles.methodButtonTextMobile,
                         metodo === 'transferencia' && styles.methodButtonTextActive,
                       ]}
                     >
@@ -1548,6 +1551,7 @@ export default function CargarPago() {
                     <Text
                       style={[
                         styles.methodButtonText,
+                        isSmallMobile && styles.methodButtonTextMobile,
                         metodo === 'mp' && styles.methodButtonTextActive,
                       ]}
                     >
@@ -2138,6 +2142,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
     flexWrap: 'nowrap',
+    alignItems: 'stretch',
+  },
+
+  methodsRowMobile: {
+    gap: 6,
   },
 
   methodButton: {
@@ -2161,6 +2170,13 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     fontWeight: '700',
     fontSize: 15,
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+
+  methodButtonTextMobile: {
+    fontSize: 13,
+    lineHeight: 16,
   },
 
   methodButtonTextActive: {
