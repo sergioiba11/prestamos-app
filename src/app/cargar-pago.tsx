@@ -182,6 +182,13 @@ function formatearMonedaInput(valor: string) {
   return `$${parteEnteraFormateada}`
 }
 
+function formatearMonedaInputDesdeNumero(valor: number) {
+  return `$${new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(valor || 0))}`
+}
+
 function formatearMoneda(valor: number) {
   return (
     '$' +
@@ -282,6 +289,8 @@ export default function CargarPago() {
   const params = useLocalSearchParams()
   const scrollRef = useRef<ScrollView | null>(null)
   const paymentFormYRef = useRef(0)
+  const sobranteYRef = useRef(0)
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clienteIdParam = useMemo(() => {
     const raw = params.cliente_id
@@ -309,6 +318,7 @@ export default function CargarPago() {
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
   const [comprobante, setComprobante] = useState('')
   const [opcionSobranteEfectivo, setOpcionSobranteEfectivo] = useState<OpcionSobranteEfectivo | null>(null)
+  const [sobranteHighlight, setSobranteHighlight] = useState(false)
   const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
     connected: false,
     aliasCuenta: null,
@@ -681,11 +691,28 @@ export default function CargarPago() {
     router.replace('/admin-home' as any)
   }
 
+  const guiarASobranteDetectado = useCallback(() => {
+    if (!haySobranteEfectivo || opcionSobranteEfectivo !== null) return
+
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, sobranteYRef.current - 24),
+      animated: true,
+    })
+    setSobranteHighlight(true)
+
+    if (highlightTimeoutRef.current) {
+      clearTimeout(highlightTimeoutRef.current)
+    }
+    highlightTimeoutRef.current = setTimeout(() => {
+      setSobranteHighlight(false)
+    }, 1400)
+  }, [haySobranteEfectivo, opcionSobranteEfectivo])
+
   useEffect(() => {
     if (!cuotaSeleccionada) return
 
     if (metodo === 'transferencia') {
-      setMonto(formatearMonedaInput(String(transferenciaMontoAutomatico)))
+      setMonto(String(transferenciaMontoAutomatico))
     }
   }, [metodo, cuotaSeleccionada, transferenciaMontoAutomatico])
 
@@ -695,6 +722,14 @@ export default function CargarPago() {
       setOpcionSobranteEfectivo(null)
     }
   }, [haySobranteEfectivo])
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const invocarFuncionConFallback = async (
     accessToken: string,
@@ -1313,7 +1348,7 @@ export default function CargarPago() {
 
                 <Text style={styles.label}>Monto</Text>
                 <TextInput
-                  value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
+                  value={metodo === 'transferencia' ? formatearMonedaInputDesdeNumero(transferenciaMontoAutomatico) : monto}
                   onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
                   placeholder="$ 0,00"
                   placeholderTextColor="#64748B"
@@ -1335,8 +1370,14 @@ export default function CargarPago() {
                 {isDesktop && (
                   <TouchableOpacity
                     style={[styles.saveButton, styles.desktopSaveButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
-                    onPress={registrarPago}
-                    disabled={!puedeRegistrarPago}
+                    onPress={() => {
+                      if (puedeRegistrarPago) {
+                        void registrarPago()
+                        return
+                      }
+                      guiarASobranteDetectado()
+                    }}
+                    disabled={guardando}
                   >
                     <Text style={styles.saveButtonText}>
                       {guardando ? 'Guardando...' : 'Registrar pago'}
@@ -1377,7 +1418,15 @@ export default function CargarPago() {
               </View>
 
               {haySobranteEfectivo && (
-                <View style={styles.sobranteCard}>
+                <View
+                  style={[
+                    styles.sobranteCard,
+                    sobranteHighlight && styles.sobranteCardHighlight,
+                  ]}
+                  onLayout={(event) => {
+                    sobranteYRef.current = event.nativeEvent.layout.y
+                  }}
+                >
                   <Text style={styles.sobranteTitle}>Sobrante detectado</Text>
                   <Text style={styles.sobranteText}>
                     Elegí cómo querés resolver el excedente de {formatearMoneda(vuelto)}.
@@ -1458,8 +1507,14 @@ export default function CargarPago() {
             </View>
             <TouchableOpacity
               style={[styles.saveButton, styles.fixedFooterButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
-              onPress={registrarPago}
-              disabled={!puedeRegistrarPago}
+              onPress={() => {
+                if (puedeRegistrarPago) {
+                  void registrarPago()
+                  return
+                }
+                guiarASobranteDetectado()
+              }}
+              disabled={guardando}
             >
               <Text style={styles.saveButtonText}>
                 {guardando ? 'Guardando...' : `Registrar pago ${formatearMoneda(montoNormalizado)}`}
@@ -1931,6 +1986,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30,58,138,0.20)',
     padding: 16,
     gap: 12,
+  },
+  sobranteCardHighlight: {
+    borderColor: '#67E8F9',
+    shadowColor: '#22D3EE',
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
   sobranteTitle: {
     color: '#E2E8F0',
