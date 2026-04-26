@@ -9,24 +9,21 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native'
-import { AdminClientsTable } from '../components/admin/AdminClientsTable'
 import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
-import { AdminQuickAction } from '../components/admin/AdminQuickAction'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
-import { ClientePrestamoActivo, ClienteAdminListadoItem, fetchAdminPanelData, PagoPendienteItem } from '../lib/admin-dashboard'
+import { ClienteAdminListadoItem, ClientePrestamoActivo, PagoPendienteItem, fetchAdminPanelData } from '../lib/admin-dashboard'
 import {
   getTopNotifications,
   getUnreadNotificationsCount,
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from '../lib/activity'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
@@ -39,6 +36,13 @@ function formatDate(value: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function stateTone(status: string) {
+  const s = String(status || '').toLowerCase()
+  if (s.includes('venc') || s.includes('mora') || s.includes('atras')) return styles.statusDanger
+  if (s.includes('activo') || s.includes('vigente')) return styles.statusOk
+  return styles.statusNeutral
+}
+
 export default function AdminHome() {
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
@@ -47,10 +51,10 @@ export default function AdminHome() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('Administrador')
-  const [search, setSearch] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null)
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
     clientesActivos: 0,
@@ -95,8 +99,9 @@ export default function AdminHome() {
 
       const data = await fetchAdminPanelData()
       const clientesById = new Map<string, ClienteAdminListadoItem>(
-        data.clientesListado.map((cliente) => [cliente.clienteId, cliente])
+        data.clientesListado.map((cliente) => [cliente.clienteId, cliente]),
       )
+
       const { data: pendingPaymentsData, error: pendingPaymentsErrorResponse } = await supabase
         .from('pagos')
         .select('id, cliente_id, prestamo_id, monto, metodo, created_at, estado')
@@ -130,7 +135,6 @@ export default function AdminHome() {
       }
 
       const totalPagosPendientes = pendingPaymentsData?.length || 0
-      console.log('kpi pagos pendientes:', totalPagosPendientes)
 
       setKpis({
         ...data.kpis,
@@ -149,7 +153,7 @@ export default function AdminHome() {
   useFocusEffect(
     useCallback(() => {
       void loadData()
-    }, [loadData])
+    }, [loadData]),
   )
 
   const onNavigate = (key: AdminNavKey) => {
@@ -178,30 +182,88 @@ export default function AdminHome() {
   }
 
   const updatePendingPayment = async (pagoId: string, accion: 'aprobar' | 'rechazar') => {
-    const { error } = await supabase.functions.invoke('aprobar-pago', { body: { pago_id: pagoId, accion } })
+    try {
+      setProcessingPaymentId(pagoId)
 
-    if (error) {
-      Alert.alert('Error', error.message)
-      return
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) throw refreshError
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No hay sesión activa')
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/aprobar-pago`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+        },
+        body: JSON.stringify({
+          pago_id: pagoId,
+          accion,
+        }),
+      })
+
+      let json: any = null
+      try {
+        json = await response.json()
+      } catch {
+        json = null
+      }
+
+      console.log('aprobar status:', response.status)
+      console.log('respuesta:', json)
+
+      if (!response.ok) {
+        throw new Error(json?.error || `Error HTTP ${response.status}`)
+      }
+
+      await loadData()
+
+      if (accion === 'aprobar') {
+        router.push(`/pago-aprobado?id=${encodeURIComponent(String(pagoId))}` as any)
+      }
+    } catch (error: any) {
+      console.error(error)
+      Alert.alert('Error', error?.message || 'No se pudo procesar el pago')
+    } finally {
+      setProcessingPaymentId(null)
     }
-
-    await loadData()
   }
 
-  const filteredClients = useMemo(() => {
-    const t = search.trim().toLowerCase()
-    if (!t) return activeClients
+  const todayLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString('es-AR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      }),
+    [],
+  )
 
-    return activeClients.filter((row) => {
-      return (
-        row.nombre.toLowerCase().includes(t) ||
-        row.dni.toLowerCase().includes(t) ||
-        row.email.toLowerCase().includes(t) ||
-        row.telefono.toLowerCase().includes(t)
-      )
-    })
-  }, [activeClients, search])
+  const dashboardStats = useMemo(() => {
+    const totalMontoPendiente = activeClients.reduce((acc, item) => acc + Number(item.prestamoActivo || 0), 0)
+    const cuotasPendientes = activeClients.filter((item) => item.estado !== 'cancelado').length
+    const upcoming = activeClients.filter((item) => {
+      if (!item.proximoPago || item.proximoPago === '—') return false
+      const d = new Date(item.proximoPago)
+      if (Number.isNaN(d.getTime())) return false
+      const diff = d.getTime() - Date.now()
+      const days = diff / (1000 * 60 * 60 * 24)
+      return days >= 0 && days <= 7
+    }).length
 
+    return {
+      cuotasPendientes,
+      totalMontoPendiente,
+      upcoming,
+      prestamosActivos: activeClients.length,
+    }
+  }, [activeClients])
 
   if (loading) {
     return (
@@ -215,13 +277,7 @@ export default function AdminHome() {
   return (
     <View style={styles.page}>
       {!isMobile ? (
-        <AdminSidebar
-          active="inicio"
-          adminName={adminName}
-          adminRole={adminRole}
-          onNavigate={onNavigate}
-          onLogout={onLogout}
-        />
+        <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
         <View style={styles.mobileTopBar}>
           <TouchableOpacity onPress={() => setMenuOpen(true)}>
@@ -247,11 +303,11 @@ export default function AdminHome() {
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}> 
+        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
           <View style={styles.pageTopRow}>
-            <View>
-              <Text style={styles.pageTitle}>Panel de administración</Text>
-              <Text style={styles.pageSubtitle}>Hola, {adminName}. Resumen financiero en tiempo real.</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pageTitle}>Bienvenido, {adminName}</Text>
+              <Text style={styles.pageSubtitle}>Dashboard financiero · {todayLabel}</Text>
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>
@@ -274,6 +330,7 @@ export default function AdminHome() {
               </View>
             ) : null}
           </View>
+
           <AdminNotificationsPanel
             visible={notificationsOpen}
             notifications={notifications}
@@ -292,132 +349,159 @@ export default function AdminHome() {
           />
 
           <View style={styles.kpiGrid}>
-            <AdminStatCard label="A cobrar hoy" subtitle={kpis.cobrarHoy > 0 ? 'Cuotas con vencimiento hoy' : 'Sin vencimientos hoy'} value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+            <AdminStatCard label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
             <AdminStatCard label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
             <AdminStatCard label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
             <AdminStatCard label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+            <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" />
           </View>
 
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-            <View style={styles.actionsGrid}>
-              <AdminQuickAction label="Nuevo préstamo" subtitle="Crear préstamo" icon="wallet-outline" onPress={() => router.push('/nuevo-prestamo' as any)} />
-              <AdminQuickAction label="Registrar pago" subtitle="Registrar abono" icon="cash-outline" onPress={() => router.push('/cargar-pago' as any)} />
-              <AdminQuickAction label="Nuevo cliente" subtitle="Agregar cliente" icon="person-add-outline" onPress={() => router.push('/nuevo-cliente' as any)} />
-              <AdminQuickAction label="Ver clientes" subtitle="Lista completa" icon="people-outline" onPress={() => router.push('/clientes' as any)} />
-              <AdminQuickAction label="Ver préstamos" subtitle="Estado completo" icon="document-text-outline" onPress={() => router.push('/prestamos' as any)} />
-              <AdminQuickAction label="Pagos pendientes" subtitle="Aprobación/rechazo" icon="hourglass-outline" onPress={() => router.push('/pagos-pendientes' as any)} />
-              <AdminQuickAction label="Historial" subtitle="Préstamos históricos" icon="time-outline" onPress={() => router.push('/historial-prestamos' as any)} />
-              <AdminQuickAction label="Actividad" subtitle="Auditoría base" icon="pulse-outline" onPress={() => router.push('/actividad' as any)} />
+            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }]}>
+              <TouchableOpacity style={[styles.featureActionCard, styles.featureBlue]} onPress={() => router.push('/nuevo-prestamo' as any)}>
+                <Ionicons name="wallet-outline" size={24} color="#BFDBFE" />
+                <Text style={styles.featureTitle}>Nuevo préstamo</Text>
+                <Text style={styles.featureSubtitle}>Crear préstamo y plan de cuotas</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.featureActionCard, styles.featureViolet]} onPress={() => router.push('/cargar-pago' as any)}>
+                <Ionicons name="cash-outline" size={24} color="#DDD6FE" />
+                <Text style={styles.featureTitle}>Registrar pago</Text>
+                <Text style={styles.featureSubtitle}>Cargar abono recibido del cliente</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.smallActionGrid}>
+              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/nuevo-cliente' as any)}>
+                <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
+                <Text style={styles.smallActionText}>Nuevo cliente</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/clientes' as any)}>
+                <Ionicons name="people-outline" size={16} color="#93C5FD" />
+                <Text style={styles.smallActionText}>Ver clientes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/prestamos' as any)}>
+                <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
+                <Text style={styles.smallActionText}>Ver préstamos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/historial-prestamos' as any)}>
+                <Ionicons name="time-outline" size={16} color="#93C5FD" />
+                <Text style={styles.smallActionText}>Historial</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Resumen del sistema</Text>
-              <Text style={styles.summaryItem}>Clientes activos: {kpis.clientesActivos}</Text>
-              <Text style={styles.summaryItem}>Préstamos vencidos: {kpis.prestamosVencidos}</Text>
-              <Text style={styles.summaryItem}>Pagos pendientes: {kpis.pagosPendientes}</Text>
-            </View>
-            <TouchableOpacity style={[styles.summaryCard, styles.summaryClickable]} onPress={() => router.push('/configuraciones' as any)}>
-              <Text style={styles.summaryTitle}>Configuración y branding</Text>
-              <Text style={styles.summaryItem}>Accedé a negocio, medios de cobro y preferencias.</Text>
-              <Text style={styles.historyLink}>Abrir configuración</Text>
-            </TouchableOpacity>
-          </View>
+          <View style={styles.mainGrid}>
+            <View style={[styles.sectionCard, styles.pendingCard]}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.sectionTitle}>Pagos pendientes</Text>
+                <TouchableOpacity onPress={() => router.push('/pagos-pendientes' as any)}>
+                  <Text style={styles.linkText}>Ver todos</Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.twoColumns}>
-            <View style={[styles.sectionCard, styles.pendingSection]}>
-              <Text style={styles.sectionTitle}>Pagos pendientes de aprobación</Text>
               {pendingPaymentsError ? (
-                <View style={styles.pendingEmptyWrap}>
-                  <View style={styles.pendingSuccessIcon}>
-                    <Ionicons name="alert-circle" size={22} color="#F97316" />
-                  </View>
-                  <Text style={styles.pendingEmptyTitle}>No se pudo cargar la lista de pagos pendientes.</Text>
-                  <Text style={styles.pendingEmptySubtitle}>Error: {pendingPaymentsError}</Text>
-                </View>
+                <Text style={styles.errorText}>No se pudo cargar: {pendingPaymentsError}</Text>
               ) : pendingPayments.length === 0 ? (
-                <View style={styles.pendingEmptyWrap}>
-                  <View style={styles.pendingSuccessIcon}>
-                    <Ionicons name="checkmark" size={22} color="#16A34A" />
-                  </View>
-                  <Text style={styles.pendingEmptyTitle}>No hay pagos pendientes por ahora.</Text>
-                  <Text style={styles.pendingEmptySubtitle}>Los pagos registrados aparecerán aquí para su aprobación.</Text>
+                <View style={styles.emptyWrap}>
+                  <Ionicons name="checkmark-circle" size={22} color="#22C55E" />
+                  <Text style={styles.emptyTitle}>✔ No hay pagos pendientes</Text>
                 </View>
               ) : (
-                pendingPayments.map((p) => (
-                  <View key={p.id} style={styles.pendingRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.pendingClient}>{p.cliente} · DNI {p.dni}</Text>
-                      <Text style={styles.pendingMeta}>{p.metodo} · {formatDate(p.createdAt)}</Text>
-                      <Text style={styles.pendingMeta}>Estado: {p.estadoValidacion || 'pendiente'}</Text>
-                      {p.prestamoId ? <Text style={styles.pendingMeta}>Préstamo: {p.prestamoId}</Text> : null}
-                    </View>
-                    <View style={styles.pendingActions}>
-                      <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        <TouchableOpacity style={styles.approveBtn} onPress={() => updatePendingPayment(p.id, 'aprobar')}>
-                          <Text style={styles.smallBtnText}>Aprobar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.rejectBtn} onPress={() => updatePendingPayment(p.id, 'rechazar')}>
-                          <Text style={styles.smallBtnText}>Rechazar</Text>
-                        </TouchableOpacity>
+                <ScrollView style={styles.pendingList} nestedScrollEnabled showsVerticalScrollIndicator>
+                  {pendingPayments.map((p) => {
+                    const processing = processingPaymentId === p.id
+                    return (
+                      <View key={p.id} style={styles.pendingRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.pendingClient}>{p.cliente}</Text>
+                          <Text style={styles.pendingMeta}>DNI: {p.dni} · {p.metodo}</Text>
+                          <Text style={styles.pendingMeta}>{formatDate(p.createdAt)}</Text>
+                        </View>
+                        <View style={styles.pendingActions}>
+                          <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                          <View style={styles.pendingBtnsRow}>
+                            <TouchableOpacity
+                              disabled={processing}
+                              style={[styles.approveBtn, processing && styles.btnDisabled]}
+                              onPress={() => updatePendingPayment(p.id, 'aprobar')}
+                            >
+                              <Text style={styles.smallBtnText}>Aprobar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              disabled={processing}
+                              style={[styles.rejectBtn, processing && styles.btnDisabled]}
+                              onPress={() => updatePendingPayment(p.id, 'rechazar')}
+                            >
+                              <Text style={styles.smallBtnText}>Rechazar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
                       </View>
-                    </View>
-                  </View>
-                ))
+                    )
+                  })}
+                </ScrollView>
               )}
             </View>
 
-            <TouchableOpacity style={[styles.sectionCard, styles.historyCard]} onPress={() => router.push('/historial-prestamos' as any)}>
-              <View style={styles.historyIconWrap}>
-                <Ionicons name="time-outline" size={24} color="#A5B4FC" />
+            <View style={[styles.sectionCard, styles.clientsCard]}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
+                <TouchableOpacity onPress={() => router.push('/clientes' as any)}>
+                  <Text style={styles.linkText}>Ver todos</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.historyTitle}>Historial de préstamos</Text>
-              <Text style={styles.historySubtitle}>Ver todos los préstamos</Text>
-              <View style={styles.historyLinkRow}>
-                <Text style={styles.historyLink}>Abrir historial</Text>
-                <Ionicons name="arrow-forward" size={14} color="#93C5FD" />
-              </View>
-            </TouchableOpacity>
+
+              {activeClients.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Ionicons name="people" size={20} color="#475569" />
+                  <Text style={styles.emptySubtle}>Todavía no hay clientes activos.</Text>
+                </View>
+              ) : (
+                <View style={styles.clientList}>
+                  {activeClients.slice(0, 6).map((client) => (
+                    <TouchableOpacity
+                      key={client.clienteId}
+                      style={styles.clientRow}
+                      onPress={() => router.push(`/cliente/${client.clienteId}` as any)}
+                    >
+                      <View style={styles.avatarCircle}>
+                        <Text style={styles.avatarText}>{client.nombre?.charAt(0)?.toUpperCase() || '?'}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.clientName}>{client.nombre}</Text>
+                        <Text style={styles.clientMeta}>{client.email}</Text>
+                        <Text style={styles.clientMeta}>DNI: {client.dni}</Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                        <Text style={[styles.statusChip, stateTone(client.estado)]}>{client.estado || 'activo'}</Text>
+                        <Text style={styles.clientAmount}>{money(client.prestamoActivo)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Clientes con préstamo activo</Text>
-              <View style={styles.viewButtons}>
-                <View style={styles.viewBtn}><Ionicons name="list" size={14} color="#BFDBFE" /></View>
-                <View style={styles.viewBtn}><Ionicons name="grid" size={14} color="#64748B" /></View>
-              </View>
+          <View style={styles.bottomStatsGrid}>
+            <View style={styles.bottomStatCard}>
+              <Text style={styles.bottomLabel}>Cuotas pendientes</Text>
+              <Text style={styles.bottomValue}>{dashboardStats.cuotasPendientes}</Text>
             </View>
-
-            <View style={styles.searchWrap}>
-              <Ionicons name="search-outline" size={16} color="#64748B" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar por nombre, DNI, email o teléfono"
-                placeholderTextColor="#64748B"
-                value={search}
-                onChangeText={setSearch}
-              />
+            <View style={styles.bottomStatCard}>
+              <Text style={styles.bottomLabel}>Monto pendiente</Text>
+              <Text style={styles.bottomValue}>{money(dashboardStats.totalMontoPendiente)}</Text>
             </View>
-
-            {filteredClients.length === 0 ? (
-              <Text style={styles.emptyText}>No hay clientes con préstamos activos</Text>
-            ) : (
-              <AdminClientsTable
-                rows={filteredClients}
-                onView={(row) => router.push(`/cliente/${row.clienteId}` as any)}
-                onEdit={(row) => { console.log('[admin-home] editar cliente', row.clienteId); router.push(`/cliente/${row.clienteId}/editar` as any) }}
-                onHistory={(row) => router.push({ pathname: '/historial-prestamos', params: { cliente_id: row.clienteId } } as any)}
-              />
-            )}
-
-            <Text style={styles.tableCounter}>Mostrando {filteredClients.length} de {activeClients.length} clientes</Text>
+            <View style={styles.bottomStatCard}>
+              <Text style={styles.bottomLabel}>Próximos vencimientos</Text>
+              <Text style={styles.bottomValue}>{dashboardStats.upcoming}</Text>
+            </View>
+            <View style={styles.bottomStatCard}>
+              <Text style={styles.bottomLabel}>Préstamos activos</Text>
+              <Text style={styles.bottomValue}>{dashboardStats.prestamosActivos}</Text>
+            </View>
           </View>
-
-          <Text style={styles.footer}>© 2026 CrediTodo. Todos los derechos reservados.</Text>
         </ScrollView>
       </View>
 
@@ -435,11 +519,9 @@ export default function AdminHome() {
           />
         </View>
       </Modal>
-
     </View>
   )
 }
-
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
@@ -448,11 +530,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 26 },
-  pageSubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
+  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 28 },
+  pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
   headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
-    minHeight: 40,
+    minHeight: 42,
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
@@ -464,70 +546,172 @@ const styles = StyleSheet.create({
   },
   notificationsText: { color: '#CBD5E1', fontWeight: '700', fontSize: 12 },
   mobileTopBar: {
-    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, height: 56, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B',
-    backgroundColor: '#020817', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    height: 56,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    backgroundColor: '#020817',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
-  mobileBellBtn: { width: 34, height: 34, borderRadius: 10, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' },
-  unreadBadge: { position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 999, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  sectionCard: { borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#0B1220', padding: 16, overflow: 'visible' },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  actionsGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  twoColumns: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  summaryCard: { flex: 1, minWidth: 280, borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', padding: 14, backgroundColor: '#0B1220' },
-  summaryClickable: { justifyContent: 'space-between' },
-  summaryTitle: { color: '#E2E8F0', fontWeight: '800', marginBottom: 8 },
-  summaryItem: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
-  pendingSection: { flex: 2, minWidth: 320 },
-  pendingEmptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 22 },
-  pendingSuccessIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: 'rgba(34,197,94,0.8)',
-    backgroundColor: 'rgba(22,163,74,0.15)',
+  mobileBellBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
   },
-  pendingEmptyTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 14, textAlign: 'center' },
-  pendingEmptySubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 12, textAlign: 'center' },
-  pendingRow: { borderWidth: 1, borderColor: '#1E293B', borderRadius: 12, padding: 12, backgroundColor: '#0F172A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 },
-  pendingClient: { color: '#fff', fontWeight: '700' },
-  pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
-  pendingActions: { alignItems: 'flex-end', gap: 6 },
-  pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
-  approveBtn: { backgroundColor: '#065F46', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
-  rejectBtn: { backgroundColor: '#7F1D1D', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
-  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  historyCard: { flex: 1, minWidth: 260, justifyContent: 'center' },
-  historyIconWrap: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#312E81', borderWidth: 1, borderColor: '#4F46E5', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  historyTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 18 },
-  historySubtitle: { color: '#94A3B8', marginTop: 5, fontSize: 13 },
-  historyLinkRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  historyLink: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
-  viewButtons: { flexDirection: 'row', gap: 8 },
-  viewBtn: { width: 30, height: 30, borderRadius: 8, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A' },
-  searchWrap: {
+  unreadBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  sectionCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
+  featureActionsWrap: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  featureActionCard: {
+    flex: 1,
+    minHeight: 118,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  featureBlue: { backgroundColor: '#0B214A' },
+  featureViolet: { backgroundColor: '#2E1065' },
+  featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 18, marginTop: 10 },
+  featureSubtitle: { color: '#BFDBFE', marginTop: 6, fontSize: 12 },
+  smallActionGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  smallAction: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
+  mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  pendingCard: { flex: 1.2, minWidth: 320 },
+  clientsCard: { flex: 1, minWidth: 320 },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  linkText: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
+  errorText: { color: '#FCA5A5', fontSize: 12 },
+  emptyWrap: {
+    minHeight: 130,
+    justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#020817',
-    paddingHorizontal: 12,
-    marginBottom: 12,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
   },
-  searchInput: { flex: 1, color: '#fff', paddingVertical: 10 },
-  emptyText: { color: '#94A3B8', paddingBottom: 8 },
-  tableCounter: { color: '#64748B', marginTop: 10, fontSize: 12 },
-  footer: { textAlign: 'center', color: '#64748B', marginTop: 6, marginBottom: 12, fontSize: 12 },
+  emptyTitle: { color: '#D1FAE5', fontWeight: '700' },
+  emptySubtle: { color: '#94A3B8' },
+  pendingList: { maxHeight: 350 },
+  pendingRow: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#0F172A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
+  },
+  pendingClient: { color: '#F8FAFC', fontWeight: '700' },
+  pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
+  pendingActions: { alignItems: 'flex-end', gap: 7 },
+  pendingBtnsRow: { flexDirection: 'row', gap: 6 },
+  pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
+  approveBtn: { backgroundColor: '#166534', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  rejectBtn: { backgroundColor: '#991B1B', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  btnDisabled: { opacity: 0.65 },
+  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  clientList: { gap: 10 },
+  clientRow: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  avatarText: { color: '#E2E8F0', fontWeight: '800' },
+  clientName: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
+  clientMeta: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
+  clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 12 },
+  statusChip: {
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'capitalize',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    overflow: 'hidden',
+  },
+  statusOk: { backgroundColor: 'rgba(22,163,74,0.2)', color: '#86EFAC' },
+  statusDanger: { backgroundColor: 'rgba(220,38,38,0.2)', color: '#FDA4AF' },
+  statusNeutral: { backgroundColor: 'rgba(71,85,105,0.3)', color: '#CBD5E1' },
+  bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  bottomStatCard: {
+    flex: 1,
+    minWidth: 170,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    padding: 14,
+  },
+  bottomLabel: { color: '#94A3B8', fontSize: 12 },
+  bottomValue: { color: '#E2E8F0', fontWeight: '800', fontSize: 18, marginTop: 8 },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
