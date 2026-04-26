@@ -50,6 +50,7 @@ function GradientCard({ children, style }: { children: ReactNode; style?: ViewSt
 export default function AdminHome() {
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
+  const isDesktop = !isMobile
 
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -307,11 +308,11 @@ export default function AdminHome() {
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile && { paddingTop: 78 }]}>
-          <View style={styles.pageTopRow}>
+        <ScrollView contentContainerStyle={[styles.content, isMobile ? styles.mobileContent : styles.desktopContent]}>
+          <View style={[styles.pageTopRow, isDesktop && styles.pageTopRowDesktop]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.pageTitle}>Bienvenido, {adminName}</Text>
-              <Text style={styles.pageSubtitle}>Dashboard financiero · {todayLabel}</Text>
+              <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop]}>Bienvenido, {adminName}</Text>
+              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop]}>Dashboard financiero · {todayLabel}</Text>
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>
@@ -321,7 +322,7 @@ export default function AdminHome() {
                     notificationsButtonRef.current = node
                   }}
                 >
-                  <TouchableOpacity style={styles.notificationsBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
+                  <TouchableOpacity style={[styles.notificationsBtn, styles.notificationsBtnDesktop]} onPress={() => setNotificationsOpen((prev) => !prev)}>
                     <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
                     <Text style={styles.notificationsText}>Notificaciones</Text>
                     {unreadCount > 0 ? (
@@ -352,55 +353,73 @@ export default function AdminHome() {
             }}
           />
 
-          <View style={styles.kpiGrid}>
+          <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop]}>
             <AdminStatCard label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
             <AdminStatCard label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
             <AdminStatCard label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
             <AdminStatCard label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
-            <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" />
+            {isMobile ? <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
           </View>
 
-          <GradientCard>
+          <GradientCard style={isDesktop ? styles.sectionCardDesktopCompact : undefined}>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }]}>
-              <Pressable onPress={() => router.push('/nuevo-prestamo' as any)} style={({ hovered }) => [styles.featureActionCard, hovered && styles.cardHover]}>
-                <LinearGradient colors={['#2563EB', '#1E3A8A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureGradient}>
-                  <Ionicons name="wallet-outline" size={24} color="#DBEAFE" />
-                  <Text style={styles.featureTitle}>Nuevo préstamo</Text>
-                  <Text style={styles.featureSubtitle}>Crear préstamo y plan de cuotas</Text>
+            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }, isDesktop && styles.featureActionsWrapDesktop]}>
+              <Pressable
+                onPress={() => router.push('/nuevo-prestamo' as any)}
+                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, hovered && styles.cardHover]}
+              >
+                <LinearGradient colors={['#2563EB', '#1E3A8A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop]}>
+                  <Ionicons name="wallet-outline" size={isDesktop ? 22 : 24} color="#DBEAFE" />
+                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop]}>Nuevo préstamo</Text>
+                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop]}>Crear préstamo y plan de cuotas</Text>
                 </LinearGradient>
               </Pressable>
-              <Pressable onPress={() => router.push('/cargar-pago' as any)} style={({ hovered }) => [styles.featureActionCard, hovered && styles.cardHover]}>
-                <LinearGradient colors={['#7C3AED', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureGradient}>
-                  <Ionicons name="cash-outline" size={24} color="#EDE9FE" />
-                  <Text style={styles.featureTitle}>Registrar pago</Text>
-                  <Text style={styles.featureSubtitle}>Cargar abono recibido del cliente</Text>
+              <Pressable
+                onPress={() => router.push('/cargar-pago' as any)}
+                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, hovered && styles.cardHover]}
+              >
+                <LinearGradient colors={['#7C3AED', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop]}>
+                  <Ionicons name="cash-outline" size={isDesktop ? 22 : 24} color="#EDE9FE" />
+                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop]}>Registrar pago</Text>
+                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop]}>Cargar abono recibido del cliente</Text>
                 </LinearGradient>
               </Pressable>
             </View>
 
-            <View style={styles.smallActionGrid}>
-              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/nuevo-cliente' as any)}>
+            <View style={[styles.smallActionGrid, isDesktop && styles.smallActionGridDesktop]}>
+              <Pressable
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                onPress={() => router.push('/nuevo-cliente' as any)}
+              >
                 <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Nuevo cliente</Text>
               </Pressable>
-              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/clientes' as any)}>
+              <Pressable
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                onPress={() => router.push('/clientes' as any)}
+              >
                 <Ionicons name="people-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Ver clientes</Text>
               </Pressable>
-              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/prestamos' as any)}>
+              <Pressable
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                onPress={() => router.push('/prestamos' as any)}
+              >
                 <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Ver préstamos</Text>
               </Pressable>
-              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/historial-prestamos' as any)}>
+              <Pressable
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                onPress={() => router.push('/historial-prestamos' as any)}
+              >
                 <Ionicons name="time-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Historial</Text>
               </Pressable>
             </View>
           </GradientCard>
 
-          <View style={styles.mainGrid}>
-            <GradientCard style={[styles.pendingCard]}>
+          <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
+            <GradientCard style={[styles.pendingCard, isDesktop && styles.mainGridCardDesktop]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.sectionTitle}>Pagos pendientes</Text>
                 <TouchableOpacity onPress={() => router.push('/pagos-pendientes' as any)}>
@@ -417,7 +436,7 @@ export default function AdminHome() {
                 </View>
               ) : (
                 <ScrollView
-                  style={styles.pendingList}
+                  style={[styles.pendingList, isDesktop && styles.pendingListDesktop]}
                   contentContainerStyle={styles.pendingListContent}
                   nestedScrollEnabled
                   showsVerticalScrollIndicator
@@ -453,7 +472,7 @@ export default function AdminHome() {
               )}
             </GradientCard>
 
-            <GradientCard style={[styles.clientsCard]}>
+            <GradientCard style={[styles.clientsCard, isDesktop && styles.mainGridCardDesktop]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
                 <TouchableOpacity onPress={() => router.push('/clientes' as any)}>
@@ -467,7 +486,7 @@ export default function AdminHome() {
                   <Text style={styles.emptySubtle}>Todavía no hay clientes activos.</Text>
                 </View>
               ) : (
-                <View style={styles.clientList}>
+                <ScrollView style={[styles.clientListScroll, isDesktop && styles.clientListScrollDesktop]} contentContainerStyle={styles.clientList}>
                   {activeClients.slice(0, 6).map((client) => (
                     <Pressable
                       key={client.clienteId}
@@ -488,27 +507,27 @@ export default function AdminHome() {
                       </View>
                     </Pressable>
                   ))}
-                </View>
+                </ScrollView>
               )}
             </GradientCard>
           </View>
 
-          <View style={styles.bottomStatsGrid}>
-            <GradientCard style={styles.bottomStatCard}>
+          <View style={[styles.bottomStatsGrid, isDesktop && styles.bottomStatsGridDesktop]}>
+            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
               <Text style={styles.bottomLabel}>Cuotas pendientes</Text>
-              <Text style={styles.bottomValue}>{dashboardStats.cuotasPendientes}</Text>
+              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.cuotasPendientes}</Text>
             </GradientCard>
-            <GradientCard style={styles.bottomStatCard}>
+            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
               <Text style={styles.bottomLabel}>Monto pendiente</Text>
-              <Text style={styles.bottomValue}>{money(dashboardStats.totalMontoPendiente)}</Text>
+              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{money(dashboardStats.totalMontoPendiente)}</Text>
             </GradientCard>
-            <GradientCard style={styles.bottomStatCard}>
+            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
               <Text style={styles.bottomLabel}>Próximos vencimientos</Text>
-              <Text style={styles.bottomValue}>{dashboardStats.upcoming}</Text>
+              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.upcoming}</Text>
             </GradientCard>
-            <GradientCard style={styles.bottomStatCard}>
+            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
               <Text style={styles.bottomLabel}>Préstamos activos</Text>
-              <Text style={styles.bottomValue}>{dashboardStats.prestamosActivos}</Text>
+              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.prestamosActivos}</Text>
             </GradientCard>
           </View>
         </ScrollView>
@@ -536,11 +555,16 @@ const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
   content: { padding: 24, gap: 22, paddingBottom: 40, backgroundColor: '#020817' },
+  desktopContent: { padding: 16, gap: 12, paddingBottom: 18 },
+  mobileContent: { paddingTop: 78 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  pageTopRowDesktop: { marginBottom: 2 },
   pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 28 },
+  pageTitleDesktop: { fontSize: 28, lineHeight: 32 },
   pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
+  pageSubtitleDesktop: { marginTop: 2, fontSize: 12 },
   headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
     minHeight: 42,
@@ -553,6 +577,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  notificationsBtnDesktop: { minHeight: 36, paddingHorizontal: 10, borderRadius: 10 },
   notificationsText: { color: '#CBD5E1', fontWeight: '700', fontSize: 12 },
   mobileTopBar: {
     position: 'absolute',
@@ -593,6 +618,7 @@ const styles = StyleSheet.create({
   },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  kpiGridDesktop: { flexWrap: 'nowrap', gap: 10, alignItems: 'stretch' },
   sectionCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -605,6 +631,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
+  sectionCardDesktopCompact: { padding: 14, borderRadius: 14 },
   cardHover: {
     transform: [{ translateY: -2 }],
     shadowOpacity: 0.5,
@@ -613,12 +640,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
   featureActionsWrap: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  featureActionsWrapDesktop: { marginTop: 10, gap: 10 },
   featureActionCard: {
     flex: 1,
     minHeight: 144,
     borderRadius: 16,
     overflow: 'hidden',
   },
+  featureActionCardDesktop: { minHeight: 100 },
   featureGradient: {
     flex: 1,
     borderRadius: 16,
@@ -627,9 +656,13 @@ const styles = StyleSheet.create({
     padding: 18,
     justifyContent: 'space-between',
   },
+  featureGradientDesktop: { borderRadius: 14, padding: 12, minHeight: 98 },
   featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 18, marginTop: 10 },
+  featureTitleDesktop: { fontSize: 16, marginTop: 6 },
   featureSubtitle: { color: '#DBEAFE', marginTop: 6, fontSize: 12 },
+  featureSubtitleDesktop: { marginTop: 3, fontSize: 11 },
   smallActionGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  smallActionGridDesktop: { marginTop: 10, gap: 8 },
   smallAction: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -641,15 +674,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
+  smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
   smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  mainGridDesktop: { flexWrap: 'nowrap', gap: 10 },
   pendingCard: { flex: 1.2, minWidth: 320 },
   clientsCard: { flex: 1, minWidth: 320 },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  mainGridCardDesktop: { flex: 1, minWidth: 0, maxWidth: '50%', minHeight: 262, maxHeight: 262, padding: 14 },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   linkText: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
   errorText: { color: '#FCA5A5', fontSize: 12 },
   emptyWrap: {
-    minHeight: 130,
+    minHeight: 96,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
@@ -661,17 +697,18 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#D1FAE5', fontWeight: '700' },
   emptySubtle: { color: '#94A3B8' },
   pendingList: { maxHeight: 350 },
+  pendingListDesktop: { maxHeight: 206 },
   pendingListContent: { paddingRight: 4, paddingBottom: 2 },
   pendingRow: {
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 14,
-    padding: 14,
+    padding: 11,
     backgroundColor: '#020617',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 10,
   },
   pendingClient: { color: '#F8FAFC', fontWeight: '700' },
@@ -683,20 +720,22 @@ const styles = StyleSheet.create({
   btnGradient: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
   btnDisabled: { opacity: 0.65 },
   smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  clientList: { gap: 10 },
+  clientListScroll: { maxHeight: 350 },
+  clientListScrollDesktop: { maxHeight: 206 },
+  clientList: { gap: 8, paddingRight: 4, paddingBottom: 2 },
   clientRow: {
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
     backgroundColor: '#020617',
-    padding: 12,
+    padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   avatarCircle: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
@@ -705,7 +744,7 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   avatarText: { color: '#E2E8F0', fontWeight: '800' },
-  clientName: { color: '#E2E8F0', fontWeight: '600', fontSize: 15 },
+  clientName: { color: '#E2E8F0', fontWeight: '600', fontSize: 14 },
   clientMeta: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
   clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 14 },
   statusChip: {
@@ -720,6 +759,7 @@ const styles = StyleSheet.create({
     color: '#86EFAC',
   },
   bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  bottomStatsGridDesktop: { flexWrap: 'nowrap', gap: 8 },
   bottomStatCard: {
     flex: 1,
     minWidth: 170,
@@ -729,8 +769,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     padding: 14,
   },
+  bottomStatCardDesktop: { minWidth: 0, padding: 10, borderRadius: 12 },
   bottomLabel: { color: '#94A3B8', fontSize: 12 },
   bottomValue: { color: '#E2E8F0', fontWeight: '800', fontSize: 18, marginTop: 8 },
+  bottomValueDesktop: { fontSize: 16, marginTop: 6 },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
