@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   ScrollView,
@@ -164,7 +165,6 @@ export default function NuevoPrestamo() {
 
   useEffect(() => {
     obtenerClientes()
-    cargarInteresesMensuales()
   }, [])
 
   useEffect(() => {
@@ -195,7 +195,7 @@ export default function NuevoPrestamo() {
     }
   }
 
-  const cargarInteresesMensuales = async () => {
+  const cargarInteresesMensuales = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('config_intereses')
@@ -206,6 +206,7 @@ export default function NuevoPrestamo() {
 
       if (error || !data || data.length === 0) {
         setInteresesMensualesConfig(INTERESES_MENSUALES)
+        console.log('config intereses cargada:', INTERESES_MENSUALES)
         return
       }
 
@@ -219,14 +220,24 @@ export default function NuevoPrestamo() {
 
       if (Object.keys(mapaDb).length === 0) {
         setInteresesMensualesConfig(INTERESES_MENSUALES)
+        console.log('config intereses cargada:', INTERESES_MENSUALES)
         return
       }
 
-      setInteresesMensualesConfig({ ...INTERESES_MENSUALES, ...mapaDb })
+      const mapaIntereses = { ...INTERESES_MENSUALES, ...mapaDb }
+      setInteresesMensualesConfig(mapaIntereses)
+      console.log('config intereses cargada:', mapaIntereses)
     } catch {
       setInteresesMensualesConfig(INTERESES_MENSUALES)
+      console.log('config intereses cargada:', INTERESES_MENSUALES)
     }
-  }
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarInteresesMensuales()
+    }, [cargarInteresesMensuales])
+  )
 
   const revisarMoraCliente = async (clienteId: string) => {
     const { data, error } = await supabase
@@ -370,8 +381,17 @@ export default function NuevoPrestamo() {
     return ''
   }, [fechaInicio, modalidad, diasNumero, cuotasNumero, habilitarDiaPagoManual, diaPagoMensualNumero])
 
+  const obtenerInteresMensualConFallback = useCallback(
+    (cuota: number) => {
+      return interesesMensualesConfig[cuota] ?? INTERESES_MENSUALES[cuota] ?? 0
+    },
+    [interesesMensualesConfig]
+  )
+
   const seleccionarCuota = (valor: number) => {
-    const interesCalculado = interesesMensualesConfig[valor] || 0
+    const interesCalculado = obtenerInteresMensualConFallback(valor)
+    console.log('cuotas seleccionadas:', valor)
+    console.log('interés aplicado:', interesCalculado)
     setCuotas(String(valor))
     setDias('')
     setInteres(String(interesCalculado))
@@ -382,8 +402,11 @@ export default function NuevoPrestamo() {
     if (modalidad !== 'mensual' || !cuotas) return
     const cuotaNumero = Number(cuotas)
     if (!cuotaNumero) return
-    setInteres(String(interesesMensualesConfig[cuotaNumero] || 0))
-  }, [cuotas, modalidad, interesesMensualesConfig])
+    const interesAplicado = obtenerInteresMensualConFallback(cuotaNumero)
+    console.log('cuotas seleccionadas:', cuotaNumero)
+    console.log('interés aplicado:', interesAplicado)
+    setInteres(String(interesAplicado))
+  }, [cuotas, modalidad, obtenerInteresMensualConFallback])
 
   const seleccionarDias = (valor: number) => {
     const interesCalculado = obtenerInteresDiarioPorDias(valor)
