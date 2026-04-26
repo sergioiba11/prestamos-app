@@ -1,6 +1,9 @@
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { ViewStyle } from 'react-native'
 import {
   ActivityIndicator,
   Alert,
@@ -36,11 +39,12 @@ function formatDate(value: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function stateTone(status: string) {
-  const s = String(status || '').toLowerCase()
-  if (s.includes('venc') || s.includes('mora') || s.includes('atras')) return styles.statusDanger
-  if (s.includes('activo') || s.includes('vigente')) return styles.statusOk
-  return styles.statusNeutral
+function GradientCard({ children, style }: { children: ReactNode; style?: ViewStyle | ViewStyle[] }) {
+  return (
+    <LinearGradient colors={['#0F172A', '#020617']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.sectionCard, style]}>
+      {children}
+    </LinearGradient>
+  )
 }
 
 export default function AdminHome() {
@@ -356,43 +360,47 @@ export default function AdminHome() {
             <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" />
           </View>
 
-          <View style={styles.sectionCard}>
+          <GradientCard>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
             <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }]}>
-              <TouchableOpacity style={[styles.featureActionCard, styles.featureBlue]} onPress={() => router.push('/nuevo-prestamo' as any)}>
-                <Ionicons name="wallet-outline" size={24} color="#BFDBFE" />
-                <Text style={styles.featureTitle}>Nuevo préstamo</Text>
-                <Text style={styles.featureSubtitle}>Crear préstamo y plan de cuotas</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.featureActionCard, styles.featureViolet]} onPress={() => router.push('/cargar-pago' as any)}>
-                <Ionicons name="cash-outline" size={24} color="#DDD6FE" />
-                <Text style={styles.featureTitle}>Registrar pago</Text>
-                <Text style={styles.featureSubtitle}>Cargar abono recibido del cliente</Text>
-              </TouchableOpacity>
+              <Pressable onPress={() => router.push('/nuevo-prestamo' as any)} style={({ hovered }) => [styles.featureActionCard, hovered && styles.cardHover]}>
+                <LinearGradient colors={['#2563EB', '#1E3A8A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureGradient}>
+                  <Ionicons name="wallet-outline" size={24} color="#DBEAFE" />
+                  <Text style={styles.featureTitle}>Nuevo préstamo</Text>
+                  <Text style={styles.featureSubtitle}>Crear préstamo y plan de cuotas</Text>
+                </LinearGradient>
+              </Pressable>
+              <Pressable onPress={() => router.push('/cargar-pago' as any)} style={({ hovered }) => [styles.featureActionCard, hovered && styles.cardHover]}>
+                <LinearGradient colors={['#7C3AED', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureGradient}>
+                  <Ionicons name="cash-outline" size={24} color="#EDE9FE" />
+                  <Text style={styles.featureTitle}>Registrar pago</Text>
+                  <Text style={styles.featureSubtitle}>Cargar abono recibido del cliente</Text>
+                </LinearGradient>
+              </Pressable>
             </View>
 
             <View style={styles.smallActionGrid}>
-              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/nuevo-cliente' as any)}>
+              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/nuevo-cliente' as any)}>
                 <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Nuevo cliente</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/clientes' as any)}>
+              </Pressable>
+              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/clientes' as any)}>
                 <Ionicons name="people-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Ver clientes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/prestamos' as any)}>
+              </Pressable>
+              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/prestamos' as any)}>
                 <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Ver préstamos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.smallAction} onPress={() => router.push('/historial-prestamos' as any)}>
+              </Pressable>
+              <Pressable style={({ hovered }) => [styles.smallAction, hovered && styles.cardHover]} onPress={() => router.push('/historial-prestamos' as any)}>
                 <Ionicons name="time-outline" size={16} color="#93C5FD" />
                 <Text style={styles.smallActionText}>Historial</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-          </View>
+          </GradientCard>
 
           <View style={styles.mainGrid}>
-            <View style={[styles.sectionCard, styles.pendingCard]}>
+            <GradientCard style={[styles.pendingCard]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.sectionTitle}>Pagos pendientes</Text>
                 <TouchableOpacity onPress={() => router.push('/pagos-pendientes' as any)}>
@@ -408,7 +416,12 @@ export default function AdminHome() {
                   <Text style={styles.emptyTitle}>✔ No hay pagos pendientes</Text>
                 </View>
               ) : (
-                <ScrollView style={styles.pendingList} nestedScrollEnabled showsVerticalScrollIndicator>
+                <ScrollView
+                  style={styles.pendingList}
+                  contentContainerStyle={styles.pendingListContent}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
                   {pendingPayments.map((p) => {
                     const processing = processingPaymentId === p.id
                     return (
@@ -421,19 +434,15 @@ export default function AdminHome() {
                         <View style={styles.pendingActions}>
                           <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
                           <View style={styles.pendingBtnsRow}>
-                            <TouchableOpacity
-                              disabled={processing}
-                              style={[styles.approveBtn, processing && styles.btnDisabled]}
-                              onPress={() => updatePendingPayment(p.id, 'aprobar')}
-                            >
-                              <Text style={styles.smallBtnText}>Aprobar</Text>
+                            <TouchableOpacity disabled={processing} style={[styles.btnBase, processing && styles.btnDisabled]} onPress={() => updatePendingPayment(p.id, 'aprobar')}>
+                              <LinearGradient colors={['#22C55E', '#16A34A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                                <Text style={styles.smallBtnText}>Aprobar</Text>
+                              </LinearGradient>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                              disabled={processing}
-                              style={[styles.rejectBtn, processing && styles.btnDisabled]}
-                              onPress={() => updatePendingPayment(p.id, 'rechazar')}
-                            >
-                              <Text style={styles.smallBtnText}>Rechazar</Text>
+                            <TouchableOpacity disabled={processing} style={[styles.btnBase, processing && styles.btnDisabled]} onPress={() => updatePendingPayment(p.id, 'rechazar')}>
+                              <LinearGradient colors={['#EF4444', '#DC2626']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                                <Text style={styles.smallBtnText}>Rechazar</Text>
+                              </LinearGradient>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -442,9 +451,9 @@ export default function AdminHome() {
                   })}
                 </ScrollView>
               )}
-            </View>
+            </GradientCard>
 
-            <View style={[styles.sectionCard, styles.clientsCard]}>
+            <GradientCard style={[styles.clientsCard]}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
                 <TouchableOpacity onPress={() => router.push('/clientes' as any)}>
@@ -460,9 +469,9 @@ export default function AdminHome() {
               ) : (
                 <View style={styles.clientList}>
                   {activeClients.slice(0, 6).map((client) => (
-                    <TouchableOpacity
+                    <Pressable
                       key={client.clienteId}
-                      style={styles.clientRow}
+                      style={({ hovered }) => [styles.clientRow, hovered && styles.cardHover]}
                       onPress={() => router.push(`/cliente/${client.clienteId}` as any)}
                     >
                       <View style={styles.avatarCircle}>
@@ -474,33 +483,33 @@ export default function AdminHome() {
                         <Text style={styles.clientMeta}>DNI: {client.dni}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                        <Text style={[styles.statusChip, stateTone(client.estado)]}>{client.estado || 'activo'}</Text>
+                        <Text style={styles.statusChip}>Activo</Text>
                         <Text style={styles.clientAmount}>{money(client.prestamoActivo)}</Text>
                       </View>
-                    </TouchableOpacity>
+                    </Pressable>
                   ))}
                 </View>
               )}
-            </View>
+            </GradientCard>
           </View>
 
           <View style={styles.bottomStatsGrid}>
-            <View style={styles.bottomStatCard}>
+            <GradientCard style={styles.bottomStatCard}>
               <Text style={styles.bottomLabel}>Cuotas pendientes</Text>
               <Text style={styles.bottomValue}>{dashboardStats.cuotasPendientes}</Text>
-            </View>
-            <View style={styles.bottomStatCard}>
+            </GradientCard>
+            <GradientCard style={styles.bottomStatCard}>
               <Text style={styles.bottomLabel}>Monto pendiente</Text>
               <Text style={styles.bottomValue}>{money(dashboardStats.totalMontoPendiente)}</Text>
-            </View>
-            <View style={styles.bottomStatCard}>
+            </GradientCard>
+            <GradientCard style={styles.bottomStatCard}>
               <Text style={styles.bottomLabel}>Próximos vencimientos</Text>
               <Text style={styles.bottomValue}>{dashboardStats.upcoming}</Text>
-            </View>
-            <View style={styles.bottomStatCard}>
+            </GradientCard>
+            <GradientCard style={styles.bottomStatCard}>
               <Text style={styles.bottomLabel}>Préstamos activos</Text>
               <Text style={styles.bottomValue}>{dashboardStats.prestamosActivos}</Text>
-            </View>
+            </GradientCard>
           </View>
         </ScrollView>
       </View>
@@ -526,7 +535,7 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 20, gap: 16, paddingBottom: 34, backgroundColor: '#020817' },
+  content: { padding: 24, gap: 22, paddingBottom: 40, backgroundColor: '#020817' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
@@ -585,31 +594,41 @@ const styles = StyleSheet.create({
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   sectionCard: {
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
-    backgroundColor: '#0B1220',
-    padding: 16,
+    backgroundColor: '#020617',
+    padding: 22,
     shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 25,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  cardHover: {
+    transform: [{ translateY: -2 }],
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 12 },
   },
   sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
   featureActionsWrap: { flexDirection: 'row', gap: 12, marginTop: 12 },
   featureActionCard: {
     flex: 1,
-    minHeight: 118,
+    minHeight: 144,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  featureGradient: {
+    flex: 1,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    padding: 16,
+    borderColor: 'rgba(148,163,184,0.22)',
+    padding: 18,
     justifyContent: 'space-between',
   },
-  featureBlue: { backgroundColor: '#0B214A' },
-  featureViolet: { backgroundColor: '#2E1065' },
   featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 18, marginTop: 10 },
-  featureSubtitle: { color: '#BFDBFE', marginTop: 6, fontSize: 12 },
+  featureSubtitle: { color: '#DBEAFE', marginTop: 6, fontSize: 12 },
   smallActionGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   smallAction: {
     flexDirection: 'row',
@@ -617,16 +636,16 @@ const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: '#334155',
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
+    backgroundColor: '#020617',
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   pendingCard: { flex: 1.2, minWidth: 320 },
   clientsCard: { flex: 1, minWidth: 320 },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   linkText: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
   errorText: { color: '#FCA5A5', fontSize: 12 },
   emptyWrap: {
@@ -642,16 +661,17 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#D1FAE5', fontWeight: '700' },
   emptySubtle: { color: '#94A3B8' },
   pendingList: { maxHeight: 350 },
+  pendingListContent: { paddingRight: 4, paddingBottom: 2 },
   pendingRow: {
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#020617',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
     gap: 10,
   },
   pendingClient: { color: '#F8FAFC', fontWeight: '700' },
@@ -659,24 +679,24 @@ const styles = StyleSheet.create({
   pendingActions: { alignItems: 'flex-end', gap: 7 },
   pendingBtnsRow: { flexDirection: 'row', gap: 6 },
   pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
-  approveBtn: { backgroundColor: '#166534', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
-  rejectBtn: { backgroundColor: '#991B1B', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  btnBase: { borderRadius: 8, overflow: 'hidden' },
+  btnGradient: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
   btnDisabled: { opacity: 0.65 },
-  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   clientList: { gap: 10 },
   clientRow: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
-    backgroundColor: '#0F172A',
-    padding: 10,
+    backgroundColor: '#020617',
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   avatarCircle: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
@@ -685,9 +705,9 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   avatarText: { color: '#E2E8F0', fontWeight: '800' },
-  clientName: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
+  clientName: { color: '#E2E8F0', fontWeight: '600', fontSize: 15 },
   clientMeta: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
-  clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 12 },
+  clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 14 },
   statusChip: {
     borderRadius: 999,
     fontSize: 10,
@@ -696,10 +716,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     overflow: 'hidden',
+    backgroundColor: 'rgba(22,163,74,0.2)',
+    color: '#86EFAC',
   },
-  statusOk: { backgroundColor: 'rgba(22,163,74,0.2)', color: '#86EFAC' },
-  statusDanger: { backgroundColor: 'rgba(220,38,38,0.2)', color: '#FDA4AF' },
-  statusNeutral: { backgroundColor: 'rgba(71,85,105,0.3)', color: '#CBD5E1' },
   bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   bottomStatCard: {
     flex: 1,
@@ -707,7 +726,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
-    backgroundColor: '#0F172A',
+    backgroundColor: 'transparent',
     padding: 14,
   },
   bottomLabel: { color: '#94A3B8', fontSize: 12 },
