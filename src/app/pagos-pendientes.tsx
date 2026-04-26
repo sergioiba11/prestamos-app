@@ -55,6 +55,12 @@ type FunctionResponse = {
   error?: string
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function looksLikeUuid(value?: string | null) {
+  return UUID_REGEX.test(String(value || '').trim())
+}
+
 
 function money(v: number) {
   return new Intl.NumberFormat('es-AR', {
@@ -156,7 +162,7 @@ export default function PagosPendientesScreen() {
         .eq('estado', 'pendiente_aprobacion')
         .order('created_at', { ascending: false })
 
-      console.log('lista pagos pendientes:', data)
+      console.log('pagos pendientes raw:', data)
       console.log('error lista pagos pendientes:', error)
 
       if (error) {
@@ -166,8 +172,33 @@ export default function PagosPendientesScreen() {
       }
 
       const pagos = (data || []) as PendingPayment[]
+      const prestamoIds = Array.from(
+        new Set(pagos.map((item) => item.prestamo_id).filter(Boolean) as string[])
+      )
+      let prestamoClienteById = new Map<string, string>()
+      if (prestamoIds.length > 0) {
+        const { data: prestamosData, error: prestamosError } = await supabase
+          .from('prestamos')
+          .select('id,cliente_id')
+          .in('id', prestamoIds)
+
+        if (prestamosError) {
+          console.error('error prestamos pagos pendientes:', prestamosError)
+        } else {
+          prestamoClienteById = new Map(
+            ((prestamosData || []) as Array<{ id: string; cliente_id: string | null }>)
+              .filter((row) => Boolean(row.id) && Boolean(row.cliente_id))
+              .map((row) => [row.id, String(row.cliente_id)])
+          )
+        }
+      }
+
       const clienteIds = Array.from(
-        new Set(pagos.map((item) => item.cliente_id).filter(Boolean) as string[])
+        new Set(
+          pagos
+            .map((item) => item.cliente_id || (item.prestamo_id ? prestamoClienteById.get(item.prestamo_id) : null))
+            .filter(Boolean) as string[]
+        )
       )
 
       let clientesById = new Map<string, ClienteLite>()
@@ -180,6 +211,7 @@ export default function PagosPendientesScreen() {
         if (clientesError) {
           console.error('error clientes pagos pendientes:', clientesError)
         } else {
+          console.log('clientes relacionados:', clientesData)
           clientesById = new Map(((clientesData || []) as ClienteLite[]).map((cliente) => [cliente.id, cliente]))
         }
       }
@@ -214,24 +246,28 @@ export default function PagosPendientesScreen() {
       }
 
       const pagosConCliente = pagos.map((item) => {
-        const cliente = item.cliente_id ? clientesById.get(item.cliente_id) : null
+        const resolvedClienteId = item.cliente_id || (item.prestamo_id ? prestamoClienteById.get(item.prestamo_id) || null : null)
+        const cliente = resolvedClienteId ? clientesById.get(resolvedClienteId) : null
         const nombreCompleto = String(cliente?.nombre_completo || '').trim()
         const nombre = String(cliente?.nombre || '').trim()
         const apellido = String(cliente?.apellido || '').trim()
-        const clienteNombre = nombreCompleto || [nombre, apellido].filter(Boolean).join(' ').trim() || null
-        const clienteDni = String(
+        const mergedName = nombreCompleto || [nombre, apellido].filter(Boolean).join(' ').trim()
+        const clienteNombre = mergedName && !looksLikeUuid(mergedName) ? mergedName : null
+        const dniRaw = String(
           cliente?.dni ||
           cliente?.documento ||
           cliente?.numero_documento ||
           cliente?.cedula ||
           ''
         ).trim()
+        const clienteDni = dniRaw && !looksLikeUuid(dniRaw) ? dniRaw : null
         const detalle = detalleByPago.get(item.id)
 
         return {
           ...item,
+          cliente_id: resolvedClienteId || item.cliente_id,
           cliente_nombre: clienteNombre,
-          cliente_dni: clienteDni || null,
+          cliente_dni: clienteDni,
           cuota_numero: detalle?.cuota_numero ?? null,
           dias_mora: detalle?.dias_mora ?? null,
           porcentaje_mora: detalle?.porcentaje_mora ?? null,
@@ -463,7 +499,6 @@ export default function PagosPendientesScreen() {
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrapMenu}>
-          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
           <AdminSidebar
             active="pagos-pendientes"
             adminName={adminName}
@@ -473,6 +508,7 @@ export default function PagosPendientesScreen() {
             mobile
             onCloseMobile={() => setMenuOpen(false)}
           />
+          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
         </View>
       </Modal>
 
