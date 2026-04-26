@@ -297,6 +297,8 @@ export default function CargarPago() {
   const paymentFormYRef = useRef(0)
   const montoYRef = useRef(0)
   const sobranteYRef = useRef(0)
+  const sobranteRef = useRef<View | null>(null)
+  const ultimoMetodoRef = useRef<MetodoPagoUi>('efectivo')
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clienteIdParam = useMemo(() => {
@@ -749,6 +751,7 @@ export default function CargarPago() {
 
   const resaltarYScroll = useCallback(
     (field: 'cliente' | 'prestamo' | 'cuota' | 'monto' | 'sobrante') => {
+      const stickyFooterOffset = isDesktop ? 24 : 132
       const y =
         field === 'cliente'
           ? clienteSectionYRef.current
@@ -758,10 +761,12 @@ export default function CargarPago() {
               ? cuotaSectionYRef.current
               : field === 'monto'
                 ? montoYRef.current
-                : sobranteYRef.current
+                : sobranteRef.current
+                  ? Math.max(0, sobranteYRef.current - stickyFooterOffset)
+                  : sobranteYRef.current
 
       scrollRef.current?.scrollTo({
-        y: Math.max(0, y - 24),
+        y: field === 'sobrante' ? y : Math.max(0, y - 24),
         animated: true,
       })
       setMissingField(field)
@@ -773,9 +778,9 @@ export default function CargarPago() {
       highlightTimeoutRef.current = setTimeout(() => {
         setMissingField(null)
         setSobranteHighlight(false)
-      }, 1600)
+      }, field === 'sobrante' ? 1000 : 1600)
     },
-    []
+    [isDesktop]
   )
 
   const intentarRegistrarPago = useCallback(() => {
@@ -826,6 +831,15 @@ export default function CargarPago() {
       setMonto(String(transferenciaMontoAutomatico))
     }
   }, [metodo, cuotaSeleccionada, transferenciaMontoAutomatico])
+
+  useEffect(() => {
+    const metodoAnterior = ultimoMetodoRef.current
+    if (metodoAnterior === 'transferencia' && metodo === 'efectivo') {
+      setMonto('')
+      setOpcionSobranteEfectivo(null)
+    }
+    ultimoMetodoRef.current = metodo
+  }, [metodo])
 
 
   useEffect(() => {
@@ -1616,6 +1630,7 @@ export default function CargarPago() {
 
               {haySobranteEfectivo && (
                 <View
+                  ref={sobranteRef}
                   style={[
                     styles.sobranteCard,
                     sobranteHighlight && styles.sobranteCardHighlight,
