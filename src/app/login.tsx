@@ -186,6 +186,12 @@ export default function LoginScreen() {
     }
   }
 
+  const handleSubmitFromKeyboard = () => {
+    if (loading) return
+    if (!identifier.trim() || !password.trim()) return
+    void handleLogin()
+  }
+
   const handleResendConfirmation = async () => {
     const emailToResend = pendingConfirmationEmail.trim().toLowerCase()
 
@@ -290,6 +296,8 @@ export default function LoginScreen() {
                 placeholder="DNI o correo"
                 placeholderTextColor="#93A0BA"
                 autoCapitalize="none"
+                returnKeyType="done"
+                onSubmitEditing={handleSubmitFromKeyboard}
                 value={identifier}
                 onChangeText={(value) => {
                   setIdentifier(value)
@@ -306,6 +314,8 @@ export default function LoginScreen() {
                 placeholderTextColor="#93A0BA"
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
+                returnKeyType="done"
+                onSubmitEditing={handleSubmitFromKeyboard}
                 value={password}
                 onChangeText={(value) => {
                   setPassword(value)

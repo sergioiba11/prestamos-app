@@ -308,7 +308,7 @@ export default function CargarPago() {
   const [monto, setMonto] = useState('')
   const [metodo, setMetodo] = useState<MetodoPagoUi>('efectivo')
   const [comprobante, setComprobante] = useState('')
-  const [opcionSobranteEfectivo, setOpcionSobranteEfectivo] = useState<OpcionSobranteEfectivo>('aplicar_proximas')
+  const [opcionSobranteEfectivo, setOpcionSobranteEfectivo] = useState<OpcionSobranteEfectivo | null>(null)
   const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
     connected: false,
     aliasCuenta: null,
@@ -642,6 +642,8 @@ export default function CargarPago() {
   const cuotaPendienteValida = Boolean(cuotaSeleccionada?.id) && deudaActual > 0
   const mpDisponible = mpEstado.connected
   const haySobranteEfectivo = metodo === 'efectivo' && deudaActual > 0 && montoNormalizado > deudaActual + 0.009
+  const sobranteEfectivoSeleccionado = !haySobranteEfectivo || opcionSobranteEfectivo !== null
+  const puedeRegistrarPago = !guardando && cuotaPendienteValida && sobranteEfectivoSeleccionado
   const aplicarAMultiples = haySobranteEfectivo
     ? opcionSobranteEfectivo === 'aplicar_proximas'
     : true
@@ -690,7 +692,7 @@ export default function CargarPago() {
 
   useEffect(() => {
     if (!haySobranteEfectivo) {
-      setOpcionSobranteEfectivo('aplicar_proximas')
+      setOpcionSobranteEfectivo(null)
     }
   }, [haySobranteEfectivo])
 
@@ -816,6 +818,9 @@ export default function CargarPago() {
 
     if (!cuotaPendienteValida) {
       Alert.alert('Error', 'No hay una cuota pendiente válida para registrar este pago.')
+      return
+    }
+    if (haySobranteEfectivo && !opcionSobranteEfectivo) {
       return
     }
 
@@ -1321,7 +1326,7 @@ export default function CargarPago() {
                   editable={metodo !== 'transferencia'}
                   returnKeyType="done"
                   onSubmitEditing={() => {
-                    if (!guardando && cuotaPendienteValida) {
+                    if (puedeRegistrarPago) {
                       void registrarPago()
                     }
                   }}
@@ -1329,9 +1334,9 @@ export default function CargarPago() {
 
                 {isDesktop && (
                   <TouchableOpacity
-                    style={[styles.saveButton, styles.desktopSaveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+                    style={[styles.saveButton, styles.desktopSaveButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
                     onPress={registrarPago}
-                    disabled={guardando || !cuotaPendienteValida}
+                    disabled={!puedeRegistrarPago}
                   >
                     <Text style={styles.saveButtonText}>
                       {guardando ? 'Guardando...' : 'Registrar pago'}
@@ -1452,9 +1457,9 @@ export default function CargarPago() {
               </Text>
             </View>
             <TouchableOpacity
-              style={[styles.saveButton, styles.fixedFooterButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+              style={[styles.saveButton, styles.fixedFooterButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
               onPress={registrarPago}
-              disabled={guardando || !cuotaPendienteValida}
+              disabled={!puedeRegistrarPago}
             >
               <Text style={styles.saveButtonText}>
                 {guardando ? 'Guardando...' : `Registrar pago ${formatearMoneda(montoNormalizado)}`}
