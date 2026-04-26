@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   ScrollView,
@@ -161,10 +162,11 @@ export default function NuevoPrestamo() {
   const [moraResumen, setMoraResumen] = useState('AL DÍA')
   const [interesesMensualesConfig, setInteresesMensualesConfig] =
     useState<Record<number, number>>(INTERESES_MENSUALES)
+  const [interesesDiariosConfig, setInteresesDiariosConfig] =
+    useState<Record<number, number>>({})
 
   useEffect(() => {
     obtenerClientes()
-    cargarInteresesMensuales()
   }, [])
 
   useEffect(() => {
@@ -195,38 +197,57 @@ export default function NuevoPrestamo() {
     }
   }
 
-  const cargarInteresesMensuales = async () => {
+  const cargarInteresesMensuales = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('config_intereses')
-        .select('cuotas, porcentaje')
-        .eq('tipo', 'mensual')
+        .select('tipo, plazo, porcentaje, activo')
         .eq('activo', true)
-        .order('cuotas', { ascending: true })
+        .order('plazo', { ascending: true })
 
       if (error || !data || data.length === 0) {
         setInteresesMensualesConfig(INTERESES_MENSUALES)
+        setInteresesDiariosConfig({})
+        console.log('config intereses cargada:', {
+          interesesMensuales: INTERESES_MENSUALES,
+          interesesDiarios: {},
+        })
         return
       }
 
-      const mapaDb: Record<number, number> = {}
+      const interesesMensuales: Record<number, number> = {}
+      const interesesDiarios: Record<number, number> = {}
 
       for (const item of data as any[]) {
-        const cuota = Number(item?.cuotas || 0)
-        if (!cuota || cuota < 1 || cuota > 36) continue
-        mapaDb[cuota] = Number(item?.porcentaje || 0)
+        const tipo = String(item?.tipo || '').toLowerCase()
+        const plazo = Number(item?.plazo || 0)
+        if (!plazo || plazo < 1) continue
+        const porcentaje = Number(item?.porcentaje || 0)
+        if (tipo === 'mensual') interesesMensuales[plazo] = porcentaje
+        if (tipo === 'diario') interesesDiarios[plazo] = porcentaje
       }
 
-      if (Object.keys(mapaDb).length === 0) {
-        setInteresesMensualesConfig(INTERESES_MENSUALES)
-        return
-      }
-
-      setInteresesMensualesConfig({ ...INTERESES_MENSUALES, ...mapaDb })
+      setInteresesMensualesConfig({ ...INTERESES_MENSUALES, ...interesesMensuales })
+      setInteresesDiariosConfig(interesesDiarios)
+      console.log('config intereses cargada:', {
+        interesesMensuales: { ...INTERESES_MENSUALES, ...interesesMensuales },
+        interesesDiarios,
+      })
     } catch {
       setInteresesMensualesConfig(INTERESES_MENSUALES)
+      setInteresesDiariosConfig({})
+      console.log('config intereses cargada:', {
+        interesesMensuales: INTERESES_MENSUALES,
+        interesesDiarios: {},
+      })
     }
-  }
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarInteresesMensuales()
+    }, [cargarInteresesMensuales])
+  )
 
   const revisarMoraCliente = async (clienteId: string) => {
     const { data, error } = await supabase
@@ -370,8 +391,17 @@ export default function NuevoPrestamo() {
     return ''
   }, [fechaInicio, modalidad, diasNumero, cuotasNumero, habilitarDiaPagoManual, diaPagoMensualNumero])
 
+  const obtenerInteresMensualConFallback = useCallback(
+    (cuota: number) => {
+      return interesesMensualesConfig[cuota] ?? INTERESES_MENSUALES[cuota] ?? 0
+    },
+    [interesesMensualesConfig]
+  )
+
   const seleccionarCuota = (valor: number) => {
-    const interesCalculado = interesesMensualesConfig[valor] || 0
+    const interesCalculado = obtenerInteresMensualConFallback(valor)
+    console.log('cuotas seleccionadas:', valor)
+    console.log('interés aplicado:', interesCalculado)
     setCuotas(String(valor))
     setDias('')
     setInteres(String(interesCalculado))
@@ -382,16 +412,33 @@ export default function NuevoPrestamo() {
     if (modalidad !== 'mensual' || !cuotas) return
     const cuotaNumero = Number(cuotas)
     if (!cuotaNumero) return
-    setInteres(String(interesesMensualesConfig[cuotaNumero] || 0))
-  }, [cuotas, modalidad, interesesMensualesConfig])
+    const interesAplicado = obtenerInteresMensualConFallback(cuotaNumero)
+    console.log('cuotas seleccionadas:', cuotaNumero)
+    console.log('interés aplicado:', interesAplicado)
+    setInteres(String(interesAplicado))
+  }, [cuotas, modalidad, obtenerInteresMensualConFallback])
 
   const seleccionarDias = (valor: number) => {
-    const interesCalculado = obtenerInteresDiarioPorDias(valor)
+    const interesDiarioActual = obtenerInteresDiarioPorDias(valor)
+    const interesCalculado = interesesDiariosConfig[valor] ?? interesDiarioActual
+    console.log('dias seleccionados:', valor)
+    console.log('interés aplicado:', interesCalculado)
     setDias(String(valor))
     setCuotas('')
     setInteres(String(interesCalculado))
     setMostrarDias(false)
   }
+
+  useEffect(() => {
+    if (modalidad !== 'diario' || !dias) return
+    const diasPlazo = Number(dias)
+    if (!diasPlazo) return
+    const interesDiarioActual = obtenerInteresDiarioPorDias(diasPlazo)
+    const interesAplicado = interesesDiariosConfig[diasPlazo] ?? interesDiarioActual
+    console.log('dias seleccionados:', diasPlazo)
+    console.log('interés aplicado:', interesAplicado)
+    setInteres(String(interesAplicado))
+  }, [dias, modalidad, interesesDiariosConfig])
 
   const cambiarModalidad = (nueva: 'mensual' | 'diario') => {
     setModalidad(nueva)
