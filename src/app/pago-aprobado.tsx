@@ -12,6 +12,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native'
 import { supabase } from '../lib/supabase'
@@ -216,6 +217,7 @@ function shortId(value: string, size = 8) {
 }
 
 export default function PagoAprobado() {
+  const { width } = useWindowDimensions()
   const params = useLocalSearchParams()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [validatingPayment, setValidatingPayment] = useState(true)
@@ -343,6 +345,9 @@ export default function PagoAprobado() {
 
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
   const cuotasTexto = describirCuotasImpactadas(cuotasDetalleNormalizadas)
+  const isMobile = width < 768
+  const isTablet = width >= 768 && width < 1024
+  const isDesktop = width >= 1024
 
   const proximaCuotaTexto = esPagoFinal
     ? 'Préstamo saldado / sin saldo pendiente'
@@ -750,7 +755,7 @@ export default function PagoAprobado() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.toolbar, styles.noPrint]} nativeID="receipt-screen-actions-top">
+        <View style={[styles.toolbar, styles.noPrint, isDesktop && styles.toolbarDesktop]} nativeID="receipt-screen-actions-top">
           <Pressable
             style={styles.actionGhost}
             onPress={() => router.replace(backToPrestamoUrl as any)}
@@ -759,7 +764,7 @@ export default function PagoAprobado() {
           </Pressable>
         </View>
 
-        <View style={styles.paper} nativeID="receipt-print-area" ref={receiptRef}>
+        <View style={[styles.paper, isDesktop && styles.paperDesktop, isTablet && styles.paperTablet]} nativeID="receipt-print-area" ref={receiptRef}>
           <View style={styles.printPaper} nativeID="receipt-print-surface">
             <View style={styles.header}>
               <View style={styles.headerLeft}>
@@ -780,12 +785,26 @@ export default function PagoAprobado() {
             </View>
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Datos del comprobante</Text>
-              <View style={styles.row}><Text style={styles.rowLabel}>Recibo N°</Text><Text style={styles.rowValue}>{receiptNumber}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>Fecha</Text><Text style={styles.rowValue}>{fechaFormateada}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>Cliente</Text><Text style={styles.rowValue}>{clienteNombre}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>DNI</Text><Text style={styles.rowValue}>{formatFallback(dniFinal, 'No registrado')}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>ID préstamo</Text><Text style={styles.rowValue}>{shortPrestamoId}</Text></View>
+              <Text style={styles.sectionTitle}>Resumen</Text>
+              <View
+                style={[
+                  styles.summaryGrid,
+                  isMobile ? styles.summaryGridMobile : isTablet ? styles.summaryGridTablet : styles.summaryGridDesktop,
+                ]}
+              >
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Pagado</Text>
+                  <Text style={styles.summaryValue}>{formatCurrencyArs(montoAplicado)}</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Entregado</Text>
+                  <Text style={styles.summaryValue}>{formatCurrencyArs(montoIngresado)}</Text>
+                </View>
+                <View style={[styles.summaryCard, styles.summaryCardVuelto]}>
+                  <Text style={styles.summaryLabelVuelto}>Vuelto 💵</Text>
+                  <Text style={styles.summaryValueVuelto}>{formatCurrencyArs(vuelto)}</Text>
+                </View>
+              </View>
             </View>
 
             <View style={[styles.section, styles.financialSection]}>
@@ -799,38 +818,45 @@ export default function PagoAprobado() {
               </View>
               <View style={styles.row}><Text style={styles.rowLabel}>Monto de cuota</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoAplicado + saldoRestanteCuota)}</Text></View>
               <View style={styles.row}><Text style={styles.rowLabel}>Monto aplicado</Text><Text style={[styles.rowValue, styles.highlightValue]}>{formatCurrencyArs(montoAplicado)}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>Monto entregado</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoIngresado)}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>Vuelto</Text><Text style={styles.rowValue}>{formatCurrencyArs(vuelto)}</Text></View>
-              <View style={styles.row}><Text style={styles.rowLabel}>Saldo restante</Text><Text style={styles.rowValue}>{saldoRestante <= 0 ? 'Préstamo saldado' : formatCurrencyArs(saldoRestante)}</Text></View>
-              {moraResumen.monto > 0 ? (
-                <>
-                  <View style={styles.row}><Text style={styles.rowLabel}>Días de atraso</Text><Text style={styles.rowValue}>{moraResumen.dias}</Text></View>
-                  <View style={styles.row}><Text style={styles.rowLabel}>% mora</Text><Text style={styles.rowValue}>{moraResumen.porcentaje.toFixed(2)}%</Text></View>
-                  <View style={styles.row}><Text style={styles.rowLabel}>Monto mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.monto)}</Text></View>
-                  <View style={styles.row}><Text style={styles.rowLabel}>Total abonado con mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.total)}</Text></View>
-                </>
-              ) : null}
+              <View style={styles.row}><Text style={styles.rowLabel}>Deuda restante del préstamo</Text><Text style={styles.rowValue}>{saldoRestante <= 0 ? 'Préstamo saldado' : formatCurrencyArs(saldoRestante)}</Text></View>
             </View>
 
-            {esPagoFinal ? (
-              <View style={styles.loanPaidOffCard}>
-                <Text style={styles.loanPaidOffTitle}>Préstamo completamente saldado</Text>
+            {moraResumen.monto > 0 ? (
+              <View style={[styles.section, styles.moraSection]}>
+                <Text style={styles.sectionTitle}>Mora</Text>
+                <View style={styles.row}><Text style={styles.rowLabel}>Días de atraso</Text><Text style={styles.rowValue}>{moraResumen.dias}</Text></View>
+                <View style={styles.row}><Text style={styles.rowLabel}>Porcentaje de mora</Text><Text style={styles.rowValue}>{moraResumen.porcentaje.toFixed(2)}%</Text></View>
+                <View style={styles.row}><Text style={styles.rowLabel}>Monto de mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.monto)}</Text></View>
+                <View style={styles.row}><Text style={styles.rowLabel}>Total abonado con mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.total)}</Text></View>
               </View>
-            ) : (
-              <View style={styles.nextInstallmentCard}>
-                <Text style={styles.nextInstallmentTitle}>Próxima cuota pendiente</Text>
-                <Text style={styles.nextInstallmentValue}>{proximaCuotaTexto}</Text>
-              </View>
-            )}
+            ) : null}
 
-            {esPagoParcial && (
-              <View style={styles.partialInfoCard}>
-                <Ionicons name="information-circle" size={18} color="#B45309" />
-                <Text style={styles.partialInfoText}>
-                  El pago se distribuyó automáticamente y quedaron saldos pendientes en algunas cuotas.
-                </Text>
-              </View>
-            )}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Info adicional</Text>
+              <View style={styles.row}><Text style={styles.rowLabel}>Recibo N°</Text><Text style={styles.rowValue}>{receiptNumber}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Fecha</Text><Text style={styles.rowValue}>{fechaFormateada}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Cliente</Text><Text style={styles.rowValue}>{clienteNombre}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>DNI</Text><Text style={styles.rowValue}>{formatFallback(dniFinal, 'No registrado')}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>ID préstamo</Text><Text style={styles.rowValue}>{shortPrestamoId}</Text></View>
+              {esPagoFinal ? (
+                <View style={styles.loanPaidOffCard}>
+                  <Text style={styles.loanPaidOffTitle}>Préstamo completamente saldado</Text>
+                </View>
+              ) : (
+                <View style={styles.nextInstallmentCard}>
+                  <Text style={styles.nextInstallmentTitle}>Próxima cuota pendiente</Text>
+                  <Text style={styles.nextInstallmentValue}>{proximaCuotaTexto}</Text>
+                </View>
+              )}
+              {esPagoParcial && (
+                <View style={styles.partialInfoCard}>
+                  <Ionicons name="information-circle" size={18} color="#B45309" />
+                  <Text style={styles.partialInfoText}>
+                    El pago se distribuyó automáticamente y quedaron saldos pendientes en algunas cuotas.
+                  </Text>
+                </View>
+              )}
+            </View>
 
             <View style={styles.footer}>
               <Text style={styles.footerLabel}>ID pago corto: {shortPagoId}</Text>
@@ -840,9 +866,20 @@ export default function PagoAprobado() {
           </View>
         </View>
 
-        <View style={[styles.actions, styles.noPrint]} nativeID="creditodo-recibo-actions">
+        <View
+          style={[
+            styles.actions,
+            styles.noPrint,
+            !isMobile && styles.actionsDesktop,
+          ]}
+          nativeID="creditodo-recibo-actions"
+        >
           <Pressable
-            style={[styles.actionPrimary, downloadingPdf && styles.actionPdfDisabled]}
+            style={[
+              styles.actionPrimary,
+              downloadingPdf && styles.actionPdfDisabled,
+              !isMobile && styles.actionDesktopMain,
+            ]}
             disabled={downloadingPdf}
             onPress={() => void handleDownloadPDF()}
           >
@@ -850,13 +887,13 @@ export default function PagoAprobado() {
               {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
             </Text>
           </Pressable>
-          <Pressable style={styles.actionPrint} onPress={onPrint}>
-            <Text style={styles.actionPrintText}>Imprimir</Text>
-          </Pressable>
-          <Pressable style={styles.actionSecondary} onPress={() => void onShareWhatsapp()}>
+          <Pressable style={[styles.actionSecondary, !isMobile && styles.actionDesktopMain]} onPress={() => void onShareWhatsapp()}>
             <Text style={styles.actionSecondaryText}>Compartir WhatsApp</Text>
           </Pressable>
-          <Pressable style={styles.actionGhost} onPress={() => router.replace(backToPrestamoUrl as any)}>
+          <Pressable style={[styles.actionPrint, !isMobile && styles.actionDesktopSecondary]} onPress={onPrint}>
+            <Text style={styles.actionPrintText}>Imprimir</Text>
+          </Pressable>
+          <Pressable style={[styles.actionGhost, !isMobile && styles.actionDesktopSecondary]} onPress={() => router.replace(backToPrestamoUrl as any)}>
             <Text style={styles.actionGhostText}>Volver</Text>
           </Pressable>
         </View>
@@ -883,9 +920,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
   },
+  toolbarDesktop: {
+    maxWidth: 1120,
+  },
   paper: {
     width: '100%',
     maxWidth: 720,
+  },
+  paperTablet: {
+    maxWidth: 900,
+  },
+  paperDesktop: {
+    maxWidth: 1120,
   },
   printPaper: {
     backgroundColor: '#FFFFFF',
@@ -967,6 +1013,61 @@ const styles = StyleSheet.create({
     borderColor: '#1D4ED8',
     backgroundColor: '#EFF6FF',
   },
+  moraSection: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+  },
+  summaryGrid: {
+    padding: 12,
+    gap: 10,
+  },
+  summaryGridMobile: {
+    flexDirection: 'column',
+  },
+  summaryGridTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  summaryGridDesktop: {
+    flexDirection: 'row',
+  },
+  summaryCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    flex: 1,
+    minWidth: 180,
+    gap: 4,
+  },
+  summaryCardVuelto: {
+    backgroundColor: '#ECFDF3',
+    borderColor: '#22C55E',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  summaryValue: {
+    fontSize: 20,
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  summaryLabelVuelto: {
+    fontSize: 12,
+    color: '#15803D',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  summaryValueVuelto: {
+    fontSize: 24,
+    color: '#15803D',
+    fontWeight: '900',
+  },
   sectionTitle: {
     backgroundColor: '#F8FAFC',
     color: '#1E3A8A',
@@ -1008,6 +1109,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
+    margin: 12,
   },
   partialInfoText: {
     color: '#92400E',
@@ -1021,6 +1123,7 @@ const styles = StyleSheet.create({
     borderColor: '#16A34A',
     borderRadius: 12,
     padding: 10,
+    margin: 12,
   },
   loanPaidOffTitle: {
     color: '#166534',
@@ -1034,6 +1137,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     gap: 2,
+    margin: 12,
   },
   nextInstallmentTitle: {
     color: '#1E3A8A',
@@ -1065,6 +1169,18 @@ const styles = StyleSheet.create({
     maxWidth: 720,
     gap: 10,
     marginBottom: 8,
+  },
+  actionsDesktop: {
+    maxWidth: 1120,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  actionDesktopMain: {
+    flex: 1,
+    minWidth: 230,
+  },
+  actionDesktopSecondary: {
+    minWidth: 150,
   },
   actionPrimary: {
     backgroundColor: '#1D4ED8',
