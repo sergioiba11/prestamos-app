@@ -550,18 +550,19 @@ export default function Configuraciones() {
         : biometricStatus === 'not_enrolled'
           ? 'No tenés biometría configurada en este dispositivo.'
           : 'Podés activar huella o rostro para ingreso rápido.'
+  const isWeb = Platform.OS === 'web'
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Configuraciones</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Configuraciones</Text>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <Text style={styles.backButtonText}>Volver</Text>
+            </TouchableOpacity>
+          </View>
 
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.card, styles.mpCard]}>
           <Text style={styles.cardTitleActive}>Cobros con Mercado Pago</Text>
 
@@ -662,21 +663,31 @@ export default function Configuraciones() {
 
         <View style={[styles.card, styles.cardActive]}>
           <Text style={styles.cardTitleActive}>Datos del negocio y branding</Text>
-          <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
-          <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
-          <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
-          <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
+          <View style={styles.businessGrid}>
+            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+              <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
+            </View>
+            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+              <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
+            </View>
+            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+              <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
+            </View>
+            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+              <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
+            </View>
+          </View>
           <View style={styles.preferenceRow}>
             <Text style={styles.cardTextActive}>Enviar comprobante por SMS</Text>
             <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
           </View>
-          <TouchableOpacity style={styles.connectButton} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
+          <TouchableOpacity style={[styles.connectButton, styles.businessSaveButton, !isWeb && styles.mobileFullButton]} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
             {savingBusinessData ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar configuración</Text>}
           </TouchableOpacity>
         </View>
 
         <View style={[styles.card, styles.interesesCard]}>
-          <Text style={styles.cardTitleActive}>Tasas de interés</Text>
+          <Text style={styles.cardTitleActive}>Tasas de interés mensual</Text>
           <Text style={styles.cardTextActive}>
             Administrá los porcentajes que se aplican según la cantidad de cuotas.
           </Text>
@@ -686,9 +697,9 @@ export default function Configuraciones() {
               <ActivityIndicator size="small" color="#60A5FA" />
             </View>
           ) : (
-            <ScrollView style={styles.interesesList} nestedScrollEnabled>
+            <View style={styles.interesesGrid}>
               {interesesRows.map((row) => (
-                <View key={row.cuotas} style={styles.interesRow}>
+                <View key={row.cuotas} style={[styles.interesRow, isWeb && styles.interesRowWeb]}>
                   <Text style={styles.interesCuotaText}>{row.cuotas} cuota{row.cuotas > 1 ? 's' : ''}</Text>
                   <View style={styles.interesInputWrap}>
                     <TextInput
@@ -710,7 +721,7 @@ export default function Configuraciones() {
                   ) : null}
                 </View>
               ))}
-            </ScrollView>
+            </View>
           )}
 
           {!esAdmin ? (
@@ -719,14 +730,14 @@ export default function Configuraciones() {
 
           <View style={styles.interesesButtons}>
             <TouchableOpacity
-              style={[styles.saveInteresesButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
+              style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
               onPress={guardarIntereses}
               disabled={!esAdmin || savingIntereses || loadingIntereses}
             >
               {savingIntereses ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar cambios</Text>}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.restoreInteresesButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
+              style={[styles.restoreInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
               onPress={restaurarInteresesDefault}
               disabled={!esAdmin || savingIntereses || loadingIntereses}
             >
@@ -761,7 +772,7 @@ export default function Configuraciones() {
                       ? 'Días 4 a 10'
                       : 'Día 11 en adelante'
                 return (
-                  <View key={row.tramo} style={styles.interesRow}>
+                  <View key={row.tramo} style={[styles.interesRow, isWeb && styles.moraRowWeb]}>
                     <Text style={styles.interesCuotaText}>{etiqueta}</Text>
                     <View style={styles.interesInputWrap}>
                       <TextInput
@@ -788,7 +799,7 @@ export default function Configuraciones() {
 
           <View style={styles.interesesButtons}>
             <TouchableOpacity
-              style={[styles.saveInteresesButton, (!esAdmin || savingMora || loadingMora) && styles.connectButtonDisabled]}
+              style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingMora || loadingMora) && styles.connectButtonDisabled]}
               onPress={guardarMora}
               disabled={!esAdmin || savingMora || loadingMora}
             >
@@ -810,6 +821,7 @@ export default function Configuraciones() {
             Próximamente: conciliación automática, webhook de estados y reportes por canal de cobro.
           </Text>
         </View>
+        </View>
       </ScrollView>
     </View>
   )
@@ -819,18 +831,27 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#020817',
-    padding: 16,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 28,
+  },
+  container: {
+    width: '100%',
+    maxWidth: 1200,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
     gap: 12,
   },
   title: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '800',
   },
   backButton: {
@@ -845,23 +866,21 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     fontWeight: '800',
   },
-  content: {
-    paddingBottom: 24,
-  },
   card: {
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
+    borderRadius: 20,
+    padding: 22,
+    marginBottom: 20,
   },
   mpCard: {
-    backgroundColor: '#082F49',
+    backgroundColor: '#0F172A',
     borderWidth: 1,
-    borderColor: '#0EA5E9',
+    borderColor: '#334155',
   },
   buttonRow: {
     marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
   },
   connectButton: {
@@ -941,16 +960,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   cardActive: {
-    backgroundColor: '#111827',
-    borderWidth: 1.5,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
     borderColor: '#334155',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 6,
   },
   interesesCard: {
-    backgroundColor: '#0B1220',
+    backgroundColor: '#111827',
     borderWidth: 1,
     borderColor: '#1E293B',
   },
@@ -963,6 +978,24 @@ const styles = StyleSheet.create({
   cardTextActive: {
     color: '#CBD5E1',
     fontSize: 14,
+    lineHeight: 20,
+  },
+  businessGrid: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
+  },
+  businessField: {
+    width: '100%',
+    paddingHorizontal: 6,
+  },
+  businessFieldWeb: {
+    width: '50%',
+  },
+  businessSaveButton: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
   },
   input: {
     marginTop: 10,
@@ -986,26 +1019,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   interesesList: {
-    marginTop: 12,
-    maxHeight: 460,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 12,
-    backgroundColor: '#0F172A',
-    padding: 10,
-    gap: 8,
+    marginTop: 12
+  },
+  interesesGrid: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
   },
   moraList: {
     marginTop: 12,
-    gap: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
   },
   interesRow: {
+    width: '100%',
+    marginBottom: 12,
+    marginHorizontal: 6,
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 10,
-    backgroundColor: '#111827',
-    padding: 10,
+    borderRadius: 14,
+    backgroundColor: '#0B1220',
+    padding: 12,
     gap: 8,
+  },
+  interesRowWeb: {
+    width: '23%',
+    minWidth: 210,
+  },
+  moraRowWeb: {
+    width: '31%',
+    minWidth: 220,
   },
   interesCuotaText: {
     color: '#E2E8F0',
@@ -1018,7 +1063,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   interesInput: {
-    flex: 1,
+    width: 96,
     borderWidth: 1,
     borderColor: '#334155',
     borderRadius: 8,
@@ -1036,6 +1081,7 @@ const styles = StyleSheet.create({
   interesPercent: {
     color: '#93C5FD',
     fontWeight: '800',
+    fontSize: 12,
   },
   interesBadge: {
     alignSelf: 'flex-start',
@@ -1073,7 +1119,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     minHeight: 42,
-    minWidth: 180,
+    minWidth: 190,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1092,6 +1138,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  mobileFullButton: {
+    width: '100%',
+  },
   restoreInteresesButtonText: {
     color: '#CBD5E1',
     fontWeight: '700',
@@ -1099,10 +1148,11 @@ const styles = StyleSheet.create({
   interesesNotice: {
     marginTop: 14,
     borderWidth: 1,
-    borderColor: '#7C3AED',
-    backgroundColor: '#2E1065',
-    borderRadius: 10,
-    padding: 10,
+    borderColor: '#8B5CF6',
+    backgroundColor: '#22103B',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   interesesNoticeText: {
     color: '#E9D5FF',
