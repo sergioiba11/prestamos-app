@@ -159,9 +159,12 @@ export default function NuevoPrestamo() {
   const [diaPagoMensual, setDiaPagoMensual] = useState('')
   const [loading, setLoading] = useState(false)
   const [moraResumen, setMoraResumen] = useState('AL DÍA')
+  const [interesesMensualesConfig, setInteresesMensualesConfig] =
+    useState<Record<number, number>>(INTERESES_MENSUALES)
 
   useEffect(() => {
     obtenerClientes()
+    cargarInteresesMensuales()
   }, [])
 
   useEffect(() => {
@@ -189,6 +192,39 @@ export default function NuevoPrestamo() {
     if (clienteIdParam) {
       const encontrado = lista.find((c) => c.id === clienteIdParam) || null
       setClienteSeleccionado(encontrado)
+    }
+  }
+
+  const cargarInteresesMensuales = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('config_intereses')
+        .select('cuotas, porcentaje')
+        .eq('tipo', 'mensual')
+        .eq('activo', true)
+        .order('cuotas', { ascending: true })
+
+      if (error || !data || data.length === 0) {
+        setInteresesMensualesConfig(INTERESES_MENSUALES)
+        return
+      }
+
+      const mapaDb: Record<number, number> = {}
+
+      for (const item of data as any[]) {
+        const cuota = Number(item?.cuotas || 0)
+        if (!cuota || cuota < 1 || cuota > 36) continue
+        mapaDb[cuota] = Number(item?.porcentaje || 0)
+      }
+
+      if (Object.keys(mapaDb).length === 0) {
+        setInteresesMensualesConfig(INTERESES_MENSUALES)
+        return
+      }
+
+      setInteresesMensualesConfig({ ...INTERESES_MENSUALES, ...mapaDb })
+    } catch {
+      setInteresesMensualesConfig(INTERESES_MENSUALES)
     }
   }
 
@@ -335,12 +371,19 @@ export default function NuevoPrestamo() {
   }, [fechaInicio, modalidad, diasNumero, cuotasNumero, habilitarDiaPagoManual, diaPagoMensualNumero])
 
   const seleccionarCuota = (valor: number) => {
-    const interesCalculado = INTERESES_MENSUALES[valor] || 0
+    const interesCalculado = interesesMensualesConfig[valor] || 0
     setCuotas(String(valor))
     setDias('')
     setInteres(String(interesCalculado))
     setMostrarCuotas(false)
   }
+
+  useEffect(() => {
+    if (modalidad !== 'mensual' || !cuotas) return
+    const cuotaNumero = Number(cuotas)
+    if (!cuotaNumero) return
+    setInteres(String(interesesMensualesConfig[cuotaNumero] || 0))
+  }, [cuotas, modalidad, interesesMensualesConfig])
 
   const seleccionarDias = (valor: number) => {
     const interesCalculado = obtenerInteresDiarioPorDias(valor)
@@ -737,7 +780,7 @@ export default function NuevoPrestamo() {
                         >
                           <Text style={styles.dropdownItemText}>
                             {i + 1} cuota{i + 1 > 1 ? 's' : ''} -{' '}
-                            {INTERESES_MENSUALES[i + 1]}%
+                            {interesesMensualesConfig[i + 1] ?? INTERESES_MENSUALES[i + 1]}%
                           </Text>
                         </TouchableOpacity>
                       ))}
