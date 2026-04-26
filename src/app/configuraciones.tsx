@@ -174,16 +174,16 @@ export default function Configuraciones() {
     try {
       const { data, error } = await supabase
         .from('config_intereses')
-        .select('cuotas, porcentaje')
+        .select('plazo, porcentaje')
         .eq('tipo', 'mensual')
         .eq('activo', true)
-        .order('cuotas', { ascending: true })
+        .order('plazo', { ascending: true })
 
       if (error || !data || data.length === 0) return
 
       const porCuota = new Map<number, string>()
       for (const item of data as any[]) {
-        const cuota = Number(item?.cuotas || 0)
+        const cuota = Number(item?.plazo || 0)
         if (!cuota || cuota < 1 || cuota > 36) continue
         porCuota.set(cuota, String(Number(item?.porcentaje || 0)))
       }
@@ -243,14 +243,13 @@ export default function Configuraciones() {
     try {
       const payload = interesesRows.map((row) => ({
         tipo: 'mensual',
-        cuotas: row.cuotas,
-        dias: null,
+        plazo: row.cuotas,
         porcentaje: Number(Number(row.porcentaje).toFixed(2)),
         activo: true,
         updated_at: new Date().toISOString(),
       }))
 
-      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,cuotas' })
+      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,plazo' })
       if (error) throw error
       Alert.alert('Listo', 'Tasas de interés guardadas.')
     } catch (error: any) {
@@ -269,13 +268,12 @@ export default function Configuraciones() {
     try {
       const payload = defaults.map((row) => ({
         tipo: 'mensual',
-        cuotas: row.cuotas,
-        dias: null,
+        plazo: row.cuotas,
         porcentaje: Number(Number(row.porcentaje).toFixed(2)),
         activo: true,
         updated_at: new Date().toISOString(),
       }))
-      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,cuotas' })
+      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,plazo' })
       if (error) throw error
       Alert.alert('Listo', 'Se restauraron los valores por defecto.')
     } catch (error: any) {
