@@ -228,7 +228,7 @@ export default function AdminHome() {
       await loadData()
 
       if (accion === 'aprobar') {
-        router.push(`/pago-aprobado?id=${encodeURIComponent(String(pagoId))}` as any)
+        router.push(`/pago-aprobado?pago_id=${encodeURIComponent(String(json?.pago_id || pagoId))}` as any)
       }
     } catch (error: any) {
       console.error(error)
