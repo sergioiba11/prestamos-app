@@ -321,6 +321,7 @@ export default function CargarPago() {
     qrBase64: string | null
   } | null>(null)
   const { width } = useWindowDimensions()
+  const contentMaxWidth = 920
 
   useEffect(() => {
     cargarClientes()
@@ -654,9 +655,24 @@ export default function CargarPago() {
   const cuotasGridColumns = width >= 1200 ? 4 : width >= 900 ? 3 : 2
   const cuotaItemWidth = Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
 
+  const limpiarClienteSeleccionado = () => {
+    setClienteSeleccionado(null)
+    setPrestamos([])
+    setPrestamoSeleccionado(null)
+    setCuotas([])
+    setCuotaSeleccionada(null)
+    setMostrarTodasCuotas(false)
+    setPrestamoExpandidoId(null)
+    setCuotasPorPrestamo({})
+    setMonto('')
+    setMetodo('efectivo')
+    setComprobante('')
+    setMpCheckout(null)
+  }
+
   const volver = () => {
     if (clienteSeleccionado?.id) {
-      router.replace(`/cliente/${clienteSeleccionado.id}` as any)
+      limpiarClienteSeleccionado()
       return
     }
     router.back()
@@ -676,22 +692,6 @@ export default function CargarPago() {
       setOpcionSobranteEfectivo('aplicar_proximas')
     }
   }, [haySobranteEfectivo])
-
-  const limpiarTodo = () => {
-    setClienteSeleccionado(null)
-    setPrestamos([])
-    setPrestamoSeleccionado(null)
-    setCuotas([])
-    setCuotaSeleccionada(null)
-    setMostrarTodasCuotas(false)
-    setPrestamoExpandidoId(null)
-    setCuotasPorPrestamo({})
-    setBusqueda('')
-    setMonto('')
-    setMetodo('efectivo')
-    setComprobante('')
-    setMpCheckout(null)
-  }
 
   const invocarFuncionConFallback = async (
     accessToken: string,
@@ -1029,15 +1029,20 @@ export default function CargarPago() {
       ref={scrollRef}
       keyboardShouldPersistTaps="always"
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        cuotaSeleccionada ? styles.contentWithFixedFooter : null,
+      ]}
       showsVerticalScrollIndicator={false}
     >
+      <View style={[styles.contentInner, { maxWidth: contentMaxWidth }]}>
       <TouchableOpacity style={styles.backButton} onPress={volver}>
         <Text style={styles.backButtonText}>← Volver</Text>
       </TouchableOpacity>
 
       <Text style={styles.title}>Cargar pago</Text>
       <Text style={styles.subtitle}>Registrá un pago por cuota</Text>
+      {!clienteSeleccionado && (
       <View style={[styles.mainCard, styles.sectionCard, styles.searchCard]}>
         <Text style={styles.sectionTitle}>BUSCAR</Text>
         <TextInput
@@ -1048,6 +1053,7 @@ export default function CargarPago() {
           style={styles.input}
         />
       </View>
+      )}
 
       {!clienteSeleccionado ? (
         <>
@@ -1079,13 +1085,22 @@ export default function CargarPago() {
             <Text style={styles.sectionTitle}>CLIENTE</Text>
             <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
             <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
-            <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email || 'Sin email'}</Text>
             <Text style={styles.infoMeta}>Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}</Text>
+            {clienteSeleccionado.email ? (
+              <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email}</Text>
+            ) : null}
+            <View style={styles.clientActionsRow}>
+              <TouchableOpacity style={styles.changeButton} onPress={limpiarClienteSeleccionado}>
+                <Text style={styles.changeButtonText}>Cambiar cliente</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.changeButton, styles.secondaryActionButton]}
+                onPress={() => router.push(`/cliente/${clienteSeleccionado.id}` as any)}
+              >
+                <Text style={styles.changeButtonText}>Ver detalle del cliente</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <TouchableOpacity style={styles.changeButton} onPress={limpiarTodo}>
-            <Text style={styles.changeButtonText}>Cambiar cliente</Text>
-          </TouchableOpacity>
 
           {prestamosFiltrados.length === 0 ? (
             <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
@@ -1111,17 +1126,19 @@ export default function CargarPago() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <View style={styles.resumeRow}>
-                <Text style={styles.resumeLabel}>Total a pagar</Text>
-                <Text style={styles.resumeValue}>{formatearMoneda(totalPrestamo)}</Text>
-              </View>
-              <View style={styles.resumeRow}>
-                <Text style={styles.resumeLabel}>Total pagado</Text>
-                <Text style={styles.resumeValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
-              </View>
-              <View style={styles.remainingWrap}>
-                <Text style={styles.remainingLabel}>Saldo restante</Text>
-                <Text style={styles.remainingValue}>{formatearMoneda(saldoRestantePrestamo)}</Text>
+              <View style={styles.loanSummaryCard}>
+                <View style={styles.loanSummaryHeader}>
+                  <Text style={styles.remainingLabel}>Saldo restante</Text>
+                  <Text style={styles.remainingValue}>{formatearMoneda(saldoRestantePrestamo)}</Text>
+                </View>
+                <View style={styles.resumeRow}>
+                  <Text style={styles.resumeLabel}>Total a pagar</Text>
+                  <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPrestamo)}</Text>
+                </View>
+                <View style={styles.resumeRow}>
+                  <Text style={styles.resumeLabel}>Total pagado</Text>
+                  <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
+                </View>
               </View>
             </View>
           )}
@@ -1267,15 +1284,6 @@ export default function CargarPago() {
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
-                  onPress={registrarPago}
-                  disabled={guardando || !cuotaPendienteValida}
-                >
-                  <Text style={styles.saveButtonText}>
-                    {guardando ? 'Guardando...' : 'Registrar pago'}
-                  </Text>
-                </TouchableOpacity>
               </View>
 
               <View style={[styles.mainCard, styles.sectionCard, styles.paymentNotesCard]}>
@@ -1353,12 +1361,6 @@ export default function CargarPago() {
                 </View>
               )}
 
-              {!mpDisponible ? (
-                <Text style={styles.mpDisabledHelper}>
-                  Primero conectá Mercado Pago en Configuraciones
-                </Text>
-              ) : null}
-
               {metodo === 'transferencia' && (
                 <>
                   <Text style={styles.label}>Comprobante (texto o URL opcional)</Text>
@@ -1382,7 +1384,30 @@ export default function CargarPago() {
           )}
         </>
       )}
+      </View>
       </ScrollView>
+      {cuotaSeleccionada ? (
+        <View style={styles.fixedFooterWrap} pointerEvents="box-none">
+          <View style={[styles.fixedFooter, { maxWidth: contentMaxWidth }]}>
+            <View style={styles.fixedFooterResume}>
+              <Text style={styles.fixedFooterText}>A aplicar: {formatearMoneda(montoAplicado)}</Text>
+              <Text style={styles.fixedFooterSubtext}>
+                Entregado: {formatearMoneda(montoNormalizado)}
+                {vuelto > 0.009 ? ` · Vuelto: ${formatearMoneda(vuelto)}` : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.saveButton, styles.fixedFooterButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+              onPress={registrarPago}
+              disabled={guardando || !cuotaPendienteValida}
+            >
+              <Text style={styles.saveButtonText}>
+                {guardando ? 'Guardando...' : `Registrar pago ${formatearMoneda(montoNormalizado)}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
       <Modal
         visible={Boolean(mpCheckout)}
         transparent
@@ -1443,6 +1468,13 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 56,
+  },
+  contentWithFixedFooter: {
+    paddingBottom: 210,
+  },
+  contentInner: {
+    width: '100%',
+    alignSelf: 'center',
   },
 
   loadingContainer: {
@@ -1624,6 +1656,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 18,
   },
+  clientActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 14,
+  },
   mainCard: {
     marginTop: 18,
     shadowColor: '#020617',
@@ -1655,11 +1693,13 @@ const styles = StyleSheet.create({
 
   changeButton: {
     alignSelf: 'flex-start',
-    marginTop: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: '#172554',
+  },
+  secondaryActionButton: {
+    backgroundColor: '#1E293B',
   },
 
   changeButtonText: {
@@ -1715,13 +1755,6 @@ const styles = StyleSheet.create({
   methodButtonDisabled: {
     opacity: 0.45,
     borderColor: '#334155',
-  },
-
-  mpDisabledHelper: {
-    color: '#FCA5A5',
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '600',
   },
 
   resumeCard: {
@@ -1874,9 +1907,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#334155',
-    backgroundColor: '#0B1220',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#111C35',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
   },
   loanPillActive: {
     borderColor: '#3B82F6',
@@ -1885,13 +1918,22 @@ const styles = StyleSheet.create({
   loanPillText: {
     color: '#DBEAFE',
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 13,
   },
-  remainingWrap: {
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-    paddingTop: 12,
+  loanSummaryCard: {
+    marginTop: 2,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+    backgroundColor: '#0A1A3A',
+    padding: 14,
+    gap: 8,
+  },
+  loanSummaryHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E3A8A',
+    paddingBottom: 8,
+    marginBottom: 2,
   },
   remainingLabel: {
     color: '#93C5FD',
@@ -1900,9 +1942,15 @@ const styles = StyleSheet.create({
   },
   remainingValue: {
     color: '#3B82F6',
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
     marginTop: 2,
+  },
+  loanSummaryValue: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'right',
   },
   quotaGrid: {
     flexDirection: 'row',
@@ -1910,10 +1958,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   quotaTile: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    minHeight: 90,
-    padding: 12,
+    minHeight: 94,
+    padding: 13,
     justifyContent: 'space-between',
   },
   quotaTileActive: {
@@ -1931,12 +1979,12 @@ const styles = StyleSheet.create({
   },
   quotaTileTitle: {
     color: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
   quotaTileBadge: {
     marginTop: 6,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   amountInput: {
@@ -1953,5 +2001,39 @@ const styles = StyleSheet.create({
   },
   paymentNotesCard: {
     marginTop: 10,
+  },
+  fixedFooterWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  fixedFooter: {
+    width: '100%',
+    alignSelf: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    backgroundColor: 'rgba(15, 23, 42, 0.96)',
+    padding: 12,
+    gap: 10,
+  },
+  fixedFooterResume: {
+    gap: 4,
+  },
+  fixedFooterText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  fixedFooterSubtext: {
+    color: '#BFDBFE',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  fixedFooterButton: {
+    marginTop: 0,
   },
 })
