@@ -291,7 +291,11 @@ async function obtenerAccessTokenValido() {
 export default function CargarPago() {
   const params = useLocalSearchParams()
   const scrollRef = useRef<ScrollView | null>(null)
+  const clienteSectionYRef = useRef(0)
+  const prestamoSectionYRef = useRef(0)
+  const cuotaSectionYRef = useRef(0)
   const paymentFormYRef = useRef(0)
+  const montoYRef = useRef(0)
   const sobranteYRef = useRef(0)
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -322,6 +326,7 @@ export default function CargarPago() {
   const [comprobante, setComprobante] = useState('')
   const [opcionSobranteEfectivo, setOpcionSobranteEfectivo] = useState<OpcionSobranteEfectivo | null>(null)
   const [sobranteHighlight, setSobranteHighlight] = useState(false)
+  const [missingField, setMissingField] = useState<'cliente' | 'prestamo' | 'cuota' | 'monto' | 'sobrante' | null>(null)
   const [mpEstado, setMpEstado] = useState<MercadoPagoEstado>({
     connected: false,
     aliasCuenta: null,
@@ -742,22 +747,77 @@ export default function CargarPago() {
     router.replace('/admin-home' as any)
   }
 
-  const guiarASobranteDetectado = useCallback(() => {
-    if (!haySobranteEfectivo || opcionSobranteEfectivo !== null) return
+  const resaltarYScroll = useCallback(
+    (field: 'cliente' | 'prestamo' | 'cuota' | 'monto' | 'sobrante') => {
+      const y =
+        field === 'cliente'
+          ? clienteSectionYRef.current
+          : field === 'prestamo'
+            ? prestamoSectionYRef.current
+            : field === 'cuota'
+              ? cuotaSectionYRef.current
+              : field === 'monto'
+                ? montoYRef.current
+                : sobranteYRef.current
 
-    scrollRef.current?.scrollTo({
-      y: Math.max(0, sobranteYRef.current - 24),
-      animated: true,
-    })
-    setSobranteHighlight(true)
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, y - 24),
+        animated: true,
+      })
+      setMissingField(field)
+      if (field === 'sobrante') setSobranteHighlight(true)
 
-    if (highlightTimeoutRef.current) {
-      clearTimeout(highlightTimeoutRef.current)
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current)
+      }
+      highlightTimeoutRef.current = setTimeout(() => {
+        setMissingField(null)
+        setSobranteHighlight(false)
+      }, 1600)
+    },
+    []
+  )
+
+  const intentarRegistrarPago = useCallback(() => {
+    if (!clienteSeleccionado?.id) {
+      Alert.alert('Error', 'Seleccioná un cliente')
+      resaltarYScroll('cliente')
+      return
     }
-    highlightTimeoutRef.current = setTimeout(() => {
-      setSobranteHighlight(false)
-    }, 1400)
-  }, [haySobranteEfectivo, opcionSobranteEfectivo])
+
+    if (!prestamoSeleccionado?.id) {
+      Alert.alert('Error', 'Seleccioná un préstamo')
+      resaltarYScroll('prestamo')
+      return
+    }
+
+    if (!cuotaSeleccionada?.id) {
+      Alert.alert('Error', 'Seleccioná una cuota')
+      resaltarYScroll('cuota')
+      return
+    }
+
+    if (!montoNormalizado || montoNormalizado <= 0) {
+      Alert.alert('Error', 'Ingresá un monto válido')
+      resaltarYScroll('monto')
+      return
+    }
+
+    if (haySobranteEfectivo && !opcionSobranteEfectivo) {
+      resaltarYScroll('sobrante')
+      return
+    }
+
+    void registrarPago()
+  }, [
+    clienteSeleccionado?.id,
+    prestamoSeleccionado?.id,
+    cuotaSeleccionada?.id,
+    montoNormalizado,
+    haySobranteEfectivo,
+    opcionSobranteEfectivo,
+    resaltarYScroll,
+  ])
 
   useEffect(() => {
     if (!cuotaSeleccionada) return
@@ -1188,7 +1248,16 @@ export default function CargarPago() {
       ) : (
         <View style={[styles.workflowLayout, isDesktop && styles.workflowLayoutDesktop]}>
           <View style={[styles.workflowLeft, isDesktop && styles.workflowLeftDesktop]}>
-            <View style={[styles.infoCard, styles.mainCard]}>
+            <View
+              style={[
+                styles.infoCard,
+                styles.mainCard,
+                missingField === 'cliente' && styles.missingFieldCard,
+              ]}
+              onLayout={(event) => {
+                clienteSectionYRef.current = event.nativeEvent.layout.y
+              }}
+            >
               <Text style={styles.sectionTitle}>CLIENTE</Text>
               <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
               <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
@@ -1212,7 +1281,16 @@ export default function CargarPago() {
             {prestamosFiltrados.length === 0 ? (
               <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
             ) : (
-              <View style={[styles.mainCard, styles.sectionCard]}>
+              <View
+                style={[
+                  styles.mainCard,
+                  styles.sectionCard,
+                  missingField === 'prestamo' && styles.missingFieldCard,
+                ]}
+                onLayout={(event) => {
+                  prestamoSectionYRef.current = event.nativeEvent.layout.y
+                }}
+              >
                 <Text style={styles.sectionTitle}>PRÉSTAMOS</Text>
                 <View style={styles.loanCardsWrap}>
                   {prestamosFiltrados.map((prestamo) => {
@@ -1264,44 +1342,67 @@ export default function CargarPago() {
             )}
 
             {prestamoSeleccionado && (
-              <View style={[styles.mainCard, styles.sectionCard]}>
+              <View
+                style={[
+                  styles.mainCard,
+                  styles.sectionCard,
+                  missingField === 'cuota' && styles.missingFieldCard,
+                ]}
+                onLayout={(event) => {
+                  cuotaSectionYRef.current = event.nativeEvent.layout.y
+                }}
+              >
                 <Text style={styles.sectionTitle}>CUOTAS</Text>
-                <ScrollView
-                  style={isDesktop ? styles.quotaDesktopScroll : undefined}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator={isDesktop}
-                  contentContainerStyle={styles.quotaGrid}
-                >
-                  {cuotasFiltradas.map((cuota) => {
-                    const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
-                    const selected = cuotaSeleccionada?.id === cuota.id
-                    return (
-                      <Pressable
-                        key={cuota.id}
-                        onPress={() => {
-                          setCuotaSeleccionada(cuota)
-                          requestAnimationFrame(() => {
-                            scrollRef.current?.scrollTo({
-                              y: Math.max(0, paymentFormYRef.current - 24),
-                              animated: true,
+                {isDesktop ? (
+                  <ScrollView
+                    style={styles.quotaDesktopScroll}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    contentContainerStyle={styles.quotaGrid}
+                  >
+                    {cuotasFiltradas.map((cuota) => {
+                      const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
+                      const selected = cuotaSeleccionada?.id === cuota.id
+                      return (
+                        <Pressable
+                          key={cuota.id}
+                          onPress={() => {
+                            setCuotaSeleccionada(cuota)
+                            requestAnimationFrame(() => {
+                              scrollRef.current?.scrollTo({
+                                y: Math.max(0, paymentFormYRef.current - 24),
+                                animated: true,
+                              })
                             })
-                          })
-                        }}
-                        style={({ hovered, pressed }) => [
-                          styles.quotaTile,
-                          { width: cuotaItemWidth, borderColor: estadoUi.color, backgroundColor: estadoUi.fondo },
-                          selected && styles.quotaTileActive,
-                          hovered && styles.quotaTileHover,
-                          pressed && styles.quotaTilePressed,
-                        ]}
-                      >
-                        <Text style={styles.quotaTileTitle}>#{cuota.numero_cuota}</Text>
-                        <Text style={styles.quotaTileAmount}>{formatearMoneda(Number(cuota.saldo_pendiente || cuota.monto_cuota || 0))}</Text>
-                        <Text style={[styles.quotaTileBadge, { color: estadoUi.color }]}>{estadoUi.etiqueta}</Text>
-                      </Pressable>
-                    )
-                  })}
-                </ScrollView>
+                          }}
+                          style={({ hovered, pressed }) => [
+                            styles.quotaTile,
+                            { width: cuotaItemWidth, borderColor: estadoUi.color, backgroundColor: estadoUi.fondo },
+                            selected && styles.quotaTileActive,
+                            hovered && styles.quotaTileHover,
+                            pressed && styles.quotaTilePressed,
+                          ]}
+                        >
+                          <Text style={styles.quotaTileTitle}>#{cuota.numero_cuota}</Text>
+                          <Text style={styles.quotaTileAmount}>{formatearMoneda(Number(cuota.saldo_pendiente || cuota.monto_cuota || 0))}</Text>
+                          <Text style={[styles.quotaTileBadge, { color: estadoUi.color }]}>{estadoUi.etiqueta}</Text>
+                        </Pressable>
+                      )
+                    })}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.compactQuotaContainer}>
+                    <Text style={styles.compactQuotaLabel}>
+                      Cuota seleccionada: #{cuotaSeleccionada?.numero_cuota || '—'} - {formatearMoneda(Number(cuotaSeleccionada?.saldo_pendiente || cuotaSeleccionada?.monto_cuota || 0))}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.changeButton}
+                      onPress={() => setMostrarTodasCuotas(true)}
+                    >
+                      <Text style={styles.changeButtonText}>Cambiar cuota</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -1315,6 +1416,25 @@ export default function CargarPago() {
             >
               <View style={[styles.mainCard, styles.sectionCard, styles.paymentPrimaryCard]}>
                 <Text style={styles.sectionTitle}>PAGO</Text>
+                {!isDesktop && (
+                  <View style={styles.selectedQuotaCard}>
+                    <Text style={styles.selectedQuotaTitle}>Cuota seleccionada</Text>
+                    <Text style={styles.selectedQuotaMain}>
+                      #{cuotaSeleccionada.numero_cuota} · {formatearMoneda(saldoOriginalCuota)}
+                    </Text>
+                    <Text style={styles.selectedQuotaMeta}>
+                      Estado: {obtenerEstadoCuotaVisual(cuotaSeleccionada, cuotaSeleccionada.id === proximaCuotaPendienteId).etiqueta}
+                    </Text>
+                    <Text style={styles.selectedQuotaMeta}>
+                      Vencimiento: {formatearFecha(cuotaSeleccionada.fecha_vencimiento)}
+                    </Text>
+                    {moraCuotaSeleccionada.montoMora > 0 ? (
+                      <Text style={styles.selectedQuotaMeta}>
+                        Mora: {moraCuotaSeleccionada.diasAtraso} días · {formatearMoneda(moraCuotaSeleccionada.montoMora)} · Total {formatearMoneda(deudaActual)}
+                      </Text>
+                    ) : null}
+                  </View>
+                )}
                 <Text style={styles.label}>Resumen</Text>
                 <View style={styles.resumeCard}>
                   <Text style={styles.resumeTitle}>RESUMEN DEL PAGO</Text>
@@ -1422,36 +1542,37 @@ export default function CargarPago() {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.label}>Monto</Text>
-                <TextInput
-                  value={metodo === 'transferencia' ? formatearMonedaInputDesdeNumero(transferenciaMontoAutomatico) : monto}
-                  onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
-                  placeholder="$ 0,00"
-                  placeholderTextColor="#64748B"
-                  keyboardType="decimal-pad"
-                  style={[
-                    styles.amountInput,
-                    isDesktop && styles.amountInputDesktop,
-                    metodo === 'transferencia' && styles.inputDisabled,
-                  ]}
-                  editable={metodo !== 'transferencia'}
-                  returnKeyType="done"
-                  onSubmitEditing={() => {
-                    if (puedeRegistrarPago) {
-                      void registrarPago()
-                    }
+                <View
+                  onLayout={(event) => {
+                    montoYRef.current = event.nativeEvent.layout.y
                   }}
-                />
+                >
+                  <Text style={styles.label}>Monto</Text>
+                  <TextInput
+                    value={metodo === 'transferencia' ? formatearMonedaInputDesdeNumero(transferenciaMontoAutomatico) : monto}
+                    onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
+                    placeholder="$ 0,00"
+                    placeholderTextColor="#64748B"
+                    keyboardType="decimal-pad"
+                    style={[
+                      styles.amountInput,
+                      isDesktop && styles.amountInputDesktop,
+                      metodo === 'transferencia' && styles.inputDisabled,
+                      missingField === 'monto' && styles.missingFieldInput,
+                    ]}
+                    editable={metodo !== 'transferencia'}
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      intentarRegistrarPago()
+                    }}
+                  />
+                </View>
 
                 {isDesktop && (
                   <TouchableOpacity
                     style={[styles.saveButton, styles.desktopSaveButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
                     onPress={() => {
-                      if (puedeRegistrarPago) {
-                        void registrarPago()
-                        return
-                      }
-                      guiarASobranteDetectado()
+                      intentarRegistrarPago()
                     }}
                     disabled={guardando}
                   >
@@ -1498,6 +1619,7 @@ export default function CargarPago() {
                   style={[
                     styles.sobranteCard,
                     sobranteHighlight && styles.sobranteCardHighlight,
+                    missingField === 'sobrante' && styles.missingFieldCard,
                   ]}
                   onLayout={(event) => {
                     sobranteYRef.current = event.nativeEvent.layout.y
@@ -1584,21 +1706,61 @@ export default function CargarPago() {
             <TouchableOpacity
               style={[styles.saveButton, styles.fixedFooterButton, !puedeRegistrarPago && styles.saveButtonDisabled]}
               onPress={() => {
-                if (puedeRegistrarPago) {
-                  void registrarPago()
-                  return
-                }
-                guiarASobranteDetectado()
+                intentarRegistrarPago()
               }}
               disabled={guardando}
             >
               <Text style={styles.saveButtonText}>
-                {guardando ? 'Guardando...' : `Registrar pago ${formatearMoneda(montoNormalizado)}`}
+                {guardando ? 'Guardando...' : `Registrar pago ${formatearMoneda(montoAplicado)}`}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
       ) : null}
+      <Modal
+        visible={mostrarTodasCuotas && !isDesktop}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMostrarTodasCuotas(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, styles.quotaPickerModal]}>
+            <Text style={styles.modalTitle}>Seleccionar cuota</Text>
+            <ScrollView style={styles.quotaPickerScroll} showsVerticalScrollIndicator>
+              {cuotasFiltradas.map((cuota) => {
+                const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
+                const selected = cuotaSeleccionada?.id === cuota.id
+                return (
+                  <TouchableOpacity
+                    key={cuota.id}
+                    style={[styles.quotaPickerItem, selected && styles.quotaPickerItemActive]}
+                    onPress={() => {
+                      setCuotaSeleccionada(cuota)
+                      setMostrarTodasCuotas(false)
+                    }}
+                  >
+                    <View style={styles.quotaPickerRow}>
+                      <Text style={styles.quotaPickerTitle}>Cuota #{cuota.numero_cuota}</Text>
+                      <Text style={styles.quotaPickerAmount}>
+                        {formatearMoneda(Number(cuota.saldo_pendiente || cuota.monto_cuota || 0))}
+                      </Text>
+                    </View>
+                    <Text style={styles.quotaPickerMeta}>
+                      {estadoUi.etiqueta} · Vence {formatearFecha(cuota.fecha_vencimiento)}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.changeButton, { width: '100%', marginTop: 10 }]}
+              onPress={() => setMostrarTodasCuotas(false)}
+            >
+              <Text style={styles.changeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(mpCheckout)}
         transparent
@@ -1829,6 +1991,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  compactQuotaContainer: {
+    gap: 10,
+  },
+  compactQuotaLabel: {
+    color: '#BFDBFE',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   selectCardActive: {
     borderColor: '#2563EB',
@@ -1942,6 +2112,10 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 8,
     fontSize: 14,
+  },
+  missingFieldCard: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
   },
 
   methodsRow: {
@@ -2308,6 +2482,10 @@ const styles = StyleSheet.create({
   amountInputDesktop: {
     fontSize: 28,
   },
+  missingFieldInput: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
+  },
   paymentPrimaryCard: {
     marginTop: 0,
     borderColor: 'rgba(59,130,246,0.42)',
@@ -2359,5 +2537,73 @@ const styles = StyleSheet.create({
   },
   fixedFooterButton: {
     marginTop: 0,
+  },
+  selectedQuotaCard: {
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+    borderRadius: 14,
+    backgroundColor: 'rgba(30,58,138,0.30)',
+    padding: 12,
+    gap: 4,
+    marginBottom: 10,
+  },
+  selectedQuotaTitle: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectedQuotaMain: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  selectedQuotaMeta: {
+    color: '#BFDBFE',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  quotaPickerModal: {
+    maxWidth: 560,
+    width: '100%',
+    maxHeight: '80%',
+    alignItems: 'stretch',
+  },
+  quotaPickerScroll: {
+    maxHeight: 420,
+    marginTop: 12,
+  },
+  quotaPickerItem: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#0B1220',
+    marginBottom: 10,
+    gap: 6,
+  },
+  quotaPickerItemActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#172554',
+  },
+  quotaPickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quotaPickerTitle: {
+    color: '#E2E8F0',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  quotaPickerAmount: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  quotaPickerMeta: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '600',
   },
 })
