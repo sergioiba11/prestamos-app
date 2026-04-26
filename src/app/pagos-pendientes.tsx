@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { useAppTheme } from '../context/AppThemeContext'
 import { createSystemActivity } from '../lib/activity'
 import { buildAprobacionRedirect, invocarAprobarPago } from '../lib/aprobar-pago'
 import { canManagePendingPayments, normalizeRole, UserRole } from '../lib/roles'
@@ -89,6 +90,8 @@ function shortId(value?: string | null) {
 }
 
 export default function PagosPendientesScreen() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
 
@@ -203,15 +206,16 @@ export default function PagosPendientesScreen() {
 
       let clientesById = new Map<string, ClienteLite>()
       if (clienteIds.length > 0) {
+        console.log('clienteIds:', clienteIds)
         const { data: clientesData, error: clientesError } = await supabase
           .from('clientes')
-          .select('id,nombre,apellido,nombre_completo,dni,documento,numero_documento,cedula')
+          .select('id,nombre,dni')
           .in('id', clienteIds)
 
         if (clientesError) {
           console.error('error clientes pagos pendientes:', clientesError)
         } else {
-          console.log('clientes relacionados:', clientesData)
+          console.log('clientesData:', clientesData)
           clientesById = new Map(((clientesData || []) as ClienteLite[]).map((cliente) => [cliente.id, cliente]))
         }
       }
@@ -248,18 +252,9 @@ export default function PagosPendientesScreen() {
       const pagosConCliente = pagos.map((item) => {
         const resolvedClienteId = item.cliente_id || (item.prestamo_id ? prestamoClienteById.get(item.prestamo_id) || null : null)
         const cliente = resolvedClienteId ? clientesById.get(resolvedClienteId) : null
-        const nombreCompleto = String(cliente?.nombre_completo || '').trim()
         const nombre = String(cliente?.nombre || '').trim()
-        const apellido = String(cliente?.apellido || '').trim()
-        const mergedName = nombreCompleto || [nombre, apellido].filter(Boolean).join(' ').trim()
-        const clienteNombre = mergedName && !looksLikeUuid(mergedName) ? mergedName : null
-        const dniRaw = String(
-          cliente?.dni ||
-          cliente?.documento ||
-          cliente?.numero_documento ||
-          cliente?.cedula ||
-          ''
-        ).trim()
+        const clienteNombre = nombre && !looksLikeUuid(nombre) ? nombre : null
+        const dniRaw = String(cliente?.dni || '').trim()
         const clienteDni = dniRaw && !looksLikeUuid(dniRaw) ? dniRaw : null
         const detalle = detalleByPago.get(item.id)
 
@@ -402,7 +397,7 @@ export default function PagosPendientesScreen() {
   }
 
   return (
-    <View style={styles.page}>
+    <View style={[styles.page, { backgroundColor: colors.background }]}>
       {!isMobile ? (
         <AdminSidebar
           active="pagos-pendientes"
@@ -412,11 +407,11 @@ export default function PagosPendientesScreen() {
           onLogout={onLogout}
         />
       ) : (
-        <View style={styles.mobileTopBar}>
+        <View style={[styles.mobileTopBar, { backgroundColor: colors.surfaceSoft, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => setMenuOpen(true)}>
-            <Ionicons name="menu" size={24} color="#E2E8F0" />
+            <Ionicons name="menu" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Pagos pendientes</Text>
+          <Text style={[styles.mobileTitle, { color: colors.textPrimary }]}>Pagos pendientes</Text>
           <View style={styles.mobileTopBarSpacer} />
         </View>
       )}
@@ -431,40 +426,40 @@ export default function PagosPendientesScreen() {
             isMobile && styles.contentMobile,
           ]}
         >
-          <Text style={styles.title}>Pagos pendientes</Text>
-          <Text style={styles.subtitle}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Pagos pendientes</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Aprobá o rechazá pagos de transferencia. El saldo impacta solo al aprobar.</Text>
 
           <TextInput
             value={search}
             onChangeText={setSearch}
-            style={styles.searchInput}
+            style={[styles.searchInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
             placeholder="Buscar por método o ID"
-            placeholderTextColor="#64748B"
+            placeholderTextColor={colors.textSecondary}
           />
 
           {queryError ? <Text style={styles.errorText}>Error al cargar pagos: {queryError}</Text> : null}
           {filtered.length === 0 ? <Text style={styles.empty}>No hay pagos pendientes para validar.</Text> : null}
 
           {filtered.map((item) => (
-            <View key={item.id} style={styles.card}>
+            <View key={item.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.rowBetween}>
                 <View style={styles.titleBlock}>
-                  <Text style={styles.cardTitle}>Pago pendiente</Text>
+                  <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>Pago pendiente</Text>
                   {item.estado === 'pendiente_aprobacion' ? (
                     <View style={styles.statusBadge}>
                       <Text style={styles.statusBadgeText}>Pendiente aprobación</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={styles.amount}>{money(Number(item.monto || 0))}</Text>
+                <Text style={[styles.amount, { color: colors.primary }]}>{money(Number(item.monto || 0))}</Text>
               </View>
 
-              <Text style={styles.clientMeta}>Cliente: {item.cliente_nombre || 'Cliente sin nombre'}</Text>
-              <Text style={styles.clientMeta}>DNI: {item.cliente_dni || 'DNI no disponible'}</Text>
-              <Text style={styles.meta}>Método: {item.metodo || '—'}</Text>
-              <Text style={styles.meta}>Fecha: {date(item.created_at)}</Text>
-              <Text style={styles.meta}>Préstamo: {shortId(item.prestamo_id)}</Text>
-              {item.cuota_numero ? <Text style={styles.meta}>Cuota: #{item.cuota_numero}</Text> : null}
+              <Text style={[styles.clientMeta, { color: colors.textPrimary }]}>Cliente: {item.cliente_nombre || 'Cliente sin nombre'}</Text>
+              <Text style={[styles.clientMeta, { color: colors.textPrimary }]}>DNI: {item.cliente_dni || 'DNI no disponible'}</Text>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>Método: {item.metodo || '—'}</Text>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>Fecha: {date(item.created_at)}</Text>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>Préstamo: {shortId(item.prestamo_id)}</Text>
+              {item.cuota_numero ? <Text style={[styles.meta, { color: colors.textSecondary }]}>Cuota: #{item.cuota_numero}</Text> : null}
               {(Number(item.dias_mora || 0) > 0 || Number(item.porcentaje_mora || 0) > 0 || Number(item.monto_mora || 0) > 0) ? (
                 <Text style={styles.meta}>
                   Mora: {Number(item.dias_mora || 0)} días · {Number(item.porcentaje_mora || 0).toFixed(2)}% · {money(Number(item.monto_mora || 0))}

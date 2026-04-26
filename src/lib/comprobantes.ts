@@ -2,7 +2,6 @@ export type PagoComprobanteCandidate = {
   id: string
   estado?: string | null
   impactado?: boolean | null
-  comprobante_url?: string | null
   created_at?: string | null
   fecha_pago?: string | null
 }
@@ -36,7 +35,6 @@ export function hasValidReceipt(pago: PagoComprobanteCandidate): boolean {
   if (!isApprovedPaymentForReceipt(pago)) return false
   if (isPendingValidationPayment(pago)) return false
   if (isRejectedPayment(pago)) return false
-  if (!String(pago.comprobante_url || '').trim()) return false
   return true
 }
 

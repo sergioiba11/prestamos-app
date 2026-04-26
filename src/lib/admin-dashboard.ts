@@ -43,7 +43,6 @@ type PagoRow = {
   fecha_pago: string | null
   estado: string | null
   impactado: boolean | null
-  comprobante_url: string | null
 }
 
 type CuotaRow = {
@@ -326,7 +325,7 @@ export async function fetchAdminClientesListadoFromBaseTables(): Promise<Cliente
 
   const { data: pagosRaw, error: pagosError } = await supabase
     .from('pagos')
-    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado,comprobante_url')
+    .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado')
 
   if (pagosError) {
     console.error('[admin-dashboard] pagos fallback error', pagosError)
@@ -478,7 +477,7 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
       .select('prestamo_id,numero_cuota,fecha_vencimiento,monto_cuota,monto_pagado,saldo_pendiente,estado'),
     supabase
       .from('pagos')
-      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado,comprobante_url')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,fecha_pago,estado,impactado')
       .order('created_at', { ascending: false }),
     supabase
       .from('prestamos')
@@ -649,6 +648,7 @@ export type ClientePrestamoDetalleItem = {
   modalidad: string | null
   fechaInicio: string
   fechaLimite: string
+  proximaCuota: string
 }
 
 export type ClientePagoDetalleItem = {
@@ -659,7 +659,6 @@ export type ClientePagoDetalleItem = {
   metodo: string
   estado: string
   impactado: boolean
-  comprobanteUrl: string
   tieneComprobante: boolean
   createdAt: string
 }
@@ -677,7 +676,7 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
     throw new Error('Cliente inválido para consulta consolidada.')
   }
 
-  const [clientesListado, prestamosResult, pagosResult] = await Promise.all([
+  const [clientesListado, prestamosResult, pagosResult, cuotasResult] = await Promise.all([
     fetchAdminClientesListado(),
     supabase
       .from('prestamos')
@@ -686,8 +685,12 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       .order('fecha_inicio', { ascending: false }),
     supabase
       .from('pagos')
-      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado,impactado,comprobante_url')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado,impactado')
       .order('created_at', { ascending: false }),
+    supabase
+      .from('cuotas')
+      .select('prestamo_id,fecha_vencimiento,estado,saldo_pendiente')
+      .order('fecha_vencimiento', { ascending: true }),
   ])
 
   if (prestamosResult.error) {
@@ -709,6 +712,10 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
     console.error('[admin-dashboard] detalle pagos error', pagosResult.error)
     throw pagosResult.error
   }
+  if (cuotasResult.error) {
+    console.error('[admin-dashboard] detalle cuotas error', cuotasResult.error)
+    throw cuotasResult.error
+  }
 
   const cliente = clientesListado.find((row) => row.clienteId === normalizedClienteId) || null
   const prestamos = ((prestamosResult.data || []) as PrestamoRow[]).filter((prestamo) => prestamo.cliente_id === normalizedClienteId)
@@ -717,6 +724,14 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
   for (const prestamo of prestamos) prestamosById.set(prestamo.id, prestamo)
 
   const pagosRows = (pagosResult.data || []) as PagoRow[]
+  const cuotasRows = (cuotasResult.data || []) as CuotaRow[]
+  const cuotasByPrestamo = new Map<string, CuotaRow[]>()
+  for (const cuota of cuotasRows) {
+    if (!cuota.prestamo_id || !prestamosById.has(cuota.prestamo_id)) continue
+    const list = cuotasByPrestamo.get(cuota.prestamo_id) || []
+    list.push(cuota)
+    cuotasByPrestamo.set(cuota.prestamo_id, list)
+  }
   const pagosCliente = pagosRows
     .filter((pago) => {
       if (pago.cliente_id === normalizedClienteId) return true
@@ -731,23 +746,29 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       metodo: pago.metodo || 'sin_metodo',
       estado: low(pago.estado) || 'pendiente_aprobacion',
       impactado: Boolean(pago.impactado),
-      comprobanteUrl: String(pago.comprobante_url || ''),
-      tieneComprobante: Boolean(pago.impactado) && Boolean(String(pago.comprobante_url || '').trim()),
+      tieneComprobante: low(pago.estado) === 'aprobado' && Boolean(pago.impactado),
       createdAt: pago.created_at || '',
     }))
 
-  const historialPrestamos: ClientePrestamoDetalleItem[] = prestamos.map((prestamo) => ({
-    id: prestamo.id,
-    clienteId: prestamo.cliente_id,
-    monto: toNumber(prestamo.monto),
-    interes: toNumber(prestamo.interes),
-    totalAPagar: toNumber(prestamo.total_a_pagar),
-    saldoPendiente: Math.max(toNumber(prestamo.saldo_pendiente), 0),
-    estado: low(prestamo.estado) || 'activo',
-    modalidad: prestamo.modalidad,
-    fechaInicio: ymd(prestamo.fecha_inicio),
-    fechaLimite: ymd(prestamo.fecha_limite),
-  }))
+  const historialPrestamos: ClientePrestamoDetalleItem[] = prestamos.map((prestamo) => {
+    const proximaCuota = (cuotasByPrestamo.get(prestamo.id) || [])
+      .filter((cuota) => PENDING_QUOTA_STATES.has(low(cuota.estado)) || toNumber(cuota.saldo_pendiente) > 0)
+      .sort((a, b) => String(a.fecha_vencimiento || '').localeCompare(String(b.fecha_vencimiento || '')))[0]
+
+    return {
+      id: prestamo.id,
+      clienteId: prestamo.cliente_id,
+      monto: toNumber(prestamo.monto),
+      interes: toNumber(prestamo.interes),
+      totalAPagar: toNumber(prestamo.total_a_pagar),
+      saldoPendiente: Math.max(toNumber(prestamo.saldo_pendiente), 0),
+      estado: low(prestamo.estado) || 'activo',
+      modalidad: prestamo.modalidad,
+      fechaInicio: ymd(prestamo.fecha_inicio),
+      fechaLimite: ymd(prestamo.fecha_limite),
+      proximaCuota: ymd(proximaCuota?.fecha_vencimiento || null),
+    }
+  })
 
   const prestamosActivos = historialPrestamos.filter((prestamo) => isActiveLoanState(prestamo.estado))
 
