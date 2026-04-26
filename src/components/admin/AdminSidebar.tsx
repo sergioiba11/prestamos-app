@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 export type AdminNavKey =
   | 'inicio'
@@ -51,7 +51,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
       <View>
         <View style={styles.logoWrap}>
           <View style={styles.logoBadge}>
-            <Ionicons name="flash" size={18} color="#DBEAFE" />
+            <Image source={require('../../../assets/images/logo-sidebar.png')} style={{ width: 28, height: 28, resizeMode: 'contain' }} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.logoText}>CrediTodo</Text>
