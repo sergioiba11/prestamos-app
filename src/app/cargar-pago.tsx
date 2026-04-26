@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Platform,
   useWindowDimensions,
   View,
 } from 'react-native'
@@ -321,7 +322,7 @@ export default function CargarPago() {
     qrBase64: string | null
   } | null>(null)
   const { width } = useWindowDimensions()
-  const contentMaxWidth = 1100
+  const contentMaxWidth = 1280
   const isDesktop = width >= 1024
 
   useEffect(() => {
@@ -653,25 +654,11 @@ export default function CargarPago() {
   )
   const totalPrestamo = Number(prestamoSeleccionado?.total_a_pagar || 0)
   const totalPagadoPrestamo = Math.max(0, totalPrestamo - saldoRestantePrestamo)
-  const cuotasGridColumns = width >= 1200 ? 4 : width >= 900 ? 3 : 2
+  const cuotasGridColumns =
+    width >= 1600 ? 6 : width >= 1400 ? 5 : width >= 1100 ? 4 : width >= 900 ? 3 : 2
   const cuotaItemWidth = isDesktop
-    ? 170
+    ? Math.max(158, (Math.min(width, contentMaxWidth) - 64 - (cuotasGridColumns - 1) * 12) / cuotasGridColumns)
     : Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
-
-  const limpiarClienteSeleccionado = () => {
-    setClienteSeleccionado(null)
-    setPrestamos([])
-    setPrestamoSeleccionado(null)
-    setCuotas([])
-    setCuotaSeleccionada(null)
-    setMostrarTodasCuotas(false)
-    setPrestamoExpandidoId(null)
-    setCuotasPorPrestamo({})
-    setMonto('')
-    setMetodo('efectivo')
-    setComprobante('')
-    setMpCheckout(null)
-  }
 
   const limpiarClienteSeleccionado = () => {
     setClienteSeleccionado(null)
@@ -1045,17 +1032,20 @@ export default function CargarPago() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
+        isDesktop && styles.contentDesktop,
         cuotaSeleccionada && !isDesktop ? styles.contentWithFixedFooter : null,
       ]}
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.contentInner, { maxWidth: contentMaxWidth }]}>
-      <TouchableOpacity style={styles.backButton} onPress={volver}>
-        <Text style={styles.backButtonText}>← Volver</Text>
-      </TouchableOpacity>
+      <View style={styles.headerWrap}>
+        <TouchableOpacity style={styles.backButton} onPress={volver}>
+          <Text style={styles.backButtonText}>← Volver</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.title}>Cargar pago</Text>
-      <Text style={styles.subtitle}>Registrá pagos de clientes activos</Text>
+        <Text style={styles.title}>Cargar pago</Text>
+        <Text style={styles.subtitle}>Registrá pagos de clientes activos</Text>
+      </View>
       {!clienteSeleccionado && (
       <View style={[styles.mainCard, styles.sectionCard, styles.searchCard]}>
         <Text style={styles.sectionTitle}>BUSCAR</Text>
@@ -1146,10 +1136,16 @@ export default function CargarPago() {
                           void cargarCuotasPrestamo(prestamo.id)
                         }}
                       >
-                        <Text style={styles.loanItemId}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
-                        <Text style={styles.loanItemMeta}>Estado: {prestamo.estado || 'activo'}</Text>
-                        <Text style={styles.loanItemMeta}>Total: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}</Text>
-                        <Text style={styles.loanItemSaldo}>Saldo: {formatearMoneda(saldoPrestamo)}</Text>
+                        <View style={styles.loanItemRow}>
+                          <View style={styles.loanItemLeft}>
+                            <Text style={styles.loanItemId}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
+                            <Text style={styles.loanItemMeta}>Estado: {prestamo.estado || 'activo'}</Text>
+                          </View>
+                          <View style={styles.loanItemRight}>
+                            <Text style={styles.loanItemTotal}>Total: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}</Text>
+                            <Text style={styles.loanItemSaldo}>Saldo: {formatearMoneda(saldoPrestamo)}</Text>
+                          </View>
+                        </View>
                       </TouchableOpacity>
                     )
                   })}
@@ -1221,7 +1217,7 @@ export default function CargarPago() {
                 paymentFormYRef.current = event.nativeEvent.layout.y
               }}
             >
-              <View style={[styles.mainCard, styles.sectionCard]}>
+              <View style={[styles.mainCard, styles.sectionCard, styles.paymentPrimaryCard]}>
                 <Text style={styles.sectionTitle}>PAGO</Text>
                 <Text style={styles.label}>Método de pago</Text>
                 <View style={styles.methodsRow}>
@@ -1294,7 +1290,11 @@ export default function CargarPago() {
                   placeholder="$ 0,00"
                   placeholderTextColor="#64748B"
                   keyboardType="decimal-pad"
-                  style={[styles.amountInput, metodo === 'transferencia' && styles.inputDisabled]}
+                  style={[
+                    styles.amountInput,
+                    isDesktop && styles.amountInputDesktop,
+                    metodo === 'transferencia' && styles.inputDisabled,
+                  ]}
                   editable={metodo !== 'transferencia'}
                   returnKeyType="done"
                   onSubmitEditing={() => {
@@ -1516,12 +1516,16 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#020617',
   },
 
   content: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     paddingBottom: 56,
+  },
+  contentDesktop: {
+    paddingHorizontal: 32,
   },
   contentWithFixedFooter: {
     paddingBottom: 210,
@@ -1529,6 +1533,9 @@ const styles = StyleSheet.create({
   contentInner: {
     width: '100%',
     alignSelf: 'center',
+  },
+  headerWrap: {
+    marginBottom: 4,
   },
 
   loadingContainer: {
@@ -1558,13 +1565,13 @@ const styles = StyleSheet.create({
 
   backButton: {
     alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
     borderRadius: 999,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1120',
     borderWidth: 1,
-    borderColor: '#1E293B',
-    marginBottom: 14,
+    borderColor: 'rgba(148,163,184,0.24)',
+    marginBottom: 16,
   },
 
   backButtonText: {
@@ -1574,7 +1581,7 @@ const styles = StyleSheet.create({
 
   title: {
     color: '#F8FAFC',
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '800',
   },
 
@@ -1586,17 +1593,18 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: '#E2E8F0',
-    fontSize: 16,
-    fontWeight: '700',
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.4,
     marginBottom: 8,
     marginTop: 12,
   },
   sectionCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.20)',
-    borderRadius: 18,
+    borderColor: 'rgba(148,163,184,0.18)',
+    borderRadius: 20,
     padding: 18,
   },
   searchCard: {
@@ -1633,7 +1641,7 @@ const styles = StyleSheet.create({
 
   listBox: {
     marginTop: 10,
-    gap: 10,
+    gap: 16,
   },
 
   selectCard: {
@@ -1641,7 +1649,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.20)',
     borderRadius: 18,
-    padding: 16,
+    padding: 18,
   },
   loanCardCompact: {
     padding: 12,
@@ -1718,14 +1726,20 @@ const styles = StyleSheet.create({
   },
   mainCard: {
     marginTop: 18,
-    shadowColor: '#020617',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    ...Platform.select({
+      web: {
+        shadowColor: '#020617',
+        shadowOpacity: 0.22,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 8 },
+      },
+      default: {
+        elevation: 4,
+      },
+    }),
   },
   workflowLayout: {
-    gap: 14,
+    gap: 20,
   },
   workflowLayoutDesktop: {
     flexDirection: 'row',
@@ -1736,27 +1750,27 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   workflowLeftDesktop: {
-    flex: 1.25,
+    flex: 1.35,
   },
   workflowRight: {
     width: '100%',
   },
   workflowRightDesktop: {
-    flex: 0.95,
+    flex: 0.85,
     alignSelf: 'flex-start',
   },
   sectionTitle: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 10,
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.9,
+    marginBottom: 12,
   },
 
   infoName: {
     color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 21,
+    fontWeight: '700',
     marginBottom: 6,
   },
 
@@ -1790,22 +1804,22 @@ const styles = StyleSheet.create({
   helperText: {
     color: '#94A3B8',
     marginTop: 8,
-    fontSize: 13,
+    fontSize: 14,
   },
 
   methodsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     marginTop: 10,
     flexWrap: 'nowrap',
   },
 
   methodButton: {
-    backgroundColor: '#0B1220',
+    backgroundColor: '#111C35',
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: 'rgba(148,163,184,0.24)',
     borderRadius: 999,
-    paddingVertical: 16,
+    paddingVertical: 15,
     paddingHorizontal: 18,
     minWidth: 0,
     flex: 1,
@@ -1833,13 +1847,13 @@ const styles = StyleSheet.create({
   },
 
   resumeCard: {
-    backgroundColor: '#0A1A3A',
+    backgroundColor: 'rgba(30,58,138,0.42)',
     borderWidth: 1,
     borderColor: '#1D4ED8',
     borderRadius: 18,
-    padding: 18,
+    padding: 22,
     marginTop: 14,
-    gap: 12,
+    gap: 14,
   },
   resumeTitle: {
     color: '#BFDBFE',
@@ -1857,23 +1871,34 @@ const styles = StyleSheet.create({
   },
 
   resumeLabel: {
-    color: '#BFDBFE',
+    color: '#93C5FD',
     fontSize: 15,
   },
 
   resumeValue: {
     color: '#F8FAFC',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
     textAlign: 'right',
   },
 
   saveButton: {
     backgroundColor: '#2563EB',
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: 16,
+    minHeight: 52,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 14,
+    ...Platform.select({
+      web: {
+        shadowColor: '#2563EB',
+        shadowOpacity: 0.28,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      default: {},
+    }),
   },
 
   saveButtonDisabled: {
@@ -1883,7 +1908,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   desktopSaveButton: {
     width: '100%',
@@ -1891,35 +1916,35 @@ const styles = StyleSheet.create({
   },
 
   sobranteCard: {
-    marginTop: 10,
-    borderRadius: 14,
+    marginTop: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0B1220',
-    padding: 12,
-    gap: 8,
+    borderColor: '#7C3AED',
+    backgroundColor: 'rgba(30,58,138,0.20)',
+    padding: 16,
+    gap: 12,
   },
   sobranteTitle: {
-    color: '#F8FAFC',
-    fontSize: 14,
+    color: '#E2E8F0',
+    fontSize: 16,
     fontWeight: '700',
   },
   sobranteText: {
     color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 18,
   },
   sobranteOptions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   sobranteOption: {
     flex: 1,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#334155',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     backgroundColor: '#0F172A',
   },
   sobranteOptionActive: {
@@ -2000,23 +2025,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   loanCardsWrap: {
-    gap: 10,
+    gap: 16,
   },
   loanItemCard: {
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.20)',
-    borderRadius: 16,
-    backgroundColor: '#111C35',
-    padding: 12,
-    gap: 4,
+    borderColor: 'rgba(148,163,184,0.18)',
+    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    padding: 16,
+    gap: 6,
   },
   loanItemCardActive: {
     borderColor: '#2563EB',
     backgroundColor: '#172554',
   },
+  loanItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  loanItemLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  loanItemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
   loanItemId: {
-    color: '#E2E8F0',
-    fontSize: 14,
+    color: '#F8FAFC',
+    fontSize: 15,
     fontWeight: '800',
   },
   loanItemMeta: {
@@ -2025,17 +2063,22 @@ const styles = StyleSheet.create({
   },
   loanItemSaldo: {
     color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  loanItemTotal: {
+    color: '#BFDBFE',
+    fontSize: 13,
+    fontWeight: '600',
   },
   loanSummaryCard: {
     marginTop: 2,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1D4ED8',
-    backgroundColor: '#0A1A3A',
-    padding: 14,
-    gap: 8,
+    backgroundColor: 'rgba(30,58,138,0.36)',
+    padding: 18,
+    gap: 10,
   },
   loanSummaryHeader: {
     borderBottomWidth: 1,
@@ -2050,7 +2093,7 @@ const styles = StyleSheet.create({
   },
   remainingValue: {
     color: '#3B82F6',
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -2063,7 +2106,7 @@ const styles = StyleSheet.create({
   quotaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 12,
   },
   quotaDesktopScroll: {
     maxHeight: 420,
@@ -2071,8 +2114,8 @@ const styles = StyleSheet.create({
   quotaTile: {
     borderRadius: 14,
     borderWidth: 1,
-    minHeight: 94,
-    padding: 13,
+    minHeight: 108,
+    padding: 16,
     justifyContent: 'space-between',
   },
   quotaTileActive: {
@@ -2090,33 +2133,39 @@ const styles = StyleSheet.create({
   },
   quotaTileTitle: {
     color: '#E2E8F0',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
   },
   quotaTileAmount: {
     color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
   quotaTileBadge: {
     marginTop: 6,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   amountInput: {
-    backgroundColor: '#0B1220',
-    borderColor: '#1E293B',
+    backgroundColor: '#0B1120',
+    borderColor: '#1D4ED8',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 18,
-    paddingVertical: 16,
+    height: 56,
     color: '#F8FAFC',
-    fontSize: 20,
+    fontSize: 24,
     textAlign: 'center',
     fontWeight: '700',
   },
+  amountInputDesktop: {
+    fontSize: 28,
+  },
+  paymentPrimaryCard: {
+    marginTop: 0,
+  },
   paymentNotesCard: {
-    marginTop: 10,
+    marginTop: 16,
   },
   fixedFooterWrap: {
     position: 'absolute',
