@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import { useAppTheme } from '../context/AppThemeContext'
@@ -46,7 +46,7 @@ type MoraRow = {
   porcentaje_diario: string
 }
 
-type AccordionKey = 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'opciones-avanzadas'
+type AccordionKey = 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'administradores' | 'opciones-avanzadas'
 
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
@@ -80,10 +80,19 @@ export default function Configuraciones() {
   const [moraErrors, setMoraErrors] = useState<Record<string, string>>({})
   const [loadingMora, setLoadingMora] = useState(true)
   const [savingMora, setSavingMora] = useState(false)
+  const [adminNombre, setAdminNombre] = useState('')
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminTelefono, setAdminTelefono] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminPasswordRepeat, setAdminPasswordRepeat] = useState('')
+  const [countdownSeconds, setCountdownSeconds] = useState(5)
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminStatus, setAdminStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [openSections, setOpenSections] = useState<Record<AccordionKey, boolean>>({
     'datos-negocio': true,
     'tasas-interes': false,
     'mora-atraso': false,
+    administradores: false,
     'opciones-avanzadas': false,
   })
   const [selectedCuotaMobile, setSelectedCuotaMobile] = useState(1)
@@ -266,8 +275,22 @@ export default function Configuraciones() {
   }
 
   const toggleSection = (section: AccordionKey) => {
+    if (section === 'administradores' && !openSections.administradores) {
+      setCountdownSeconds(5)
+    }
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
+
+  useEffect(() => {
+    if (!openSections.administradores) return
+    if (countdownSeconds <= 0) return
+
+    const timeoutId = setTimeout(() => {
+      setCountdownSeconds((prev) => Math.max(0, prev - 1))
+    }, 1000)
+
+    return () => clearTimeout(timeoutId)
+  }, [countdownSeconds, openSections.administradores])
 
   const validarIntereses = useCallback(() => {
     const errors: Record<number, string> = {}
@@ -467,6 +490,86 @@ export default function Configuraciones() {
       setSavingMora(false)
     }
   }, [esAdmin, moraRows, savingMora, validarMora])
+
+  const limpiarFormularioAdmin = useCallback(() => {
+    setAdminNombre('')
+    setAdminEmail('')
+    setAdminTelefono('')
+    setAdminPassword('')
+    setAdminPasswordRepeat('')
+    setCountdownSeconds(5)
+  }, [])
+
+  const crearAdmin = useCallback(async () => {
+    if (!esAdmin || adminLoading) return
+
+    const nombre = adminNombre.trim()
+    const email = adminEmail.trim().toLowerCase()
+    const telefono = adminTelefono.trim()
+    const password = adminPassword.trim()
+    const repeatPassword = adminPasswordRepeat.trim()
+
+    if (!nombre || !email || !password || !repeatPassword) {
+      setAdminStatus({ type: 'error', message: 'Completá nombre, email y contraseña.' })
+      Alert.alert('Error', 'Completá nombre, email y contraseña.')
+      return
+    }
+
+    if (!email.includes('@')) {
+      setAdminStatus({ type: 'error', message: 'Ingresá un email válido.' })
+      Alert.alert('Error', 'Ingresá un email válido.')
+      return
+    }
+
+    if (password.length < 6) {
+      setAdminStatus({ type: 'error', message: 'La contraseña temporal debe tener al menos 6 caracteres.' })
+      Alert.alert('Error', 'La contraseña temporal debe tener al menos 6 caracteres.')
+      return
+    }
+
+    if (password !== repeatPassword) {
+      setAdminStatus({ type: 'error', message: 'Las contraseñas no coinciden.' })
+      Alert.alert('Error', 'Las contraseñas no coinciden.')
+      return
+    }
+
+    if (countdownSeconds > 0) {
+      setAdminStatus({ type: 'error', message: `Esperá ${countdownSeconds}s para confirmar la acción.` })
+      return
+    }
+
+    setAdminLoading(true)
+    setAdminStatus(null)
+
+    try {
+      const { data, error } = await supabase.functions.invoke('crear-admin', {
+        body: {
+          nombre,
+          email,
+          telefono: telefono || null,
+          password,
+        },
+      })
+
+      if (error) {
+        throw new Error(error.message || 'No se pudo crear el admin')
+      }
+
+      if (!data?.ok) {
+        throw new Error(data?.error || 'No se pudo crear el admin')
+      }
+
+      setAdminStatus({ type: 'success', message: 'Administrador creado correctamente.' })
+      Alert.alert('Éxito', 'Administrador creado correctamente.')
+      limpiarFormularioAdmin()
+    } catch (error: any) {
+      const message = error?.message || 'Ocurrió un error inesperado'
+      setAdminStatus({ type: 'error', message })
+      Alert.alert('Error', message)
+    } finally {
+      setAdminLoading(false)
+    }
+  }, [adminEmail, adminLoading, adminNombre, adminPassword, adminPasswordRepeat, adminTelefono, countdownSeconds, esAdmin, limpiarFormularioAdmin])
 
   useFocusEffect(
     useCallback(() => {
@@ -856,6 +959,110 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('administradores')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Administradores</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections.administradores ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSections.administradores ? (
+            <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Agregar admin</Text>
+              <View style={[styles.adminWarningBox, { backgroundColor: colors.surfaceSoft, borderColor: '#EF4444' }]}>
+                <Text style={[styles.adminWarningTitle, { color: '#EF4444' }]}>⚠️ Acción sensible</Text>
+                <Text style={[styles.adminWarningText, { color: colors.textSecondary }]}>
+                  Esta acción crea un usuario con permisos totales de administración. Verificá el email y la identidad antes de continuar.
+                </Text>
+              </View>
+
+              <View style={styles.businessGrid}>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminNombre}
+                    onChangeText={setAdminNombre}
+                    placeholder="Nombre completo"
+                    placeholderTextColor={colors.textSecondary}
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminEmail}
+                    onChangeText={setAdminEmail}
+                    placeholder="Email"
+                    placeholderTextColor={colors.textSecondary}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminTelefono}
+                    onChangeText={setAdminTelefono}
+                    placeholder="Teléfono (opcional)"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="phone-pad"
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminPassword}
+                    onChangeText={setAdminPassword}
+                    placeholder="Contraseña temporal"
+                    placeholderTextColor={colors.textSecondary}
+                    secureTextEntry
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminPasswordRepeat}
+                    onChangeText={setAdminPasswordRepeat}
+                    placeholder="Repetir contraseña"
+                    placeholderTextColor={colors.textSecondary}
+                    secureTextEntry
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
+              </View>
+
+              {adminStatus ? (
+                <View style={[styles.adminStatusBox, adminStatus.type === 'success' ? styles.adminStatusSuccess : styles.adminStatusError]}>
+                  <Text style={styles.adminStatusText}>{adminStatus.message}</Text>
+                </View>
+              ) : null}
+
+              {!esAdmin ? (
+                <Text style={[styles.readonlyHint, { color: colors.textSecondary }]}>Solo un admin puede crear otro admin.</Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.saveInteresesButton,
+                  !isWeb && styles.mobileFullButton,
+                  (adminLoading || !esAdmin || countdownSeconds > 0) && styles.connectButtonDisabled,
+                ]}
+                onPress={crearAdmin}
+                disabled={adminLoading || !esAdmin || countdownSeconds > 0}
+              >
+                {adminLoading ? (
+                  <ActivityIndicator size="small" color="#DBEAFE" />
+                ) : (
+                  <Text style={styles.saveInteresesButtonText}>
+                    {countdownSeconds > 0 ? `Confirmar en ${countdownSeconds}s` : 'Crear administrador'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('opciones-avanzadas')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Opciones avanzadas</Text>
             <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['opciones-avanzadas'] ? '−' : '+'}</Text>
@@ -1100,6 +1307,42 @@ const styles = StyleSheet.create({
   businessSaveButton: {
     alignSelf: 'flex-start',
     marginTop: 14,
+  },
+  adminWarningBox: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  adminWarningTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  adminWarningText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  adminStatusBox: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  adminStatusSuccess: {
+    backgroundColor: '#052E16',
+    borderColor: '#166534',
+  },
+  adminStatusError: {
+    backgroundColor: '#3F1D2E',
+    borderColor: '#9D174D',
+  },
+  adminStatusText: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+    fontSize: 13,
   },
   input: {
     marginTop: 10,
