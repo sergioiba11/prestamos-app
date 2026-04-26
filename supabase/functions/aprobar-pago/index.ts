@@ -33,9 +33,47 @@ type PagoPreview = {
   cuotas_impactadas: number[]
 }
 
+type ReglaMora = {
+  tramo: string
+  dias_desde: number
+  dias_hasta: number | null
+  porcentaje_diario: number
+}
+
+const REGLAS_MORA_DEFAULT: ReglaMora[] = [
+  { tramo: 'gracia', dias_desde: 1, dias_hasta: 3, porcentaje_diario: 0 },
+  { tramo: 'mora_normal', dias_desde: 4, dias_hasta: 10, porcentaje_diario: 1 },
+  { tramo: 'mora_alta', dias_desde: 11, dias_hasta: null, porcentaje_diario: 2 },
+]
+
+function parseFechaLocal(fecha?: string | null) {
+  if (!fecha) return null
+  const [y, m, d] = String(fecha).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+
+function calcularMoraCuota(saldo: number, fechaVto: string | null | undefined, hoy: Date, reglas: ReglaMora[]) {
+  if (saldo <= 0) return 0
+  const vto = parseFechaLocal(fechaVto)
+  if (!vto) return 0
+  const hoyLocal = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const vtoLocal = new Date(vto.getFullYear(), vto.getMonth(), vto.getDate())
+  const diasAtraso = Math.max(0, Math.floor((hoyLocal.getTime() - vtoLocal.getTime()) / 86400000))
+  if (diasAtraso <= 0) return 0
+  let porcentaje = 0
+  for (const regla of reglas) {
+    const desde = Math.max(1, Number(regla.dias_desde || 0))
+    const hasta = regla.dias_hasta == null ? diasAtraso : Math.min(diasAtraso, Number(regla.dias_hasta || 0))
+    if (hasta < desde) continue
+    porcentaje += (hasta - desde + 1) * Number(regla.porcentaje_diario || 0)
+  }
+  return redondear((saldo * porcentaje) / 100)
+}
+
 async function calcularPreviewAplicacion(
   supabase: ReturnType<typeof createClient>,
-  pago: { id: string; prestamo_id: string | null; cliente_id: string | null; monto: number | null; cuota_id?: string | null },
+  pago: { id: string; prestamo_id: string | null; cliente_id: string | null; monto: number | null; cuota_id?: string | null; created_at?: string | null },
 ) : Promise<PagoPreview> {
   if (!pago.prestamo_id || !pago.cliente_id) {
     return { total_aplicado: 0, saldo_restante: 0, cuotas_impactadas: [] }
@@ -43,7 +81,7 @@ async function calcularPreviewAplicacion(
 
   const { data: cuotas, error } = await supabase
     .from('cuotas')
-    .select('id, numero_cuota, monto_cuota, saldo_pendiente, estado')
+    .select('id, numero_cuota, monto_cuota, saldo_pendiente, estado, fecha_vencimiento')
     .eq('prestamo_id', pago.prestamo_id)
     .eq('cliente_id', pago.cliente_id)
     .in('estado', ['pendiente', 'parcial'])
@@ -60,13 +98,36 @@ async function calcularPreviewAplicacion(
   let restante = redondear(Number(pago.monto || 0))
   let totalAplicado = 0
   const cuotasImpactadas: number[] = []
+  let reglasMora = REGLAS_MORA_DEFAULT
+  const { data: configMoraRows, error: configMoraError } = await supabase
+    .from('config_mora')
+    .select('tramo, dias_desde, dias_hasta, porcentaje_diario, activo')
+    .eq('activo', true)
+    .order('dias_desde', { ascending: true })
+  if (!configMoraError && configMoraRows && configMoraRows.length > 0) {
+    reglasMora = (configMoraRows as any[]).map((item) => ({
+      tramo: String(item?.tramo || ''),
+      dias_desde: Number(item?.dias_desde || 0),
+      dias_hasta: item?.dias_hasta == null ? null : Number(item?.dias_hasta),
+      porcentaje_diario: Number(item?.porcentaje_diario || 0),
+    }))
+  }
 
   const cuotasFiltradas = cuotas.filter((item) => Number(item.numero_cuota || 0) >= cuotaBase)
   for (const cuota of cuotasFiltradas) {
     if (restante <= 0) break
     const saldo = redondear(Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0))
     if (saldo <= 0) continue
-    const aplicado = Math.min(restante, saldo)
+    const mora = cuotasImpactadas.length === 0
+      ? calcularMoraCuota(
+        saldo,
+        (cuota as any).fecha_vencimiento || null,
+        pago.created_at ? new Date(String(pago.created_at)) : new Date(),
+        reglasMora
+      )
+      : 0
+    const deudaConMora = redondear(saldo + mora)
+    const aplicado = Math.min(restante, deudaConMora)
     if (aplicado <= 0) continue
     totalAplicado = redondear(totalAplicado + aplicado)
     restante = redondear(restante - aplicado)
@@ -148,7 +209,7 @@ Deno.serve(async (req) => {
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id')
+      .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id, created_at')
       .eq('id', pago_id)
       .maybeSingle()
 

@@ -22,6 +22,10 @@ type CuotaImpactadaDetalle = {
   monto_aplicado: number
   saldo_antes: number
   saldo_despues: number
+  dias_mora?: number
+  porcentaje_mora?: number
+  monto_mora?: number
+  total_con_mora?: number
 }
 
 type PagoComprobanteRow = {
@@ -84,6 +88,10 @@ type PagoDetalleRow = {
   monto_aplicado: number | null
   saldo_cuota_antes: number | null
   saldo_cuota_despues: number | null
+  dias_mora: number | null
+  porcentaje_mora: number | null
+  monto_mora: number | null
+  total_con_mora: number | null
 }
 
 function formatCurrencyArs(value: number) {
@@ -317,6 +325,15 @@ export default function PagoAprobado() {
     cuotasImpactadasDb,
     cuotasDetalleParam,
   ])
+  const moraResumen = useMemo(() => {
+    const detalle = cuotasImpactadasDetalleDb as any[]
+    if (!detalle.length) return { dias: 0, porcentaje: 0, monto: 0, total: 0 }
+    const dias = Math.max(0, ...detalle.map((d) => Number(d?.dias_mora || 0)))
+    const porcentaje = detalle.reduce((acc, d) => acc + Number(d?.porcentaje_mora || 0), 0)
+    const monto = detalle.reduce((acc, d) => acc + Number(d?.monto_mora || 0), 0)
+    const total = detalle.reduce((acc, d) => acc + Number(d?.total_con_mora || 0), 0)
+    return { dias, porcentaje, monto, total }
+  }, [cuotasImpactadasDetalleDb])
 
   const cantidadCuotasImpactadas = cuotasDetalleNormalizadas.length
   const cuotaPrincipal = cuotasDetalleNormalizadas[0] || null
@@ -449,7 +466,7 @@ export default function PagoAprobado() {
 
           const { data: detalleData, error: detalleError } = await supabase
             .from('pagos_detalle')
-            .select('cuota_id,numero_cuota,monto_aplicado,saldo_cuota_antes,saldo_cuota_despues')
+            .select('cuota_id,numero_cuota,monto_aplicado,saldo_cuota_antes,saldo_cuota_despues,dias_mora,porcentaje_mora,monto_mora,total_con_mora')
             .eq('pago_id', pagoNormalizado.id)
 
           if (detalleError) {
@@ -485,6 +502,10 @@ export default function PagoAprobado() {
                 monto_aplicado: Number(item.monto_aplicado || 0),
                 saldo_antes: Number(item.saldo_cuota_antes || 0),
                 saldo_despues: Number(item.saldo_cuota_despues || 0),
+                dias_mora: Number(item.dias_mora || 0),
+                porcentaje_mora: Number(item.porcentaje_mora || 0),
+                monto_mora: Number(item.monto_mora || 0),
+                total_con_mora: Number(item.total_con_mora || 0),
               }))
               .filter((item) => Number.isFinite(item.numero_cuota) && item.numero_cuota > 0)
               .sort((a, b) => a.numero_cuota - b.numero_cuota)
@@ -781,6 +802,14 @@ export default function PagoAprobado() {
               <View style={styles.row}><Text style={styles.rowLabel}>Monto entregado</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoIngresado)}</Text></View>
               <View style={styles.row}><Text style={styles.rowLabel}>Vuelto</Text><Text style={styles.rowValue}>{formatCurrencyArs(vuelto)}</Text></View>
               <View style={styles.row}><Text style={styles.rowLabel}>Saldo restante</Text><Text style={styles.rowValue}>{saldoRestante <= 0 ? 'Préstamo saldado' : formatCurrencyArs(saldoRestante)}</Text></View>
+              {moraResumen.monto > 0 ? (
+                <>
+                  <View style={styles.row}><Text style={styles.rowLabel}>Días de atraso</Text><Text style={styles.rowValue}>{moraResumen.dias}</Text></View>
+                  <View style={styles.row}><Text style={styles.rowLabel}>% mora</Text><Text style={styles.rowValue}>{moraResumen.porcentaje.toFixed(2)}%</Text></View>
+                  <View style={styles.row}><Text style={styles.rowLabel}>Monto mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.monto)}</Text></View>
+                  <View style={styles.row}><Text style={styles.rowLabel}>Total abonado con mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.total)}</Text></View>
+                </>
+              ) : null}
             </View>
 
             {esPagoFinal ? (

@@ -11,6 +11,7 @@ import {
   getBiometricAvailability,
   getBiometricState,
 } from '../lib/biometrics'
+import { REGLAS_MORA_DEFAULT } from '../lib/mora'
 import { supabase } from '../lib/supabase'
 
 type EstadoMp = 'loading' | 'connected' | 'disconnected'
@@ -36,6 +37,13 @@ type InteresRow = {
   porcentaje: string
 }
 
+type MoraRow = {
+  tramo: 'gracia' | 'mora_normal' | 'mora_alta'
+  dias_desde: number
+  dias_hasta: number | null
+  porcentaje_diario: string
+}
+
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
 
@@ -58,6 +66,10 @@ export default function Configuraciones() {
   const [interesesErrors, setInteresesErrors] = useState<Record<number, string>>({})
   const [loadingIntereses, setLoadingIntereses] = useState(true)
   const [savingIntereses, setSavingIntereses] = useState(false)
+  const [moraRows, setMoraRows] = useState<MoraRow[]>([])
+  const [moraErrors, setMoraErrors] = useState<Record<string, string>>({})
+  const [loadingMora, setLoadingMora] = useState(true)
+  const [savingMora, setSavingMora] = useState(false)
 
   const loadBiometricStatus = useCallback(async () => {
     if (!session?.user?.id) {
@@ -201,6 +213,15 @@ export default function Configuraciones() {
 
   const esAdmin = userRole === 'admin'
 
+  const buildDefaultMoraRows = useCallback(
+    (): MoraRow[] => [
+      { tramo: 'gracia', dias_desde: 1, dias_hasta: 3, porcentaje_diario: String(REGLAS_MORA_DEFAULT[0].porcentaje_diario) },
+      { tramo: 'mora_normal', dias_desde: 4, dias_hasta: 10, porcentaje_diario: String(REGLAS_MORA_DEFAULT[1].porcentaje_diario) },
+      { tramo: 'mora_alta', dias_desde: 11, dias_hasta: null, porcentaje_diario: String(REGLAS_MORA_DEFAULT[2].porcentaje_diario) },
+    ],
+    []
+  )
+
   const onChangeInteres = (cuotas: number, value: string) => {
     const cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
     setInteresesRows((prev) => prev.map((row) => (row.cuotas === cuotas ? { ...row, porcentaje: cleaned } : row)))
@@ -283,13 +304,96 @@ export default function Configuraciones() {
     }
   }, [buildDefaultInteresesRows, esAdmin, savingIntereses])
 
+  const cargarMora = useCallback(async () => {
+    setLoadingMora(true)
+    setMoraErrors({})
+    setMoraRows(buildDefaultMoraRows())
+    try {
+      const { data, error } = await supabase
+        .from('config_mora')
+        .select('tramo, dias_desde, dias_hasta, porcentaje_diario, activo')
+        .eq('activo', true)
+
+      if (error || !data || data.length === 0) return
+
+      const byTramo = new Map<string, MoraRow>()
+      for (const item of data as any[]) {
+        const tramo = String(item?.tramo || '') as MoraRow['tramo']
+        if (!['gracia', 'mora_normal', 'mora_alta'].includes(tramo)) continue
+        byTramo.set(tramo, {
+          tramo,
+          dias_desde: Number(item?.dias_desde || 0),
+          dias_hasta: item?.dias_hasta == null ? null : Number(item?.dias_hasta),
+          porcentaje_diario: String(Number(item?.porcentaje_diario || 0)),
+        })
+      }
+
+      const defaults = buildDefaultMoraRows()
+      setMoraRows(defaults.map((row) => byTramo.get(row.tramo) || row))
+    } finally {
+      setLoadingMora(false)
+    }
+  }, [buildDefaultMoraRows])
+
+  const onChangeMora = (tramo: MoraRow['tramo'], value: string) => {
+    const cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    setMoraRows((prev) => prev.map((row) => (row.tramo === tramo ? { ...row, porcentaje_diario: cleaned } : row)))
+    setMoraErrors((prev) => ({ ...prev, [tramo]: '' }))
+  }
+
+  const validarMora = useCallback(() => {
+    const errors: Record<string, string> = {}
+    for (const row of moraRows) {
+      const raw = String(row.porcentaje_diario || '').trim()
+      const num = Number(raw)
+      if (raw === '') {
+        errors[row.tramo] = 'Requerido'
+      } else if (!Number.isFinite(num)) {
+        errors[row.tramo] = 'Número inválido'
+      } else if (num < 0) {
+        errors[row.tramo] = 'Debe ser >= 0'
+      } else if (num > 100) {
+        errors[row.tramo] = 'Máximo 100'
+      }
+    }
+    setMoraErrors(errors)
+    return Object.keys(errors).length === 0
+  }, [moraRows])
+
+  const guardarMora = useCallback(async () => {
+    if (!esAdmin || savingMora) return
+    if (!validarMora()) {
+      Alert.alert('Error', 'Hay porcentajes de mora inválidos. Revisá los campos marcados.')
+      return
+    }
+    setSavingMora(true)
+    try {
+      const payload = moraRows.map((row) => ({
+        tramo: row.tramo,
+        dias_desde: row.dias_desde,
+        dias_hasta: row.dias_hasta,
+        porcentaje_diario: Number(Number(row.porcentaje_diario).toFixed(4)),
+        activo: true,
+        updated_at: new Date().toISOString(),
+      }))
+      const { error } = await supabase.from('config_mora').upsert(payload, { onConflict: 'tramo' })
+      if (error) throw error
+      Alert.alert('Listo', 'Mora por atraso guardada.')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo guardar configuración de mora')
+    } finally {
+      setSavingMora(false)
+    }
+  }, [esAdmin, moraRows, savingMora, validarMora])
+
   useFocusEffect(
     useCallback(() => {
       void cargarEstadoMercadoPago()
       void loadBiometricStatus()
       void cargarRolUsuario()
       void cargarIntereses()
-    }, [cargarEstadoMercadoPago, cargarIntereses, cargarRolUsuario, loadBiometricStatus])
+      void cargarMora()
+    }, [cargarEstadoMercadoPago, cargarIntereses, cargarMora, cargarRolUsuario, loadBiometricStatus])
   )
 
   const handleEnableBiometrics = useCallback(async () => {
@@ -637,6 +741,62 @@ export default function Configuraciones() {
           </View>
         </View>
 
+        <View style={[styles.card, styles.interesesCard]}>
+          <Text style={styles.cardTitleActive}>Mora por atraso</Text>
+          <Text style={styles.cardTextActive}>
+            Configurá el porcentaje diario por tramo para cuotas vencidas.
+          </Text>
+
+          {loadingMora ? (
+            <View style={styles.interesesLoading}>
+              <ActivityIndicator size="small" color="#60A5FA" />
+            </View>
+          ) : (
+            <View style={styles.moraList}>
+              {moraRows.map((row) => {
+                const etiqueta =
+                  row.tramo === 'gracia'
+                    ? 'Días 1 a 3'
+                    : row.tramo === 'mora_normal'
+                      ? 'Días 4 a 10'
+                      : 'Día 11 en adelante'
+                return (
+                  <View key={row.tramo} style={styles.interesRow}>
+                    <Text style={styles.interesCuotaText}>{etiqueta}</Text>
+                    <View style={styles.interesInputWrap}>
+                      <TextInput
+                        value={row.porcentaje_diario}
+                        onChangeText={(value) => onChangeMora(row.tramo, value)}
+                        editable={esAdmin}
+                        keyboardType="numeric"
+                        placeholder="0"
+                        placeholderTextColor="#64748B"
+                        style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, moraErrors[row.tramo] && styles.interesInputError]}
+                      />
+                      <Text style={styles.interesPercent}>% diario</Text>
+                    </View>
+                    {moraErrors[row.tramo] ? <Text style={styles.interesErrorText}>{moraErrors[row.tramo]}</Text> : null}
+                  </View>
+                )
+              })}
+            </View>
+          )}
+
+          {!esAdmin ? (
+            <Text style={styles.readonlyHint}>Solo un admin puede editar la mora por atraso.</Text>
+          ) : null}
+
+          <View style={styles.interesesButtons}>
+            <TouchableOpacity
+              style={[styles.saveInteresesButton, (!esAdmin || savingMora || loadingMora) && styles.connectButtonDisabled]}
+              onPress={guardarMora}
+              disabled={!esAdmin || savingMora || loadingMora}
+            >
+              {savingMora ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar mora</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={[styles.card, styles.cardDisabled]}>
           <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
           <Text style={styles.cardTextDisabled}>
@@ -833,6 +993,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#0F172A',
     padding: 10,
+    gap: 8,
+  },
+  moraList: {
+    marginTop: 12,
     gap: 8,
   },
   interesRow: {
