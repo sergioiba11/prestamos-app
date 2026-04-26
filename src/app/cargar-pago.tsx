@@ -655,7 +655,7 @@ export default function CargarPago() {
   const totalPrestamo = Number(prestamoSeleccionado?.total_a_pagar || 0)
   const totalPagadoPrestamo = Math.max(0, totalPrestamo - saldoRestantePrestamo)
   const cuotasGridColumns =
-    width >= 1600 ? 6 : width >= 1400 ? 5 : width >= 1100 ? 4 : width >= 900 ? 3 : 2
+    width >= 1600 ? 7 : width >= 1400 ? 6 : width >= 1100 ? 5 : width >= 900 ? 4 : 2
   const cuotaItemWidth = isDesktop
     ? Math.max(158, (Math.min(width, contentMaxWidth) - 64 - (cuotasGridColumns - 1) * 12) / cuotasGridColumns)
     : Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
@@ -1219,6 +1219,29 @@ export default function CargarPago() {
             >
               <View style={[styles.mainCard, styles.sectionCard, styles.paymentPrimaryCard]}>
                 <Text style={styles.sectionTitle}>PAGO</Text>
+                <Text style={styles.label}>Resumen</Text>
+                <View style={styles.resumeCard}>
+                  <Text style={styles.resumeTitle}>RESUMEN DEL PAGO</Text>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Total aplicado</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Monto entregado</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Vuelto</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Saldo restante</Text>
+                    <Text style={styles.resumeValue}>
+                      {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
+                    </Text>
+                  </View>
+                </View>
+
                 <Text style={styles.label}>Método de pago</Text>
                 <View style={styles.methodsRow}>
                   <TouchableOpacity
@@ -1304,28 +1327,6 @@ export default function CargarPago() {
                   }}
                 />
 
-                <Text style={styles.label}>Resumen</Text>
-                <View style={styles.resumeCard}>
-                  <Text style={styles.resumeTitle}>RESUMEN DEL PAGO</Text>
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Total aplicado</Text>
-                    <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
-                  </View>
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Monto entregado</Text>
-                    <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
-                  </View>
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Vuelto</Text>
-                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
-                  </View>
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Saldo restante</Text>
-                    <Text style={styles.resumeValue}>
-                      {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
-                    </Text>
-                  </View>
-                </View>
                 {isDesktop && (
                   <TouchableOpacity
                     style={[styles.saveButton, styles.desktopSaveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
@@ -1525,7 +1526,7 @@ const styles = StyleSheet.create({
     paddingBottom: 56,
   },
   contentDesktop: {
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
   },
   contentWithFixedFooter: {
     paddingBottom: 210,
@@ -1594,18 +1595,18 @@ const styles = StyleSheet.create({
 
   label: {
     color: '#94A3B8',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
     marginBottom: 8,
-    marginTop: 12,
+    marginTop: 14,
   },
   sectionCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.18)',
     borderRadius: 20,
-    padding: 18,
+    padding: 20,
   },
   searchCard: {
     marginTop: 14,
@@ -1615,7 +1616,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     borderColor: 'rgba(148,163,184,0.20)',
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 15,
     color: '#F8FAFC',
@@ -1715,8 +1716,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 12,
-    padding: 18,
+    borderRadius: 20,
+    padding: 20,
   },
   clientActionsRow: {
     flexDirection: 'row',
@@ -1725,7 +1726,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   mainCard: {
-    marginTop: 18,
+    marginTop: 20,
     ...Platform.select({
       web: {
         shadowColor: '#020617',
@@ -1744,19 +1745,19 @@ const styles = StyleSheet.create({
   workflowLayoutDesktop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 16,
+    gap: 24,
   },
   workflowLeft: {
     width: '100%',
   },
   workflowLeftDesktop: {
-    flex: 1.35,
+    flex: 0.58,
   },
   workflowRight: {
     width: '100%',
   },
   workflowRightDesktop: {
-    flex: 0.85,
+    flex: 0.42,
     alignSelf: 'flex-start',
   },
   sectionTitle: {
@@ -1809,7 +1810,7 @@ const styles = StyleSheet.create({
 
   methodsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginTop: 10,
     flexWrap: 'nowrap',
   },
@@ -1819,8 +1820,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
     borderRadius: 999,
-    paddingVertical: 15,
-    paddingHorizontal: 18,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
     minWidth: 0,
     flex: 1,
     alignItems: 'center',
@@ -1847,20 +1848,20 @@ const styles = StyleSheet.create({
   },
 
   resumeCard: {
-    backgroundColor: 'rgba(30,58,138,0.42)',
+    backgroundColor: 'rgba(15, 23, 68, 0.96)',
     borderWidth: 1,
-    borderColor: '#1D4ED8',
-    borderRadius: 18,
-    padding: 22,
-    marginTop: 14,
-    gap: 14,
+    borderColor: '#2563EB',
+    borderRadius: 20,
+    padding: 24,
+    marginTop: 10,
+    gap: 12,
   },
   resumeTitle: {
     color: '#BFDBFE',
     fontSize: 13,
     letterSpacing: 1.2,
     fontWeight: '800',
-    textAlign: 'center',
+    textAlign: 'left',
     marginBottom: 4,
   },
 
@@ -1872,12 +1873,14 @@ const styles = StyleSheet.create({
 
   resumeLabel: {
     color: '#93C5FD',
-    fontSize: 15,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
   resumeValue: {
     color: '#F8FAFC',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
     textAlign: 'right',
   },
@@ -1885,11 +1888,11 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#2563EB',
     borderRadius: 16,
-    minHeight: 52,
+    minHeight: 54,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 14,
+    marginTop: 16,
     ...Platform.select({
       web: {
         shadowColor: '#2563EB',
@@ -2025,15 +2028,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   loanCardsWrap: {
-    gap: 16,
+    gap: 10,
   },
   loanItemCard: {
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.18)',
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: '#0F172A',
-    padding: 16,
-    gap: 6,
+    padding: 14,
+    gap: 4,
   },
   loanItemCardActive: {
     borderColor: '#2563EB',
@@ -2063,7 +2066,7 @@ const styles = StyleSheet.create({
   },
   loanItemSaldo: {
     color: '#F8FAFC',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   loanItemTotal: {
@@ -2073,11 +2076,11 @@ const styles = StyleSheet.create({
   },
   loanSummaryCard: {
     marginTop: 2,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#1D4ED8',
     backgroundColor: 'rgba(30,58,138,0.36)',
-    padding: 18,
+    padding: 20,
     gap: 10,
   },
   loanSummaryHeader: {
@@ -2093,7 +2096,7 @@ const styles = StyleSheet.create({
   },
   remainingValue: {
     color: '#3B82F6',
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -2106,16 +2109,16 @@ const styles = StyleSheet.create({
   quotaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   quotaDesktopScroll: {
     maxHeight: 420,
   },
   quotaTile: {
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    minHeight: 108,
-    padding: 16,
+    minHeight: 98,
+    padding: 14,
     justifyContent: 'space-between',
   },
   quotaTileActive: {
@@ -2133,12 +2136,12 @@ const styles = StyleSheet.create({
   },
   quotaTileTitle: {
     color: '#E2E8F0',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
   },
   quotaTileAmount: {
     color: '#F8FAFC',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '800',
   },
   quotaTileBadge: {
@@ -2147,12 +2150,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   amountInput: {
-    backgroundColor: '#0B1120',
-    borderColor: '#1D4ED8',
+    backgroundColor: '#0A1326',
+    borderColor: 'rgba(59,130,246,0.55)',
     borderWidth: 1,
     borderRadius: 16,
     paddingHorizontal: 18,
-    height: 56,
+    height: 58,
     color: '#F8FAFC',
     fontSize: 24,
     textAlign: 'center',
@@ -2163,6 +2166,18 @@ const styles = StyleSheet.create({
   },
   paymentPrimaryCard: {
     marginTop: 0,
+    borderColor: 'rgba(59,130,246,0.42)',
+    ...Platform.select({
+      web: {
+        shadowColor: '#1D4ED8',
+        shadowOpacity: 0.24,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      default: {
+        elevation: 6,
+      },
+    }),
   },
   paymentNotesCard: {
     marginTop: 16,
