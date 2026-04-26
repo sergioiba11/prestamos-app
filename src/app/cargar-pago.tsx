@@ -2040,7 +2040,20 @@ const styles = StyleSheet.create({
   },
   loanItemCardActive: {
     borderColor: '#2563EB',
-    backgroundColor: '#172554',
+    backgroundColor: '#1E293B',
+  },
+  loanItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  loanItemLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  loanItemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   loanItemRow: {
     flexDirection: 'row',
@@ -2096,7 +2109,7 @@ const styles = StyleSheet.create({
   },
   remainingValue: {
     color: '#3B82F6',
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -2109,7 +2122,7 @@ const styles = StyleSheet.create({
   quotaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 12,
   },
   quotaDesktopScroll: {
     maxHeight: 420,
