@@ -1,5 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native'
 import { router, useLocalSearchParams } from 'expo-router'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
@@ -7,11 +8,13 @@ import {
   Image,
   Linking,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native'
 import {
@@ -196,6 +199,17 @@ function formatearFecha(fecha?: string | null) {
   return `${partes[2]}/${partes[1]}/${partes[0]}`
 }
 
+function obtenerEstadoCuotaVisual(estado?: string | null) {
+  const normalizado = String(estado || 'pendiente').toLowerCase()
+  if (normalizado === 'pagado') {
+    return { etiqueta: '✔ PAGADA', color: '#22C55E', fondo: '#052E16' }
+  }
+  if (normalizado === 'parcial') {
+    return { etiqueta: '⚠ PARCIAL', color: '#FACC15', fondo: '#422006' }
+  }
+  return { etiqueta: '⏳ PENDIENTE', color: '#F87171', fondo: '#450A0A' }
+}
+
 function obtenerFunctionsUrl() {
   const baseUrl = supabaseUrl || SUPABASE_URL
   if (!baseUrl) {
@@ -287,6 +301,7 @@ export default function CargarPago() {
     qrUrl: string | null
     qrBase64: string | null
   } | null>(null)
+  const { width } = useWindowDimensions()
 
   useEffect(() => {
     cargarClientes()
@@ -601,6 +616,17 @@ export default function CargarPago() {
   const aplicarAMultiples = haySobranteEfectivo
     ? opcionSobranteEfectivo === 'aplicar_proximas'
     : true
+  const cuotasPrestamoSeleccionado = prestamoSeleccionado
+    ? cuotasPorPrestamo[prestamoSeleccionado.id] || cuotas
+    : []
+  const saldoRestantePrestamo = cuotasPrestamoSeleccionado.reduce(
+    (acc, cuota) => acc + Number(cuota.saldo_pendiente || 0),
+    0
+  )
+  const totalPrestamo = Number(prestamoSeleccionado?.total_a_pagar || 0)
+  const totalPagadoPrestamo = Math.max(0, totalPrestamo - saldoRestantePrestamo)
+  const cuotasGridColumns = width >= 1200 ? 4 : width >= 900 ? 3 : 2
+  const cuotaItemWidth = Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
 
   const volver = () => {
     if (clienteSeleccionado?.id) {
@@ -967,6 +993,12 @@ export default function CargarPago() {
 
   return (
     <>
+      <LinearGradient
+        colors={['#0F172A', '#1E3A8A', '#2563EB']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
       <ScrollView
       ref={scrollRef}
       keyboardShouldPersistTaps="always"
@@ -1014,8 +1046,8 @@ export default function CargarPago() {
         </>
       ) : (
         <>
-          <Text style={styles.label}>Paso 1 · Cliente seleccionado</Text>
-          <View style={styles.infoCard}>
+          <View style={[styles.infoCard, styles.mainCard]}>
+            <Text style={styles.sectionTitle}>CLIENTE</Text>
             <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
             <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
             <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email || 'Sin email'}</Text>
@@ -1026,130 +1058,78 @@ export default function CargarPago() {
             <Text style={styles.changeButtonText}>Cambiar cliente</Text>
           </TouchableOpacity>
 
-          <Text style={styles.label}>Paso 2 · Seleccioná préstamo</Text>
-
           {prestamosFiltrados.length === 0 ? (
             <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
           ) : (
-            <View style={styles.listBox}>
-              {prestamosFiltrados.map((prestamo) => {
-                const seleccionado = prestamoSeleccionado?.id === prestamo.id
-                const expandido = prestamoExpandidoId === prestamo.id
-                const cuotasPrestamo = cuotasPorPrestamo[prestamo.id] || []
-                const saldoPendientePrestamo = cuotasPrestamo.reduce(
-                  (acc, cuota) => acc + Number(cuota.saldo_pendiente || 0),
-                  0
-                )
-                const proximaCuota = cuotasPrestamo[0]
-
-                return (
-                  <View
+            <View style={styles.mainCard}>
+              <Text style={styles.sectionTitle}>PRÉSTAMO</Text>
+              <View style={styles.loanPickerRow}>
+                {prestamosFiltrados.map((prestamo) => (
+                  <TouchableOpacity
                     key={prestamo.id}
                     style={[
-                      styles.selectCard,
-                      styles.loanCardCompact,
-                      seleccionado && styles.selectCardActive,
+                      styles.loanPill,
+                      prestamoSeleccionado?.id === prestamo.id && styles.loanPillActive,
                     ]}
+                    onPress={() => {
+                      setPrestamoSeleccionado(prestamo)
+                      setCuotaSeleccionada(null)
+                      setMonto('')
+                      void cargarCuotasPrestamo(prestamo.id)
+                    }}
                   >
-                    <View style={styles.loanHeaderRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.selectName}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
-                        <Text style={styles.selectMeta}>
-                          Saldo pendiente: {formatearMoneda(saldoPendientePrestamo)}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Próxima cuota pendiente:{' '}
-                          {proximaCuota
-                            ? `#${proximaCuota.numero_cuota} · ${formatearFecha(proximaCuota.fecha_vencimiento)}`
-                            : 'Sin cuotas pendientes'}
-                        </Text>
-                        <Text style={styles.selectMeta}>
-                          Estado: {prestamo.estado || 'activo'}
-                        </Text>
-                      </View>
-                    </View>
+                    <Text style={styles.loanPillText}>#{prestamo.id.slice(0, 8)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.resumeRow}>
+                <Text style={styles.resumeLabel}>Total a pagar</Text>
+                <Text style={styles.resumeValue}>{formatearMoneda(totalPrestamo)}</Text>
+              </View>
+              <View style={styles.resumeRow}>
+                <Text style={styles.resumeLabel}>Total pagado</Text>
+                <Text style={styles.resumeValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
+              </View>
+              <View style={styles.remainingWrap}>
+                <Text style={styles.remainingLabel}>Saldo restante</Text>
+                <Text style={styles.remainingValue}>{formatearMoneda(saldoRestantePrestamo)}</Text>
+              </View>
+            </View>
+          )}
 
-                    <TouchableOpacity
-                      style={styles.compactActionButton}
+          {prestamoSeleccionado && (
+            <View style={styles.mainCard}>
+              <Text style={styles.sectionTitle}>CUOTAS</Text>
+              <View style={styles.quotaGrid}>
+                {cuotasFiltradas.map((cuota) => {
+                  const estadoUi = obtenerEstadoCuotaVisual(cuota.estado)
+                  const selected = cuotaSeleccionada?.id === cuota.id
+                  return (
+                    <Pressable
+                      key={cuota.id}
                       onPress={() => {
-                        const siguienteExpandido = expandido ? null : prestamo.id
-                        setPrestamoExpandidoId(siguienteExpandido)
-                        setPrestamoSeleccionado(prestamo)
-                        setCuotaSeleccionada(null)
-                        setMonto('')
-                        if (!expandido) {
-                          void cargarCuotasPrestamo(prestamo.id)
-                        }
+                        setCuotaSeleccionada(cuota)
+                        requestAnimationFrame(() => {
+                          scrollRef.current?.scrollTo({
+                            y: Math.max(0, paymentFormYRef.current - 24),
+                            animated: true,
+                          })
+                        })
                       }}
+                      style={({ hovered, pressed }) => [
+                        styles.quotaTile,
+                        { width: cuotaItemWidth, borderColor: estadoUi.color, backgroundColor: estadoUi.fondo },
+                        selected && styles.quotaTileActive,
+                        hovered && styles.quotaTileHover,
+                        pressed && styles.quotaTilePressed,
+                      ]}
                     >
-                      <Text style={styles.compactActionButtonText}>
-                        {expandido ? 'Ocultar cuotas' : 'Ver cuotas'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {expandido && (
-                      <View style={styles.compactQuotaList}>
-                        {cuotasFiltradas.length === 0 && (
-                          <Text style={styles.emptyText}>
-                            Este préstamo no tiene cuotas pendientes para mostrar.
-                          </Text>
-                        )}
-                        {(mostrarTodasCuotas ? cuotasFiltradas : cuotasFiltradas.slice(0, 5)).map((cuota) => {
-                          const selected = cuotaSeleccionada?.id === cuota.id
-                          return (
-                            <View
-                              key={cuota.id}
-                              style={[styles.compactQuotaCard, selected && styles.selectCardActive]}
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.compactQuotaTitle}>
-                                  Cuota #{cuota.numero_cuota} · {cuota.estado || 'pendiente'}
-                                </Text>
-                                <Text style={styles.selectMeta}>
-                                  Monto: {formatearMoneda(Number(cuota.monto_cuota || 0))}
-                                </Text>
-                                <Text style={styles.selectMeta}>
-                                  Vencimiento: {formatearFecha(cuota.fecha_vencimiento)}
-                                </Text>
-                              </View>
-                              <TouchableOpacity
-                                style={styles.compactActionButton}
-                                onPress={() => {
-                                  setCuotaSeleccionada(cuota)
-                                  setPrestamoSeleccionado(prestamo)
-                                  setPrestamoExpandidoId(null)
-                                  setMostrarTodasCuotas(false)
-                                  requestAnimationFrame(() => {
-                                    scrollRef.current?.scrollTo({
-                                      y: Math.max(0, paymentFormYRef.current - 24),
-                                      animated: true,
-                                    })
-                                  })
-                                }}
-                              >
-                                <Text style={styles.compactActionButtonText}>Seleccionar cuota</Text>
-                              </TouchableOpacity>
-                            </View>
-                          )
-                        })}
-
-                        {cuotasFiltradas.length > 5 && (
-                          <TouchableOpacity
-                            style={styles.changeButton}
-                            onPress={() => setMostrarTodasCuotas((prev) => !prev)}
-                          >
-                            <Text style={styles.changeButtonText}>
-                              {mostrarTodasCuotas
-                                ? 'Ver menos cuotas'
-                                : `Ver ${cuotasFiltradas.length - 5} cuotas más`}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                )
-              })}
+                      <Text style={styles.quotaTileTitle}>Cuota #{cuota.numero_cuota}</Text>
+                      <Text style={[styles.quotaTileBadge, { color: estadoUi.color }]}>{estadoUi.etiqueta}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
             </View>
           )}
 
@@ -1159,91 +1139,105 @@ export default function CargarPago() {
                 paymentFormYRef.current = event.nativeEvent.layout.y
               }}
             >
-              <Text style={styles.label}>Paso 3 · Resumen de cuota</Text>
-              <View style={styles.infoCard}>
-                <Text style={styles.infoName}>
-                  Pagando cuota #{cuotaSeleccionada.numero_cuota} del préstamo #{prestamoSeleccionado?.id.slice(0, 8)}
-                </Text>
-                <Text style={styles.infoMeta}>Vence: {formatearFecha(cuotaSeleccionada.fecha_vencimiento)}</Text>
-                <Text style={styles.infoMeta}>Monto cuota: {formatearMoneda(Number(cuotaSeleccionada.monto_cuota || 0))}</Text>
-                <Text style={styles.infoMeta}>Saldo pendiente: {formatearMoneda(Number(cuotaSeleccionada.saldo_pendiente || 0))}</Text>
-                <Text style={styles.infoMeta}>Estado: {cuotaSeleccionada.estado || 'pendiente'}</Text>
+              <View style={styles.mainCard}>
+                <Text style={styles.sectionTitle}>PAGO</Text>
+                <Text style={styles.label}>Método de pago</Text>
+                <View style={styles.methodsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.methodButton,
+                      metodo === 'efectivo' && styles.methodButtonActive,
+                    ]}
+                    onPress={() => setMetodo('efectivo')}
+                    activeOpacity={0.88}
+                  >
+                    <Text
+                      style={[
+                        styles.methodButtonText,
+                        metodo === 'efectivo' && styles.methodButtonTextActive,
+                      ]}
+                    >
+                      Efectivo
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.methodButton,
+                      metodo === 'transferencia' && styles.methodButtonActive,
+                    ]}
+                    onPress={() => setMetodo('transferencia')}
+                    activeOpacity={0.88}
+                  >
+                    <Text
+                      style={[
+                        styles.methodButtonText,
+                        metodo === 'transferencia' && styles.methodButtonTextActive,
+                      ]}
+                    >
+                      Transferencia
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.methodButton,
+                      metodo === 'mp' && styles.methodButtonActive,
+                      !mpDisponible && styles.methodButtonDisabled,
+                    ]}
+                    onPress={() => {
+                      if (!mpDisponible) {
+                        Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
+                        return
+                      }
+                      setMetodo('mp')
+                    }}
+                    activeOpacity={mpDisponible ? 0.88 : 1}
+                  >
+                    <Text
+                      style={[
+                        styles.methodButtonText,
+                        metodo === 'mp' && styles.methodButtonTextActive,
+                      ]}
+                    >
+                      Mercado Pago
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.label}>Monto</Text>
+                <TextInput
+                  value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
+                  onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
+                  placeholder="$ 0,00"
+                  placeholderTextColor="#64748B"
+                  keyboardType="decimal-pad"
+                  style={[styles.amountInput, metodo === 'transferencia' && styles.inputDisabled]}
+                  editable={metodo !== 'transferencia'}
+                />
+
+                <Text style={styles.label}>Resumen</Text>
+                <View style={styles.resumeCard}>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Total aplicado</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Monto entregado</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Vuelto</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Saldo restante</Text>
+                    <Text style={styles.resumeValue}>
+                      {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
+                    </Text>
+                  </View>
+                </View>
               </View>
-
-              <Text style={styles.label}>Paso 5 · Método de pago</Text>
-
-              <View style={styles.methodsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'efectivo' && styles.methodButtonActive,
-                  ]}
-                  onPress={() => setMetodo('efectivo')}
-                >
-                  <Text
-                    style={[
-                      styles.methodButtonText,
-                      metodo === 'efectivo' && styles.methodButtonTextActive,
-                    ]}
-                  >
-                    Efectivo
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'transferencia' && styles.methodButtonActive,
-                  ]}
-                  onPress={() => setMetodo('transferencia')}
-                >
-                  <Text
-                    style={[
-                      styles.methodButtonText,
-                      metodo === 'transferencia' && styles.methodButtonTextActive,
-                    ]}
-                  >
-                    Transferencia
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.methodButton,
-                    metodo === 'mp' && styles.methodButtonActive,
-                    !mpDisponible && styles.methodButtonDisabled,
-                  ]}
-                  onPress={() => {
-                    if (!mpDisponible) {
-                      Alert.alert('Mercado Pago no disponible', 'Primero conectá Mercado Pago en Configuraciones')
-                      return
-                    }
-                    setMetodo('mp')
-                  }}
-                  activeOpacity={mpDisponible ? 0.8 : 1}
-                >
-                  <Text
-                    style={[
-                      styles.methodButtonText,
-                      metodo === 'mp' && styles.methodButtonTextActive,
-                    ]}
-                  >
-                    MP
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.label}>Paso 6 · Monto</Text>
-
-              <TextInput
-                value={metodo === 'transferencia' ? formatearMonedaInput(String(transferenciaMontoAutomatico)) : monto}
-                onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
-                placeholder="$0"
-                placeholderTextColor="#64748B"
-                keyboardType="decimal-pad"
-                style={[styles.input, metodo === 'transferencia' && styles.inputDisabled]}
-                editable={metodo !== 'transferencia'}
-              />
 
               {(metodo === 'transferencia' || metodo === 'mp') && (
                 <>
@@ -1343,50 +1337,24 @@ export default function CargarPago() {
                 </Text>
               )}
 
-              <Text style={styles.label}>Paso 7 · Resumen final</Text>
-
-              <View style={styles.resumeCard}>
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Recibido</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(montoNormalizado)}</Text>
-                </View>
-
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>{metodo === 'efectivo' ? 'Se aplica a cuota' : 'Monto a acreditar (pendiente)'}</Text>
-                  <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
-                </View>
-
-                {metodo === 'efectivo' && (
-                  <View style={styles.resumeRow}>
-                    <Text style={styles.resumeLabel}>Vuelto</Text>
-                    <Text style={styles.resumeValue}>{formatearMoneda(vuelto)}</Text>
-                  </View>
-                )}
-
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Saldo restante cuota</Text>
-                  <Text style={styles.resumeValue}>
-                    {formatearMoneda(metodo === 'efectivo' ? saldoLuegoDelPagoCuota : deudaActual)}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.label}>Paso 8 · Confirmación</Text>
-
-              <TouchableOpacity
-                style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
-                onPress={registrarPago}
-                disabled={guardando || !cuotaPendienteValida}
-              >
-                <Text style={styles.saveButtonText}>
-                  {guardando ? 'Guardando...' : 'Registrar pago de cuota'}
-                </Text>
-              </TouchableOpacity>
             </View>
           )}
         </>
       )}
       </ScrollView>
+      {cuotaSeleccionada && (
+        <View style={styles.stickyFooter}>
+          <TouchableOpacity
+            style={[styles.saveButton, styles.stickySaveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+            onPress={registrarPago}
+            disabled={guardando || !cuotaPendienteValida}
+          >
+            <Text style={styles.saveButtonText}>
+              {guardando ? 'Guardando...' : 'Registrar pago'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <Modal
         visible={Boolean(mpCheckout)}
         transparent
@@ -1436,14 +1404,17 @@ export default function CargarPago() {
 }
 
 const styles = StyleSheet.create({
+  gradientBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#020817',
+    backgroundColor: '#0F172A',
   },
 
   content: {
     padding: 16,
-    paddingBottom: 30,
+    paddingBottom: 120,
   },
 
   loadingContainer: {
@@ -1502,10 +1473,10 @@ const styles = StyleSheet.create({
 
   label: {
     color: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     marginBottom: 8,
-    marginTop: 10,
+    marginTop: 12,
   },
 
   input: {
@@ -1612,8 +1583,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 12,
+    padding: 18,
+  },
+  mainCard: {
+    marginTop: 18,
+    shadowColor: '#020617',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  sectionTitle: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 10,
   },
 
   infoName: {
@@ -1662,12 +1648,14 @@ const styles = StyleSheet.create({
   },
 
   methodButton: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 14,
     paddingHorizontal: 14,
+    minWidth: 130,
+    flexGrow: 1,
   },
 
   methodButtonActive: {
@@ -1697,7 +1685,7 @@ const styles = StyleSheet.create({
   },
 
   resumeCard: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 16,
@@ -1725,10 +1713,10 @@ const styles = StyleSheet.create({
 
   saveButton: {
     backgroundColor: '#2563EB',
-    borderRadius: 16,
-    paddingVertical: 15,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 18,
+    marginTop: 12,
   },
 
   saveButtonDisabled: {
@@ -1826,5 +1814,110 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: 14,
     backgroundColor: '#fff',
+  },
+  loanPickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 14,
+  },
+  loanPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  loanPillActive: {
+    borderColor: '#3B82F6',
+    backgroundColor: '#172554',
+  },
+  loanPillText: {
+    color: '#DBEAFE',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  remainingWrap: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    paddingTop: 12,
+  },
+  remainingLabel: {
+    color: '#93C5FD',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  remainingValue: {
+    color: '#3B82F6',
+    fontSize: 32,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  quotaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quotaTile: {
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 90,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  quotaTileActive: {
+    borderWidth: 2,
+    shadowColor: '#2563EB',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  quotaTileHover: {
+    transform: [{ scale: 1.01 }],
+  },
+  quotaTilePressed: {
+    opacity: 0.9,
+  },
+  quotaTileTitle: {
+    color: '#E2E8F0',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  quotaTileBadge: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  amountInput: {
+    backgroundColor: '#0B1220',
+    borderColor: '#1E293B',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    color: '#F8FAFC',
+    fontSize: 20,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  stickyFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(15,23,42,0.96)',
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+  },
+  stickySaveButton: {
+    width: '100%',
+    minHeight: 52,
+    justifyContent: 'center',
+    marginTop: 0,
   },
 })
