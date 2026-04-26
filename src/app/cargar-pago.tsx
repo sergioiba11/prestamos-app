@@ -199,15 +199,34 @@ function formatearFecha(fecha?: string | null) {
   return `${partes[2]}/${partes[1]}/${partes[0]}`
 }
 
-function obtenerEstadoCuotaVisual(estado?: string | null) {
-  const normalizado = String(estado || 'pendiente').toLowerCase()
+function inicioDelDia(fecha = new Date()) {
+  return new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate())
+}
+
+function parsearFechaIso(fecha?: string | null) {
+  if (!fecha) return null
+  const [yyyy, mm, dd] = fecha.slice(0, 10).split('-').map((p) => Number(p))
+  if (!yyyy || !mm || !dd) return null
+  return new Date(yyyy, mm - 1, dd)
+}
+
+function obtenerEstadoCuotaVisual(cuota: Cuota, esProximaPendiente: boolean) {
+  const normalizado = String(cuota.estado || 'pendiente').toLowerCase()
   if (normalizado === 'pagado') {
     return { etiqueta: '✔ PAGADA', color: '#22C55E', fondo: '#052E16' }
   }
-  if (normalizado === 'parcial') {
-    return { etiqueta: '⚠ PARCIAL', color: '#FACC15', fondo: '#422006' }
+
+  const fechaVencimiento = parsearFechaIso(cuota.fecha_vencimiento)
+  const estaVencida = Boolean(fechaVencimiento && fechaVencimiento < inicioDelDia())
+  if (estaVencida) {
+    return { etiqueta: '● VENCIDA', color: '#F87171', fondo: '#450A0A' }
   }
-  return { etiqueta: '⏳ PENDIENTE', color: '#F87171', fondo: '#450A0A' }
+
+  if (esProximaPendiente) {
+    return { etiqueta: '● PRÓXIMA', color: '#FACC15', fondo: '#422006' }
+  }
+
+  return { etiqueta: '● PENDIENTE', color: '#93C5FD', fondo: '#0B234A' }
 }
 
 function obtenerFunctionsUrl() {
@@ -525,7 +544,6 @@ export default function CargarPago() {
           estado
         `)
         .eq('prestamo_id', prestamoId)
-        .in('estado', ['pendiente', 'parcial'])
         .order('numero_cuota', { ascending: true })
 
       if (error) {
@@ -537,7 +555,11 @@ export default function CargarPago() {
 
       const lista = (data || []) as Cuota[]
       setCuotas(lista)
-      setCuotaSeleccionada(lista[0] || null)
+      const cuotaInicial =
+        lista.find((cuota) => String(cuota.estado || '').toLowerCase() !== 'pagado') ||
+        lista[0] ||
+        null
+      setCuotaSeleccionada(cuotaInicial)
       setCuotasPorPrestamo((prev) => ({ ...prev, [prestamoId]: lista }))
       setMonto('')
     } catch (error: any) {
@@ -601,6 +623,13 @@ export default function CargarPago() {
       return filtroCoincideClienteSeleccionado
     })
   }, [cuotas, prestamoSeleccionado, busquedaDebounced, filtroCoincideClienteSeleccionado])
+  const proximaCuotaPendienteId = useMemo(() => {
+    return (
+      cuotas
+        .filter((cuota) => String(cuota.estado || '').toLowerCase() !== 'pagado')
+        .sort((a, b) => a.numero_cuota - b.numero_cuota)[0]?.id || null
+    )
+  }, [cuotas])
 
   const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
   const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
@@ -1012,13 +1041,16 @@ export default function CargarPago() {
 
       <Text style={styles.title}>Cargar pago</Text>
       <Text style={styles.subtitle}>Registrá un pago por cuota</Text>
-      <TextInput
-        value={busqueda}
-        onChangeText={setBusqueda}
-        placeholder="Buscar por cliente, DNI, ID préstamo o cuota"
-        placeholderTextColor="#64748B"
-        style={styles.input}
-      />
+      <View style={[styles.mainCard, styles.sectionCard, styles.searchCard]}>
+        <Text style={styles.sectionTitle}>BUSCAR</Text>
+        <TextInput
+          value={busqueda}
+          onChangeText={setBusqueda}
+          placeholder="Buscar por cliente, DNI, ID préstamo o cuota"
+          placeholderTextColor="#64748B"
+          style={styles.input}
+        />
+      </View>
 
       {!clienteSeleccionado ? (
         <>
@@ -1102,7 +1134,7 @@ export default function CargarPago() {
               <Text style={styles.sectionTitle}>CUOTAS</Text>
               <View style={styles.quotaGrid}>
                 {cuotasFiltradas.map((cuota) => {
-                  const estadoUi = obtenerEstadoCuotaVisual(cuota.estado)
+                  const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
                   const selected = cuotaSeleccionada?.id === cuota.id
                   return (
                     <Pressable
@@ -1218,6 +1250,7 @@ export default function CargarPago() {
 
                 <Text style={styles.label}>Resumen</Text>
                 <View style={styles.resumeCard}>
+                  <Text style={styles.resumeTitle}>RESUMEN DEL PAGO</Text>
                   <View style={styles.resumeRow}>
                     <Text style={styles.resumeLabel}>Total aplicado</Text>
                     <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>
@@ -1237,10 +1270,20 @@ export default function CargarPago() {
                     </Text>
                   </View>
                 </View>
+                <TouchableOpacity
+                  style={[styles.saveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+                  onPress={registrarPago}
+                  disabled={guardando || !cuotaPendienteValida}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {guardando ? 'Guardando...' : 'Registrar pago'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {(metodo === 'transferencia' || metodo === 'mp') && (
-                <>
+              <View style={[styles.mainCard, styles.sectionCard, styles.paymentNotesCard]}>
+                {(metodo === 'transferencia' || metodo === 'mp') && (
+                  <>
                   <Text style={styles.transferBadge}>Pendiente de aprobación</Text>
                   {metodo === 'transferencia' && (
                     <Text style={styles.helperText}>
@@ -1255,18 +1298,19 @@ export default function CargarPago() {
                       En transferencia el monto se completa automáticamente con el saldo de la cuota.
                     </Text>
                   )}
-                </>
-              )}
-              {metodo === 'efectivo' && (
-                <Text style={styles.helperText}>
-                  El pago en efectivo se acredita al instante.
-                </Text>
-              )}
+                  </>
+                )}
+                {metodo === 'efectivo' && (
+                  <Text style={styles.helperText}>
+                    El pago en efectivo se acredita al instante.
+                  </Text>
+                )}
 
-              <Text style={styles.helperText}>
-                Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
-                {formatearMoneda(deudaActual)}
-              </Text>
+                <Text style={styles.helperText}>
+                  Cuota #{cuotaSeleccionada.numero_cuota} - saldo pendiente:{' '}
+                  {formatearMoneda(deudaActual)}
+                </Text>
+              </View>
 
               {haySobranteEfectivo && (
                 <View style={styles.sobranteCard}>
@@ -1342,19 +1386,6 @@ export default function CargarPago() {
         </>
       )}
       </ScrollView>
-      {cuotaSeleccionada && (
-        <View style={styles.stickyFooter}>
-          <TouchableOpacity
-            style={[styles.saveButton, styles.stickySaveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
-            onPress={registrarPago}
-            disabled={guardando || !cuotaPendienteValida}
-          >
-            <Text style={styles.saveButtonText}>
-              {guardando ? 'Guardando...' : 'Registrar pago'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
       <Modal
         visible={Boolean(mpCheckout)}
         transparent
@@ -1414,7 +1445,7 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 16,
-    paddingBottom: 120,
+    paddingBottom: 56,
   },
 
   loadingContainer: {
@@ -1477,6 +1508,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
     marginTop: 12,
+  },
+  sectionCard: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 16,
+    padding: 16,
+  },
+  searchCard: {
+    marginTop: 14,
   },
 
   input: {
@@ -1643,7 +1684,7 @@ const styles = StyleSheet.create({
   methodsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 8,
+    marginTop: 10,
     flexWrap: 'wrap',
   },
 
@@ -1651,11 +1692,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    minWidth: 130,
+    borderRadius: 999,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    minWidth: 150,
     flexGrow: 1,
+    alignItems: 'center',
   },
 
   methodButtonActive: {
@@ -1666,6 +1708,7 @@ const styles = StyleSheet.create({
   methodButtonText: {
     color: '#CBD5E1',
     fontWeight: '700',
+    fontSize: 15,
   },
 
   methodButtonTextActive: {
@@ -1685,13 +1728,21 @@ const styles = StyleSheet.create({
   },
 
   resumeCard: {
-    backgroundColor: '#0B1220',
+    backgroundColor: '#0A1A3A',
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
-    marginTop: 16,
-    gap: 10,
+    borderColor: '#1D4ED8',
+    borderRadius: 18,
+    padding: 18,
+    marginTop: 14,
+    gap: 12,
+  },
+  resumeTitle: {
+    color: '#BFDBFE',
+    fontSize: 13,
+    letterSpacing: 1.2,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
   },
 
   resumeRow: {
@@ -1701,14 +1752,15 @@ const styles = StyleSheet.create({
   },
 
   resumeLabel: {
-    color: '#94A3B8',
-    fontSize: 14,
+    color: '#BFDBFE',
+    fontSize: 15,
   },
 
   resumeValue: {
     color: '#F8FAFC',
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: '800',
+    textAlign: 'right',
   },
 
   saveButton: {
@@ -1716,7 +1768,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 14,
   },
 
   saveButtonDisabled: {
@@ -1902,22 +1954,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '700',
   },
-  stickyFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(15,23,42,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-  },
-  stickySaveButton: {
-    width: '100%',
-    minHeight: 52,
-    justifyContent: 'center',
-    marginTop: 0,
+  paymentNotesCard: {
+    marginTop: 10,
   },
 })
