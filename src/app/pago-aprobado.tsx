@@ -1,6 +1,5 @@
 import { Image } from 'expo-image'
 import { Ionicons } from '@expo/vector-icons'
-import { LinearGradient } from 'expo-linear-gradient'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -201,6 +200,13 @@ function formatFileName(cliente: string, fecha: string) {
   return `comprobante-${safeCliente}-${dateOnly}.pdf`
 }
 
+function shortId(value: string, size = 8) {
+  const raw = String(value || '').trim()
+  if (!raw) return 'No disponible'
+  if (raw.length <= size + 3) return raw
+  return `${raw.slice(0, size)}...`
+}
+
 export default function PagoAprobado() {
   const params = useLocalSearchParams()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
@@ -275,9 +281,7 @@ export default function PagoAprobado() {
       cliente?.cedula ||
       'No registrado'
     )
-  const emailFinal = String(cliente?.email || usuario?.email || usuario?.correo || 'No registrado')
   const clienteTelefono = String(cliente?.telefono || '')
-  const observaciones = ''
 
   const isEfectivo = metodo.toLowerCase() === 'efectivo'
   const paymentMethodLabel =
@@ -318,7 +322,6 @@ export default function PagoAprobado() {
   const cuotaPrincipal = cuotasDetalleNormalizadas[0] || null
   const saldoRestanteCuota = Number(cuotaPrincipal?.saldo_despues || 0)
   const esPagoParcial = cuotasDetalleNormalizadas.some((item) => Number(item.saldo_despues || 0) > 0)
-  const esMultiCuota = cantidadCuotasImpactadas > 1
   const esPagoFinal = Number.isFinite(Number(saldoRestante)) && Number(saldoRestante) <= 0.009
 
   const receiptNumber = buildReceiptNumber(pagoId, prestamoId, fechaRaw || fechaFormateada)
@@ -525,6 +528,8 @@ export default function PagoAprobado() {
     : `/cliente/${clienteId}`
 
   const paymentIdentifier = formatFallback(pagoInternoId || pagoId, 'No disponible')
+  const shortPrestamoId = shortId(prestamoId)
+  const shortPagoId = shortId(paymentIdentifier)
   const estadoPago = esPagoFinal
     ? { label: 'Préstamo cancelado', style: styles.statusBadgeSuccessStrong, icon: 'checkmark-done-circle' as const }
     : esPagoParcial
@@ -556,6 +561,18 @@ export default function PagoAprobado() {
     }
   }
 
+  const onShareWhatsapp = async () => {
+    const toPhone = normalizePhone(clienteTelefono)
+    const waUrl = toPhone
+      ? `https://wa.me/${toPhone}?text=${encodeURIComponent(shareText)}`
+      : `https://wa.me/?text=${encodeURIComponent(shareText)}`
+    try {
+      await Linking.openURL(waUrl)
+    } catch {
+      await onShare()
+    }
+  }
+
   const handleDownloadPDF = async () => {
     if (downloadingPdf) return
 
@@ -579,7 +596,7 @@ export default function PagoAprobado() {
 
       const targetElement =
         (receiptRef.current as unknown as any) ||
-        webDocument.getElementById('creditodo-recibo-paper')
+        webDocument.getElementById('receipt-print-area')
       if (!targetElement) {
         throw new Error('No se encontró el comprobante para exportar')
       }
@@ -632,24 +649,49 @@ export default function PagoAprobado() {
     const styleTag = document.createElement('style')
     styleTag.setAttribute('id', 'creditodo-recibo-print-styles')
     styleTag.textContent = `
+      .no-print {}
       @media print {
+        @page {
+          size: A4;
+          margin: 12mm;
+        }
         body {
           background: #ffffff !important;
+          margin: 0 !important;
         }
-        #creditodo-recibo-root {
-          background: #ffffff !important;
+        body * {
+          visibility: hidden !important;
+        }
+        #receipt-print-area,
+        #receipt-print-area * {
+          visibility: visible !important;
+        }
+        #receipt-print-area {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
           padding: 0 !important;
+          border: none !important;
+          border-radius: 0 !important;
+          background: #ffffff !important;
+          box-shadow: none !important;
         }
-        #creditodo-recibo-actions,
-        #creditodo-recibo-back {
+        #receipt-print-surface {
+          border: none !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+          color: #0f172a !important;
+        }
+        .no-print {
           display: none !important;
         }
-        #creditodo-recibo-paper {
-          max-width: 760px !important;
-          border: 1px solid #d1d5db !important;
-          border-radius: 12px !important;
-          margin: 0 auto !important;
-          box-shadow: none !important;
+        ::-webkit-scrollbar {
+          display: none !important;
         }
       }
     `
@@ -683,112 +725,93 @@ export default function PagoAprobado() {
 
   return (
     <View style={styles.screen} nativeID="creditodo-recibo-root">
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.paper} nativeID="creditodo-recibo-paper" ref={receiptRef}>
-          <LinearGradient
-            colors={['#0F172A', '#1E3A8A', '#2563EB']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.header}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.toolbar, styles.noPrint]} nativeID="receipt-screen-actions-top">
+          <Pressable
+            style={styles.actionGhost}
+            onPress={() => router.replace(backToPrestamoUrl as any)}
           >
-            <Image
-              source={require('../../assets/images/logo-root.png')}
-              style={styles.logo}
-              contentFit="contain"
-            />
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.title}>Recibo de pago</Text>
-              <Text style={styles.subtitle}>Comprobante financiero</Text>
-            </View>
-          </LinearGradient>
+            <Text style={styles.actionGhostText}>Volver</Text>
+          </Pressable>
+        </View>
 
-          <View style={[styles.statusBadge, estadoPago.style]}>
-            <Ionicons name={estadoPago.icon} size={18} color="#fff" />
-            <Text style={styles.statusBadgeText}>{estadoPago.label}</Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Información general</Text>
-            <View style={styles.row}><Text style={styles.rowLabel}>Recibo N°</Text><Text style={styles.rowValue}>{receiptNumber}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Fecha</Text><Text style={styles.rowValue}>{fechaFormateada}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>ID préstamo</Text><Text style={styles.rowValue}>{formatFallback(prestamoId)}</Text></View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cliente</Text>
-            <View style={styles.row}><Text style={styles.rowLabel}>Nombre</Text><Text style={styles.rowValue}>{clienteNombre}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>DNI</Text><Text style={styles.rowValue}>{formatFallback(dniFinal, 'No registrado')}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Email</Text><Text style={styles.rowValue}>{formatFallback(emailFinal, 'No registrado')}</Text></View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pago</Text>
-            <View style={styles.row}><Text style={styles.rowLabel}>Método</Text><Text style={styles.rowValue}>{formatFallback(paymentMethodLabel)}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Cuotas impactadas</Text><Text style={styles.rowValue}>{cantidadCuotasImpactadas ? cuotasTexto : 'No informado'}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Próxima cuota</Text><Text style={styles.rowValue}>{proximaCuotaTexto}</Text></View>
-          </View>
-
-          {esPagoParcial && (
-            <View style={styles.partialInfoCard}>
-              <Ionicons name="information-circle" size={18} color="#FACC15" />
-              <Text style={styles.partialInfoText}>
-                El pago se distribuyó automáticamente y quedaron saldos pendientes en algunas cuotas.
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {esMultiCuota ? 'Detalle por cuota impactada' : 'Detalle de la cuota'}
-            </Text>
-            {cuotasDetalleNormalizadas.map((item) => {
-              const pendiente = Number(item.saldo_despues || 0) > 0.009
-              return (
-                <View key={`cuota-impactada-${item.numero_cuota}`} style={styles.cuotaMiniCard}>
-                  <View style={styles.cuotaHeaderRow}>
-                    <Text style={styles.cuotaTitle}>Cuota #{item.numero_cuota}</Text>
-                    <View style={[styles.cuotaStateBadge, pendiente ? styles.cuotaStatePartial : styles.cuotaStatePaid]}>
-                      <Text style={styles.cuotaStateText}>{pendiente ? 'PARCIAL' : 'PAGADA'}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.miniCardText}>Monto aplicado: {formatCurrencyArs(item.monto_aplicado || 0)}</Text>
-                  <Text style={styles.miniCardText}>Saldo antes: {formatCurrencyArs(item.saldo_antes || 0)}</Text>
-                  <Text style={styles.miniCardText}>Saldo después: {formatCurrencyArs(item.saldo_despues || 0)}</Text>
+        <View style={styles.paper} nativeID="receipt-print-area" ref={receiptRef}>
+          <View style={styles.printPaper} nativeID="receipt-print-surface">
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <Image
+                  source={require('../../assets/images/logo-root.png')}
+                  style={styles.logo}
+                  contentFit="contain"
+                />
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.title}>Recibo de pago</Text>
+                  <Text style={styles.subtitle}>Creditodo · Comprobante financiero</Text>
                 </View>
-              )
-            })}
-          </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryTitleRow}>
-              <Ionicons name="wallet" size={18} color="#60A5FA" />
-              <Text style={styles.summaryTitle}>Resumen final</Text>
+              </View>
+              <View style={[styles.statusBadge, estadoPago.style]}>
+                <Ionicons name={estadoPago.icon} size={16} color="#fff" />
+                <Text style={styles.statusBadgeText}>{estadoPago.label}</Text>
+              </View>
             </View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Monto entregado</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoIngresado)}</Text></View>
-            <View style={styles.row}><Text style={styles.rowLabel}>Monto aplicado</Text><Text style={[styles.rowValue, styles.highlightValue]}>{formatCurrencyArs(montoAplicado)}</Text></View>
-            {vuelto > 0 && <View style={styles.row}><Text style={styles.rowLabel}>Vuelto</Text><Text style={styles.rowValue}>{formatCurrencyArs(vuelto)}</Text></View>}
-            <View style={styles.row}><Text style={styles.rowLabel}>Saldo restante préstamo</Text><Text style={[styles.rowValue, esPagoFinal && styles.highlightValue]}>{saldoRestante <= 0 ? 'Préstamo saldado / sin saldo pendiente' : formatCurrencyArs(saldoRestante)}</Text></View>
-          </View>
 
-          {esPagoFinal && (
-            <View style={styles.loanPaidOffCard}>
-              <Text style={styles.loanPaidOffTitle}>✔ Préstamo completamente saldado</Text>
-              <Text style={styles.loanPaidOffSubtitle}>Este pago cancela la totalidad de la deuda.</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Datos del comprobante</Text>
+              <View style={styles.row}><Text style={styles.rowLabel}>Recibo N°</Text><Text style={styles.rowValue}>{receiptNumber}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Fecha</Text><Text style={styles.rowValue}>{fechaFormateada}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Cliente</Text><Text style={styles.rowValue}>{clienteNombre}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>DNI</Text><Text style={styles.rowValue}>{formatFallback(dniFinal, 'No registrado')}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>ID préstamo</Text><Text style={styles.rowValue}>{shortPrestamoId}</Text></View>
             </View>
-          )}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Observaciones</Text>
-            <Text style={styles.notes}>{formatFallback(observaciones, 'Sin observaciones registradas')}</Text>
-          </View>
+            <View style={[styles.section, styles.financialSection]}>
+              <Text style={styles.sectionTitle}>Detalle financiero</Text>
+              <View style={styles.row}><Text style={styles.rowLabel}>Método de pago</Text><Text style={styles.rowValue}>{formatFallback(paymentMethodLabel)}</Text></View>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Cuota impactada</Text>
+                <Text style={styles.rowValue}>
+                  {cantidadCuotasImpactadas ? cuotasTexto : 'No informado'}
+                </Text>
+              </View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Monto de cuota</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoAplicado + saldoRestanteCuota)}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Monto aplicado</Text><Text style={[styles.rowValue, styles.highlightValue]}>{formatCurrencyArs(montoAplicado)}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Monto entregado</Text><Text style={styles.rowValue}>{formatCurrencyArs(montoIngresado)}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Vuelto</Text><Text style={styles.rowValue}>{formatCurrencyArs(vuelto)}</Text></View>
+              <View style={styles.row}><Text style={styles.rowLabel}>Saldo restante</Text><Text style={styles.rowValue}>{saldoRestante <= 0 ? 'Préstamo saldado' : formatCurrencyArs(saldoRestante)}</Text></View>
+            </View>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerLabel}>Identificador interno del pago</Text>
-            <Text style={styles.footerValue}>{paymentIdentifier}</Text>
+            {esPagoFinal ? (
+              <View style={styles.loanPaidOffCard}>
+                <Text style={styles.loanPaidOffTitle}>Préstamo completamente saldado</Text>
+              </View>
+            ) : (
+              <View style={styles.nextInstallmentCard}>
+                <Text style={styles.nextInstallmentTitle}>Próxima cuota pendiente</Text>
+                <Text style={styles.nextInstallmentValue}>{proximaCuotaTexto}</Text>
+              </View>
+            )}
+
+            {esPagoParcial && (
+              <View style={styles.partialInfoCard}>
+                <Ionicons name="information-circle" size={18} color="#B45309" />
+                <Text style={styles.partialInfoText}>
+                  El pago se distribuyó automáticamente y quedaron saldos pendientes en algunas cuotas.
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.footer}>
+              <Text style={styles.footerLabel}>ID pago corto: {shortPagoId}</Text>
+              <Text style={styles.footerMeta}>ID préstamo completo: {formatFallback(prestamoId, 'No disponible')}</Text>
+              <Text style={styles.footerMeta}>ID pago completo: {paymentIdentifier}</Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.actions} nativeID="creditodo-recibo-actions">
+        <View style={[styles.actions, styles.noPrint]} nativeID="creditodo-recibo-actions">
           <Pressable
             style={[styles.actionPrimary, downloadingPdf && styles.actionPdfDisabled]}
             disabled={downloadingPdf}
@@ -798,18 +821,14 @@ export default function PagoAprobado() {
               {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
             </Text>
           </Pressable>
-          <Pressable style={styles.actionSecondary} onPress={() => void onShare()}>
-            <Text style={styles.actionSecondaryText}>Compartir comprobante</Text>
-          </Pressable>
-          <Pressable
-            style={styles.actionGhost}
-            onPress={() => router.replace(backToPrestamoUrl as any)}
-            nativeID="creditodo-recibo-back"
-          >
-            <Text style={styles.actionGhostText}>Volver al préstamo</Text>
-          </Pressable>
           <Pressable style={styles.actionPrint} onPress={onPrint}>
             <Text style={styles.actionPrintText}>Imprimir</Text>
+          </Pressable>
+          <Pressable style={styles.actionSecondary} onPress={() => void onShareWhatsapp()}>
+            <Text style={styles.actionSecondaryText}>Compartir WhatsApp</Text>
+          </Pressable>
+          <Pressable style={styles.actionGhost} onPress={() => router.replace(backToPrestamoUrl as any)}>
+            <Text style={styles.actionGhostText}>Volver</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -820,63 +839,79 @@ export default function PagoAprobado() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#020817',
+    backgroundColor: '#E2E8F0',
   },
+  noPrint: {},
   scrollContent: {
-    paddingVertical: 16,
-    paddingHorizontal: 10,
-    gap: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
+    gap: 14,
     alignItems: 'center',
+  },
+  toolbar: {
+    width: '100%',
+    maxWidth: 720,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
   },
   paper: {
     width: '100%',
-    maxWidth: 820,
-    backgroundColor: '#0F172A',
-    borderRadius: 20,
+    maxWidth: 720,
+  },
+  printPaper: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1D4ED8',
-    padding: 14,
-    gap: 12,
-    shadowColor: '#1E3A8A',
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    borderColor: '#CBD5E1',
+    padding: 16,
+    gap: 10,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   header: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingBottom: 10,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 16,
+    gap: 10,
+    flex: 1,
   },
   logo: {
-    width: 52,
-    height: 52,
+    width: 42,
+    height: 42,
   },
   headerTextWrap: {
     flex: 1,
-    gap: 2,
+    gap: 1,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   subtitle: {
     fontSize: 12,
-    color: '#BFDBFE',
+    color: '#475569',
     fontWeight: '600',
   },
   statusBadge: {
     borderRadius: 999,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   statusBadgeSuccess: {
     backgroundColor: '#15803D',
@@ -889,174 +924,116 @@ const styles = StyleSheet.create({
   },
   statusBadgeText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
   },
   section: {
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 14,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#0B1220',
+    backgroundColor: '#FFFFFF',
+  },
+  financialSection: {
+    borderColor: '#1D4ED8',
+    backgroundColor: '#EFF6FF',
   },
   sectionTitle: {
-    backgroundColor: '#111C35',
-    color: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    color: '#1E3A8A',
     fontWeight: '800',
     fontSize: 13,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     borderBottomWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
   },
   row: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
     gap: 4,
   },
   rowLabel: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 12,
     fontWeight: '600',
   },
   rowValue: {
-    color: '#F8FAFC',
+    color: '#0F172A',
     fontSize: 15,
     fontWeight: '700',
   },
   highlightValue: {
-    color: '#86EFAC',
+    color: '#1D4ED8',
   },
   partialInfoCard: {
-    backgroundColor: '#1E293B',
-    borderColor: '#FACC15',
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
     borderWidth: 1,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
   },
   partialInfoText: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    lineHeight: 19,
+    color: '#92400E',
+    fontSize: 12,
+    lineHeight: 18,
     flex: 1,
   },
-  cuotaMiniCard: {
-    margin: 10,
-    marginTop: 0,
-    backgroundColor: '#111C35',
-    borderWidth: 1,
-    borderColor: '#23345A',
-    borderRadius: 12,
-    padding: 10,
-    gap: 4,
-  },
-  cuotaHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  cuotaTitle: {
-    color: '#E2E8F0',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  cuotaStateBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-  },
-  cuotaStatePaid: {
-    backgroundColor: '#166534',
-  },
-  cuotaStatePartial: {
-    backgroundColor: '#B45309',
-  },
-  cuotaStateText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  miniCardText: {
-    color: '#BFDBFE',
-    fontSize: 12,
-  },
-  summaryCard: {
-    borderWidth: 1,
-    borderColor: '#2563EB',
-    borderRadius: 14,
-    backgroundColor: '#0B1730',
-    overflow: 'hidden',
-  },
-  summaryTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1D4ED8',
-    backgroundColor: '#0A1E46',
-  },
-  summaryTitle: {
-    color: '#DBEAFE',
-    fontSize: 14,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
   loanPaidOffCard: {
-    backgroundColor: '#052E16',
+    backgroundColor: '#ECFDF3',
     borderWidth: 1,
     borderColor: '#16A34A',
     borderRadius: 12,
-    padding: 12,
-    gap: 4,
+    padding: 10,
   },
   loanPaidOffTitle: {
-    color: '#BBF7D0',
-    fontSize: 16,
+    color: '#166534',
+    fontSize: 15,
     fontWeight: '800',
   },
-  loanPaidOffSubtitle: {
-    color: '#DCFCE7',
-    fontSize: 13,
+  nextInstallmentCard: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 12,
+    padding: 10,
+    gap: 2,
   },
-  notes: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+  nextInstallmentTitle: {
+    color: '#1E3A8A',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  nextInstallmentValue: {
+    color: '#0F172A',
     fontSize: 14,
-    color: '#E2E8F0',
-    lineHeight: 20,
+    fontWeight: '800',
   },
   footer: {
     borderTopWidth: 1,
-    borderColor: '#1E293B',
-    paddingTop: 12,
+    borderColor: '#E2E8F0',
+    paddingTop: 10,
     gap: 4,
   },
   footerLabel: {
-    color: '#94A3B8',
+    color: '#475569',
     fontSize: 12,
     fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
   },
-  footerValue: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
+  footerMeta: {
+    color: '#64748B',
+    fontSize: 11,
   },
   actions: {
     width: '100%',
-    maxWidth: 820,
+    maxWidth: 720,
     gap: 10,
     marginBottom: 8,
   },
@@ -1072,16 +1049,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   actionSecondary: {
-    backgroundColor: '#172554',
+    backgroundColor: '#059669',
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2563EB',
   },
   actionSecondaryText: {
-    color: '#DBEAFE',
-    fontWeight: '700',
+    color: '#ECFDF5',
+    fontWeight: '800',
     fontSize: 14,
   },
   actionPdfDisabled: {
@@ -1090,14 +1065,15 @@ const styles = StyleSheet.create({
   actionGhost: {
     borderRadius: 14,
     paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#475569',
-    backgroundColor: '#0B1220',
+    borderColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
   },
   actionGhostText: {
-    color: '#CBD5E1',
-    fontWeight: '700',
+    color: '#1D4ED8',
+    fontWeight: '800',
     fontSize: 14,
   },
   actionPrint: {
@@ -1105,11 +1081,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#111827',
+    borderColor: '#94A3B8',
+    backgroundColor: '#F8FAFC',
   },
   actionPrintText: {
-    color: '#94A3B8',
+    color: '#334155',
     fontWeight: '700',
     fontSize: 14,
   },
