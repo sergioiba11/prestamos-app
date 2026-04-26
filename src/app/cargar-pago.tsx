@@ -321,7 +321,8 @@ export default function CargarPago() {
     qrBase64: string | null
   } | null>(null)
   const { width } = useWindowDimensions()
-  const contentMaxWidth = 920
+  const contentMaxWidth = 1100
+  const isDesktop = width >= 1024
 
   useEffect(() => {
     cargarClientes()
@@ -653,7 +654,24 @@ export default function CargarPago() {
   const totalPrestamo = Number(prestamoSeleccionado?.total_a_pagar || 0)
   const totalPagadoPrestamo = Math.max(0, totalPrestamo - saldoRestantePrestamo)
   const cuotasGridColumns = width >= 1200 ? 4 : width >= 900 ? 3 : 2
-  const cuotaItemWidth = Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
+  const cuotaItemWidth = isDesktop
+    ? 170
+    : Math.max(150, (width - 32 - (cuotasGridColumns - 1) * 10) / cuotasGridColumns)
+
+  const limpiarClienteSeleccionado = () => {
+    setClienteSeleccionado(null)
+    setPrestamos([])
+    setPrestamoSeleccionado(null)
+    setCuotas([])
+    setCuotaSeleccionada(null)
+    setMostrarTodasCuotas(false)
+    setPrestamoExpandidoId(null)
+    setCuotasPorPrestamo({})
+    setMonto('')
+    setMetodo('efectivo')
+    setComprobante('')
+    setMpCheckout(null)
+  }
 
   const limpiarClienteSeleccionado = () => {
     setClienteSeleccionado(null)
@@ -671,11 +689,7 @@ export default function CargarPago() {
   }
 
   const volver = () => {
-    if (clienteSeleccionado?.id) {
-      limpiarClienteSeleccionado()
-      return
-    }
-    router.back()
+    router.replace('/admin-home' as any)
   }
 
   useEffect(() => {
@@ -1031,7 +1045,7 @@ export default function CargarPago() {
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        cuotaSeleccionada ? styles.contentWithFixedFooter : null,
+        cuotaSeleccionada && !isDesktop ? styles.contentWithFixedFooter : null,
       ]}
       showsVerticalScrollIndicator={false}
     >
@@ -1041,7 +1055,7 @@ export default function CargarPago() {
       </TouchableOpacity>
 
       <Text style={styles.title}>Cargar pago</Text>
-      <Text style={styles.subtitle}>Registrá un pago por cuota</Text>
+      <Text style={styles.subtitle}>Registrá pagos de clientes activos</Text>
       {!clienteSeleccionado && (
       <View style={[styles.mainCard, styles.sectionCard, styles.searchCard]}>
         <Text style={styles.sectionTitle}>BUSCAR</Text>
@@ -1051,6 +1065,12 @@ export default function CargarPago() {
           placeholder="Buscar por cliente, DNI, ID préstamo o cuota"
           placeholderTextColor="#64748B"
           style={styles.input}
+          returnKeyType="search"
+          onSubmitEditing={() => {
+            if (clientesFiltrados.length === 1) {
+              setClienteSeleccionado(clientesFiltrados[0])
+            }
+          }}
         />
       </View>
       )}
@@ -1080,112 +1100,128 @@ export default function CargarPago() {
           </View>
         </>
       ) : (
-        <>
-          <View style={[styles.infoCard, styles.mainCard]}>
-            <Text style={styles.sectionTitle}>CLIENTE</Text>
-            <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
-            <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
-            <Text style={styles.infoMeta}>Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}</Text>
-            {clienteSeleccionado.email ? (
-              <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email}</Text>
-            ) : null}
-            <View style={styles.clientActionsRow}>
-              <TouchableOpacity style={styles.changeButton} onPress={limpiarClienteSeleccionado}>
-                <Text style={styles.changeButtonText}>Cambiar cliente</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.changeButton, styles.secondaryActionButton]}
-                onPress={() => router.push(`/cliente/${clienteSeleccionado.id}` as any)}
-              >
-                <Text style={styles.changeButtonText}>Ver detalle del cliente</Text>
-              </TouchableOpacity>
+        <View style={[styles.workflowLayout, isDesktop && styles.workflowLayoutDesktop]}>
+          <View style={[styles.workflowLeft, isDesktop && styles.workflowLeftDesktop]}>
+            <View style={[styles.infoCard, styles.mainCard]}>
+              <Text style={styles.sectionTitle}>CLIENTE</Text>
+              <Text style={styles.infoName}>{clienteSeleccionado.nombre}</Text>
+              <Text style={styles.infoMeta}>DNI: {clienteSeleccionado.dni || '—'}</Text>
+              <Text style={styles.infoMeta}>Teléfono: {clienteSeleccionado.telefono || 'Sin teléfono'}</Text>
+              {clienteSeleccionado.email ? (
+                <Text style={styles.infoMeta}>Email: {clienteSeleccionado.email}</Text>
+              ) : null}
+              <View style={styles.clientActionsRow}>
+                <TouchableOpacity style={styles.changeButton} onPress={limpiarClienteSeleccionado}>
+                  <Text style={styles.changeButtonText}>Cambiar cliente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.changeButton, styles.secondaryActionButton]}
+                  onPress={() => router.push(`/cliente/${clienteSeleccionado.id}` as any)}
+                >
+                  <Text style={styles.changeButtonText}>Ver detalle del cliente</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {prestamosFiltrados.length === 0 ? (
+              <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
+            ) : (
+              <View style={[styles.mainCard, styles.sectionCard]}>
+                <Text style={styles.sectionTitle}>PRÉSTAMOS</Text>
+                <View style={styles.loanCardsWrap}>
+                  {prestamosFiltrados.map((prestamo) => {
+                    const cuotasPrestamo = cuotasPorPrestamo[prestamo.id] || []
+                    const saldoPrestamo = cuotasPrestamo.reduce((acc, cuota) => acc + Number(cuota.saldo_pendiente || 0), 0)
+                    return (
+                      <TouchableOpacity
+                        key={prestamo.id}
+                        style={[
+                          styles.loanItemCard,
+                          prestamoSeleccionado?.id === prestamo.id && styles.loanItemCardActive,
+                        ]}
+                        onPress={() => {
+                          setPrestamoSeleccionado(prestamo)
+                          setCuotaSeleccionada(null)
+                          setMonto('')
+                          void cargarCuotasPrestamo(prestamo.id)
+                        }}
+                      >
+                        <Text style={styles.loanItemId}>Préstamo #{prestamo.id.slice(0, 8)}</Text>
+                        <Text style={styles.loanItemMeta}>Estado: {prestamo.estado || 'activo'}</Text>
+                        <Text style={styles.loanItemMeta}>Total: {formatearMoneda(Number(prestamo.total_a_pagar || 0))}</Text>
+                        <Text style={styles.loanItemSaldo}>Saldo: {formatearMoneda(saldoPrestamo)}</Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </View>
+                <View style={styles.loanSummaryCard}>
+                  <View style={styles.loanSummaryHeader}>
+                    <Text style={styles.remainingLabel}>Saldo restante</Text>
+                    <Text style={styles.remainingValue}>{formatearMoneda(saldoRestantePrestamo)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Total a pagar</Text>
+                    <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPrestamo)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Total pagado</Text>
+                    <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {prestamoSeleccionado && (
+              <View style={[styles.mainCard, styles.sectionCard]}>
+                <Text style={styles.sectionTitle}>CUOTAS</Text>
+                <ScrollView
+                  style={isDesktop ? styles.quotaDesktopScroll : undefined}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={isDesktop}
+                  contentContainerStyle={styles.quotaGrid}
+                >
+                  {cuotasFiltradas.map((cuota) => {
+                    const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
+                    const selected = cuotaSeleccionada?.id === cuota.id
+                    return (
+                      <Pressable
+                        key={cuota.id}
+                        onPress={() => {
+                          setCuotaSeleccionada(cuota)
+                          requestAnimationFrame(() => {
+                            scrollRef.current?.scrollTo({
+                              y: Math.max(0, paymentFormYRef.current - 24),
+                              animated: true,
+                            })
+                          })
+                        }}
+                        style={({ hovered, pressed }) => [
+                          styles.quotaTile,
+                          { width: cuotaItemWidth, borderColor: estadoUi.color, backgroundColor: estadoUi.fondo },
+                          selected && styles.quotaTileActive,
+                          hovered && styles.quotaTileHover,
+                          pressed && styles.quotaTilePressed,
+                        ]}
+                      >
+                        <Text style={styles.quotaTileTitle}>#{cuota.numero_cuota}</Text>
+                        <Text style={styles.quotaTileAmount}>{formatearMoneda(Number(cuota.saldo_pendiente || cuota.monto_cuota || 0))}</Text>
+                        <Text style={[styles.quotaTileBadge, { color: estadoUi.color }]}>{estadoUi.etiqueta}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
-          {prestamosFiltrados.length === 0 ? (
-            <Text style={styles.emptyText}>Este cliente no tiene préstamos activos.</Text>
-          ) : (
-            <View style={styles.mainCard}>
-              <Text style={styles.sectionTitle}>PRÉSTAMO</Text>
-              <View style={styles.loanPickerRow}>
-                {prestamosFiltrados.map((prestamo) => (
-                  <TouchableOpacity
-                    key={prestamo.id}
-                    style={[
-                      styles.loanPill,
-                      prestamoSeleccionado?.id === prestamo.id && styles.loanPillActive,
-                    ]}
-                    onPress={() => {
-                      setPrestamoSeleccionado(prestamo)
-                      setCuotaSeleccionada(null)
-                      setMonto('')
-                      void cargarCuotasPrestamo(prestamo.id)
-                    }}
-                  >
-                    <Text style={styles.loanPillText}>#{prestamo.id.slice(0, 8)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.loanSummaryCard}>
-                <View style={styles.loanSummaryHeader}>
-                  <Text style={styles.remainingLabel}>Saldo restante</Text>
-                  <Text style={styles.remainingValue}>{formatearMoneda(saldoRestantePrestamo)}</Text>
-                </View>
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Total a pagar</Text>
-                  <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPrestamo)}</Text>
-                </View>
-                <View style={styles.resumeRow}>
-                  <Text style={styles.resumeLabel}>Total pagado</Text>
-                  <Text style={styles.loanSummaryValue}>{formatearMoneda(totalPagadoPrestamo)}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {prestamoSeleccionado && (
-            <View style={styles.mainCard}>
-              <Text style={styles.sectionTitle}>CUOTAS</Text>
-              <View style={styles.quotaGrid}>
-                {cuotasFiltradas.map((cuota) => {
-                  const estadoUi = obtenerEstadoCuotaVisual(cuota, cuota.id === proximaCuotaPendienteId)
-                  const selected = cuotaSeleccionada?.id === cuota.id
-                  return (
-                    <Pressable
-                      key={cuota.id}
-                      onPress={() => {
-                        setCuotaSeleccionada(cuota)
-                        requestAnimationFrame(() => {
-                          scrollRef.current?.scrollTo({
-                            y: Math.max(0, paymentFormYRef.current - 24),
-                            animated: true,
-                          })
-                        })
-                      }}
-                      style={({ hovered, pressed }) => [
-                        styles.quotaTile,
-                        { width: cuotaItemWidth, borderColor: estadoUi.color, backgroundColor: estadoUi.fondo },
-                        selected && styles.quotaTileActive,
-                        hovered && styles.quotaTileHover,
-                        pressed && styles.quotaTilePressed,
-                      ]}
-                    >
-                      <Text style={styles.quotaTileTitle}>Cuota #{cuota.numero_cuota}</Text>
-                      <Text style={[styles.quotaTileBadge, { color: estadoUi.color }]}>{estadoUi.etiqueta}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            </View>
-          )}
-
           {cuotaSeleccionada && (
+            <View style={[styles.workflowRight, isDesktop && styles.workflowRightDesktop]}>
             <View
               onLayout={(event) => {
                 paymentFormYRef.current = event.nativeEvent.layout.y
               }}
             >
-              <View style={styles.mainCard}>
+              <View style={[styles.mainCard, styles.sectionCard]}>
                 <Text style={styles.sectionTitle}>PAGO</Text>
                 <Text style={styles.label}>Método de pago</Text>
                 <View style={styles.methodsRow}>
@@ -1260,6 +1296,12 @@ export default function CargarPago() {
                   keyboardType="decimal-pad"
                   style={[styles.amountInput, metodo === 'transferencia' && styles.inputDisabled]}
                   editable={metodo !== 'transferencia'}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    if (!guardando && cuotaPendienteValida) {
+                      void registrarPago()
+                    }
+                  }}
                 />
 
                 <Text style={styles.label}>Resumen</Text>
@@ -1284,6 +1326,17 @@ export default function CargarPago() {
                     </Text>
                   </View>
                 </View>
+                {isDesktop && (
+                  <TouchableOpacity
+                    style={[styles.saveButton, styles.desktopSaveButton, (guardando || !cuotaPendienteValida) && styles.saveButtonDisabled]}
+                    onPress={registrarPago}
+                    disabled={guardando || !cuotaPendienteValida}
+                  >
+                    <Text style={styles.saveButtonText}>
+                      {guardando ? 'Guardando...' : 'Registrar pago'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               <View style={[styles.mainCard, styles.sectionCard, styles.paymentNotesCard]}>
@@ -1381,12 +1434,13 @@ export default function CargarPago() {
               )}
 
             </View>
+            </View>
           )}
-        </>
+        </View>
       )}
       </View>
       </ScrollView>
-      {cuotaSeleccionada ? (
+      {cuotaSeleccionada && !isDesktop ? (
         <View style={styles.fixedFooterWrap} pointerEvents="box-none">
           <View style={[styles.fixedFooter, { maxWidth: contentMaxWidth }]}>
             <View style={styles.fixedFooterResume}>
@@ -1541,23 +1595,23 @@ const styles = StyleSheet.create({
   sectionCard: {
     backgroundColor: '#0F172A',
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
+    borderColor: 'rgba(148,163,184,0.20)',
+    borderRadius: 18,
+    padding: 18,
   },
   searchCard: {
     marginTop: 14,
   },
 
   input: {
-    backgroundColor: '#0F172A',
-    borderColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    borderColor: 'rgba(148,163,184,0.20)',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     color: '#F8FAFC',
-    fontSize: 16,
+    fontSize: 17,
   },
 
 
@@ -1583,11 +1637,11 @@ const styles = StyleSheet.create({
   },
 
   selectCard: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#111C35',
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
+    borderColor: 'rgba(148,163,184,0.20)',
+    borderRadius: 18,
+    padding: 16,
   },
   loanCardCompact: {
     padding: 12,
@@ -1670,6 +1724,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
+  workflowLayout: {
+    gap: 14,
+  },
+  workflowLayoutDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  workflowLeft: {
+    width: '100%',
+  },
+  workflowLeftDesktop: {
+    flex: 1.25,
+  },
+  workflowRight: {
+    width: '100%',
+  },
+  workflowRightDesktop: {
+    flex: 0.95,
+    alignSelf: 'flex-start',
+  },
   sectionTitle: {
     color: '#E2E8F0',
     fontSize: 13,
@@ -1720,9 +1795,9 @@ const styles = StyleSheet.create({
 
   methodsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginTop: 10,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
   },
 
   methodButton: {
@@ -1732,8 +1807,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: 16,
     paddingHorizontal: 18,
-    minWidth: 150,
-    flexGrow: 1,
+    minWidth: 0,
+    flex: 1,
     alignItems: 'center',
   },
 
@@ -1809,6 +1884,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+  desktopSaveButton: {
+    width: '100%',
+    marginTop: 16,
   },
 
   sobranteCard: {
@@ -1920,6 +1999,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+  loanCardsWrap: {
+    gap: 10,
+  },
+  loanItemCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.20)',
+    borderRadius: 16,
+    backgroundColor: '#111C35',
+    padding: 12,
+    gap: 4,
+  },
+  loanItemCardActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#172554',
+  },
+  loanItemId: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  loanItemMeta: {
+    color: '#93C5FD',
+    fontSize: 12,
+  },
+  loanItemSaldo: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   loanSummaryCard: {
     marginTop: 2,
     borderRadius: 16,
@@ -1957,6 +2065,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
+  quotaDesktopScroll: {
+    maxHeight: 420,
+  },
   quotaTile: {
     borderRadius: 14,
     borderWidth: 1,
@@ -1979,8 +2090,13 @@ const styles = StyleSheet.create({
   },
   quotaTileTitle: {
     color: '#E2E8F0',
-    fontSize: 14,
+    fontSize: 22,
     fontWeight: '800',
+  },
+  quotaTileAmount: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
   },
   quotaTileBadge: {
     marginTop: 6,
