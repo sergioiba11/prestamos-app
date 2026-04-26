@@ -41,7 +41,22 @@ function formatDate(value: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function GradientCard({ children, style }: { children: ReactNode; style?: ViewStyle | ViewStyle[] }) {
+function GradientCard({
+  children,
+  style,
+  isLight,
+  surfaceColor,
+  borderColor,
+}: {
+  children: ReactNode
+  style?: ViewStyle | ViewStyle[]
+  isLight: boolean
+  surfaceColor: string
+  borderColor: string
+}) {
+  if (isLight) {
+    return <View style={[styles.sectionCard, style, { backgroundColor: surfaceColor, borderColor }]}>{children}</View>
+  }
   return (
     <LinearGradient colors={['#0F172A', '#020617']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.sectionCard, style]}>
       {children}
@@ -247,7 +262,7 @@ export default function AdminHome() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color="#3B82F6" size="large" />
-        <Text style={styles.loadingText}>Cargando panel admin...</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando panel admin...</Text>
       </View>
     )
   }
@@ -268,8 +283,8 @@ export default function AdminHome() {
               notificationsButtonRef.current = node
             }}
           >
-            <TouchableOpacity style={styles.mobileBellBtn} onPress={() => setNotificationsOpen((prev) => !prev)}>
-              <Ionicons name="notifications-outline" size={20} color="#DBEAFE" />
+            <TouchableOpacity style={[styles.mobileBellBtn, { borderColor: colors.border, backgroundColor: colors.surface }]} onPress={() => setNotificationsOpen((prev) => !prev)}>
+              <Ionicons name="notifications-outline" size={20} color={colors.primary} />
               {unreadCount > 0 ? (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -281,7 +296,7 @@ export default function AdminHome() {
       )}
 
       <View style={styles.mainWrap}>
-        <ScrollView contentContainerStyle={[styles.content, isMobile ? styles.mobileContent : styles.desktopContent]}>
+        <ScrollView contentContainerStyle={[styles.content, { backgroundColor: colors.background }, isMobile ? styles.mobileContent : styles.desktopContent]}>
           <View style={[styles.pageTopRow, isDesktop && styles.pageTopRowDesktop]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop, { color: colors.textPrimary }]}>Bienvenido, {adminName}</Text>
@@ -295,9 +310,12 @@ export default function AdminHome() {
                     notificationsButtonRef.current = node
                   }}
                 >
-                  <TouchableOpacity style={[styles.notificationsBtn, styles.notificationsBtnDesktop]} onPress={() => setNotificationsOpen((prev) => !prev)}>
-                    <Ionicons name="mail-unread-outline" size={16} color="#C7D2FE" />
-                    <Text style={styles.notificationsText}>Notificaciones</Text>
+                  <TouchableOpacity
+                    style={[styles.notificationsBtn, styles.notificationsBtnDesktop, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    onPress={() => setNotificationsOpen((prev) => !prev)}
+                  >
+                    <Ionicons name="mail-unread-outline" size={16} color={colors.primary} />
+                    <Text style={[styles.notificationsText, { color: colors.textPrimary }]}>Notificaciones</Text>
                     {unreadCount > 0 ? (
                       <View style={styles.unreadBadge}>
                         <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -334,8 +352,13 @@ export default function AdminHome() {
             {isMobile ? <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
           </View>
 
-          <GradientCard style={isDesktop ? styles.sectionCardDesktopCompact : undefined}>
-            <Text style={styles.sectionTitle}>Acciones rápidas</Text>
+          <GradientCard
+            isLight={theme.isLight}
+            surfaceColor={colors.surface}
+            borderColor={colors.border}
+            style={isDesktop ? styles.sectionCardDesktopCompact : undefined}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Acciones rápidas</Text>
             <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }, isDesktop && styles.featureActionsWrapDesktop]}>
               <Pressable
                 onPress={() => router.push('/nuevo-prestamo' as any)}
@@ -361,51 +384,51 @@ export default function AdminHome() {
 
             <View style={[styles.smallActionGrid, isDesktop && styles.smallActionGridDesktop]}>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
                 onPress={() => router.push('/nuevo-cliente' as any)}
               >
                 <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
-                <Text style={styles.smallActionText}>Nuevo cliente</Text>
+                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Nuevo cliente</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
                 onPress={() => router.push('/clientes' as any)}
               >
                 <Ionicons name="people-outline" size={16} color="#93C5FD" />
-                <Text style={styles.smallActionText}>Ver clientes</Text>
+                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver clientes</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
                 onPress={() => router.push('/prestamos' as any)}
               >
                 <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
-                <Text style={styles.smallActionText}>Ver préstamos</Text>
+                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver préstamos</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
                 onPress={() => router.push('/historial-prestamos' as any)}
               >
                 <Ionicons name="time-outline" size={16} color="#93C5FD" />
-                <Text style={styles.smallActionText}>Historial</Text>
+                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Historial</Text>
               </Pressable>
             </View>
           </GradientCard>
 
           <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
-            <GradientCard style={[styles.pendingCard, isDesktop && styles.mainGridCardDesktop]}>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.pendingCard, isDesktop && styles.mainGridCardDesktop]}>
               <View style={styles.cardHeaderRow}>
-                <Text style={styles.sectionTitle}>Pagos pendientes</Text>
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Pagos pendientes</Text>
                 <TouchableOpacity onPress={() => router.push('/pagos-pendientes' as any)}>
-                  <Text style={styles.linkText}>Ver todos</Text>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>Ver todos</Text>
                 </TouchableOpacity>
               </View>
 
               {pendingPaymentsError ? (
                 <Text style={styles.errorText}>No se pudo cargar: {pendingPaymentsError}</Text>
               ) : pendingPayments.length === 0 ? (
-                <View style={styles.emptyWrap}>
+                <View style={[styles.emptyWrap, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
                   <Ionicons name="checkmark-circle" size={22} color="#22C55E" />
-                  <Text style={styles.emptyTitle}>✔ No hay pagos pendientes</Text>
+                  <Text style={[styles.emptyTitle, { color: colors.success }]}>✔ No hay pagos pendientes</Text>
                 </View>
               ) : (
                 <ScrollView
@@ -417,14 +440,14 @@ export default function AdminHome() {
                   {pendingPayments.map((p) => {
                     const processing = processingPaymentId === p.id
                     return (
-                      <View key={p.id} style={styles.pendingRow}>
+                      <View key={p.id} style={[styles.pendingRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.pendingClient}>{p.cliente}</Text>
-                          <Text style={styles.pendingMeta}>DNI: {p.dni} · {p.metodo}</Text>
-                          <Text style={styles.pendingMeta}>{formatDate(p.createdAt)}</Text>
+                          <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{p.cliente}</Text>
+                          <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {p.dni} · {p.metodo}</Text>
+                          <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>{formatDate(p.createdAt)}</Text>
                         </View>
                         <View style={styles.pendingActions}>
-                          <Text style={styles.pendingAmount}>{money(p.monto)}</Text>
+                          <Text style={[styles.pendingAmount, { color: colors.primary }]}>{money(p.monto)}</Text>
                           <View style={styles.pendingBtnsRow}>
                             <TouchableOpacity disabled={processing} style={[styles.btnBase, processing && styles.btnDisabled]} onPress={() => updatePendingPayment(p.id, 'aprobar')}>
                               <LinearGradient colors={['#22C55E', '#16A34A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
@@ -445,38 +468,38 @@ export default function AdminHome() {
               )}
             </GradientCard>
 
-            <GradientCard style={[styles.clientsCard, isDesktop && styles.mainGridCardDesktop]}>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.clientsCard, isDesktop && styles.mainGridCardDesktop]}>
               <View style={styles.cardHeaderRow}>
-                <Text style={styles.sectionTitle}>Clientes con préstamos activos</Text>
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Clientes con préstamos activos</Text>
                 <TouchableOpacity onPress={() => router.push('/clientes' as any)}>
-                  <Text style={styles.linkText}>Ver todos</Text>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>Ver todos</Text>
                 </TouchableOpacity>
               </View>
 
               {activeClients.length === 0 ? (
-                <View style={styles.emptyWrap}>
+                <View style={[styles.emptyWrap, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
                   <Ionicons name="people" size={20} color="#475569" />
-                  <Text style={styles.emptySubtle}>Todavía no hay clientes activos.</Text>
+                  <Text style={[styles.emptySubtle, { color: colors.textSecondary }]}>Todavía no hay clientes activos.</Text>
                 </View>
               ) : (
                 <ScrollView style={[styles.clientListScroll, isDesktop && styles.clientListScrollDesktop]} contentContainerStyle={styles.clientList}>
                   {activeClients.slice(0, 6).map((client) => (
                     <Pressable
                       key={client.clienteId}
-                      style={({ hovered }) => [styles.clientRow, hovered && styles.cardHover]}
+                      style={({ hovered }) => [styles.clientRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
                       onPress={() => router.push(`/cliente/${client.clienteId}` as any)}
                     >
-                      <View style={styles.avatarCircle}>
-                        <Text style={styles.avatarText}>{client.nombre?.charAt(0)?.toUpperCase() || '?'}</Text>
+                      <View style={[styles.avatarCircle, { backgroundColor: colors.primarySoft, borderColor: colors.border }]}>
+                        <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{client.nombre?.charAt(0)?.toUpperCase() || '?'}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.clientName}>{client.nombre}</Text>
-                        <Text style={styles.clientMeta}>{client.email}</Text>
-                        <Text style={styles.clientMeta}>DNI: {client.dni}</Text>
+                        <Text style={[styles.clientName, { color: colors.textPrimary }]}>{client.nombre}</Text>
+                        <Text style={[styles.clientMeta, { color: colors.textSecondary }]}>{client.email}</Text>
+                        <Text style={[styles.clientMeta, { color: colors.textSecondary }]}>DNI: {client.dni}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 6 }}>
                         <Text style={styles.statusChip}>Activo</Text>
-                        <Text style={styles.clientAmount}>{money(client.prestamoActivo)}</Text>
+                        <Text style={[styles.clientAmount, { color: colors.primary }]}>{money(client.prestamoActivo)}</Text>
                       </View>
                     </Pressable>
                   ))}
@@ -486,21 +509,21 @@ export default function AdminHome() {
           </View>
 
           <View style={[styles.bottomStatsGrid, isDesktop && styles.bottomStatsGridDesktop]}>
-            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={styles.bottomLabel}>Cuotas pendientes</Text>
-              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.cuotasPendientes}</Text>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
+              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cuotas pendientes</Text>
+              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.cuotasPendientes}</Text>
             </GradientCard>
-            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={styles.bottomLabel}>Monto pendiente</Text>
-              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{money(dashboardStats.totalMontoPendiente)}</Text>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
+              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Monto pendiente</Text>
+              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{money(dashboardStats.totalMontoPendiente)}</Text>
             </GradientCard>
-            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={styles.bottomLabel}>Próximos vencimientos</Text>
-              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.upcoming}</Text>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
+              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Próximos vencimientos</Text>
+              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.upcoming}</Text>
             </GradientCard>
-            <GradientCard style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={styles.bottomLabel}>Préstamos activos</Text>
-              <Text style={[styles.bottomValue, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.prestamosActivos}</Text>
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
+              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Préstamos activos</Text>
+              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.prestamosActivos}</Text>
             </GradientCard>
           </View>
         </ScrollView>
