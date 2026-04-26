@@ -25,6 +25,7 @@ import {
   supabaseUrl,
 } from '../lib/supabase'
 import { createSystemActivity } from '../lib/activity'
+import { calcularMoraCuota, REGLAS_MORA_DEFAULT, type ReglaMora } from '../lib/mora'
 
 type Cliente = {
   id: string
@@ -59,6 +60,8 @@ type Cuota = {
   saldo_pendiente: number | null
   estado: string | null
 }
+
+type ConfigMoraRow = ReglaMora
 
 type MetodoPagoUi = 'efectivo' | 'transferencia' | 'mp'
 type MetodoPagoApi = 'efectivo' | 'transferencia' | 'mercado_pago'
@@ -331,6 +334,7 @@ export default function CargarPago() {
     qrUrl: string | null
     qrBase64: string | null
   } | null>(null)
+  const [reglasMora, setReglasMora] = useState<ConfigMoraRow[]>(REGLAS_MORA_DEFAULT)
   const { width } = useWindowDimensions()
   const contentMaxWidth = 1280
   const isDesktop = width >= 1024
@@ -342,6 +346,7 @@ export default function CargarPago() {
   useFocusEffect(
     useCallback(() => {
       void cargarEstadoMercadoPago()
+      void cargarConfigMora()
     }, [metodo])
   )
 
@@ -415,6 +420,37 @@ export default function CargarPago() {
     } catch (error) {
       console.log('[cargar-pago] Error validando estado MP:', error)
       setMpEstado({ connected: false, aliasCuenta: null, mpUserId: null })
+    }
+  }
+
+  const cargarConfigMora = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('config_mora')
+        .select('tramo, dias_desde, dias_hasta, porcentaje_diario, activo')
+        .eq('activo', true)
+        .order('dias_desde', { ascending: true })
+
+      if (error || !data || data.length === 0) {
+        setReglasMora(REGLAS_MORA_DEFAULT)
+        console.log('config mora cargada:', REGLAS_MORA_DEFAULT)
+        return
+      }
+
+      const reglas = (data as any[]).map((item) => ({
+        tramo: String(item?.tramo || ''),
+        dias_desde: Number(item?.dias_desde || 0),
+        dias_hasta: item?.dias_hasta == null ? null : Number(item?.dias_hasta),
+        porcentaje_diario: Number(item?.porcentaje_diario || 0),
+        activo: Boolean(item?.activo ?? true),
+      }))
+
+      setReglasMora(reglas)
+      console.log('config mora cargada:', reglas)
+    } catch (error) {
+      console.log('[cargar-pago] fallback config_mora:', error)
+      setReglasMora(REGLAS_MORA_DEFAULT)
+      console.log('config mora cargada:', REGLAS_MORA_DEFAULT)
     }
   }
 
@@ -641,7 +677,22 @@ export default function CargarPago() {
     )
   }, [cuotas])
 
-  const deudaActual = Number(cuotaSeleccionada?.saldo_pendiente || 0)
+  const moraCuotaSeleccionada = useMemo(
+    () =>
+      calcularMoraCuota({
+        saldoPendiente: Number(cuotaSeleccionada?.saldo_pendiente || 0),
+        fechaVencimiento: cuotaSeleccionada?.fecha_vencimiento || null,
+        hoy: new Date(),
+        reglasMora,
+      }),
+    [cuotaSeleccionada?.fecha_vencimiento, cuotaSeleccionada?.saldo_pendiente, reglasMora]
+  )
+  const saldoOriginalCuota = Number(cuotaSeleccionada?.saldo_pendiente || 0)
+  const deudaActual = Number(moraCuotaSeleccionada.totalConMora || 0)
+  console.log('dias atraso:', moraCuotaSeleccionada.diasAtraso)
+  console.log('porcentaje mora:', moraCuotaSeleccionada.porcentajeTotalMora)
+  console.log('monto mora:', moraCuotaSeleccionada.montoMora)
+  console.log('total con mora:', moraCuotaSeleccionada.totalConMora)
   const transferenciaMontoAutomatico = Number(deudaActual.toFixed(2))
   const montoNormalizado = metodo === 'transferencia'
     ? transferenciaMontoAutomatico
@@ -896,6 +947,7 @@ export default function CargarPago() {
         mp_preference_id:
           metodo === 'mp' ? mpData?.preference_id || null : null,
         aplicar_a_multiples: aplicarAMultiples,
+        fecha_referencia_mora: new Date().toISOString(),
       }
 
       console.log('PAYLOAD REGISTRAR PAGO:', payload)
@@ -1012,6 +1064,10 @@ export default function CargarPago() {
           monto_ingresado: String(Number(montoNormalizado.toFixed(2))),
           vuelto: String(Number(json?.vuelto ?? vuelto).toFixed(2)),
           monto_cuota: String(Number(cuotaSeleccionada.monto_cuota ?? montoAplicado)),
+          dias_mora: String(moraCuotaSeleccionada.diasAtraso),
+          porcentaje_mora: String(moraCuotaSeleccionada.porcentajeTotalMora),
+          monto_mora: String(moraCuotaSeleccionada.montoMora),
+          total_con_mora: String(moraCuotaSeleccionada.totalConMora),
           metodo,
           fecha: new Date().toLocaleString('es-AR'),
           saldo_restante: String(saldoRestantePrestamo),
@@ -1262,6 +1318,26 @@ export default function CargarPago() {
                 <Text style={styles.label}>Resumen</Text>
                 <View style={styles.resumeCard}>
                   <Text style={styles.resumeTitle}>RESUMEN DEL PAGO</Text>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Saldo original cuota</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(saldoOriginalCuota)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Días de atraso</Text>
+                    <Text style={styles.resumeValue}>{moraCuotaSeleccionada.diasAtraso}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>% total mora</Text>
+                    <Text style={styles.resumeValue}>{moraCuotaSeleccionada.porcentajeTotalMora.toFixed(2)}%</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Monto mora</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(moraCuotaSeleccionada.montoMora)}</Text>
+                  </View>
+                  <View style={styles.resumeRow}>
+                    <Text style={styles.resumeLabel}>Total con mora</Text>
+                    <Text style={styles.resumeValue}>{formatearMoneda(deudaActual)}</Text>
+                  </View>
                   <View style={styles.resumeRow}>
                     <Text style={styles.resumeLabel}>Total aplicado</Text>
                     <Text style={styles.resumeValue}>{formatearMoneda(montoAplicado)}</Text>

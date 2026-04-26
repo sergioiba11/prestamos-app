@@ -20,7 +20,13 @@ DECLARE
   v_saldo_antes numeric(12,2);
   v_pagado_antes numeric(12,2);
   v_monto_aplicado numeric(12,2);
+  v_monto_aplicado_capital numeric(12,2);
   v_saldo_despues numeric(12,2);
+  v_dias_mora integer := 0;
+  v_porcentaje_mora numeric(12,4) := 0;
+  v_monto_mora numeric(12,2) := 0;
+  v_total_con_mora numeric(12,2) := 0;
+  v_deuda_cuota_con_mora numeric(12,2);
   v_nuevo_estado text;
   v_total_aplicado numeric(12,2) := 0;
   v_detalle jsonb := '[]'::jsonb;
@@ -109,7 +115,7 @@ BEGIN
   END IF;
 
   FOR v_cuota IN
-    SELECT id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, estado
+    SELECT id, numero_cuota, monto_cuota, monto_pagado, saldo_pendiente, estado, fecha_vencimiento
     FROM cuotas
     WHERE prestamo_id = v_pago.prestamo_id
       AND cliente_id = v_pago.cliente_id
@@ -125,10 +131,35 @@ BEGIN
 
     CONTINUE WHEN v_saldo_antes <= 0;
 
-    v_monto_aplicado := LEAST(v_restante, v_saldo_antes);
-    CONTINUE WHEN v_monto_aplicado <= 0;
+    v_dias_mora := 0;
+    v_porcentaje_mora := 0;
+    v_monto_mora := 0;
+    v_total_con_mora := v_saldo_antes;
+    IF jsonb_array_length(v_detalle_simulado) = 0
+      AND v_cuota.fecha_vencimiento IS NOT NULL
+      AND DATE(COALESCE(v_pago.created_at, now())) > DATE(v_cuota.fecha_vencimiento) THEN
+      v_dias_mora := (DATE(COALESCE(v_pago.created_at, now())) - DATE(v_cuota.fecha_vencimiento));
 
-    v_saldo_despues := ROUND(v_saldo_antes - v_monto_aplicado, 2);
+      SELECT COALESCE(SUM((LEAST(v_dias_mora, COALESCE(cm.dias_hasta, v_dias_mora)) - cm.dias_desde + 1) * cm.porcentaje_diario), 0)
+      INTO v_porcentaje_mora
+      FROM config_mora cm
+      WHERE cm.activo = true
+        AND cm.dias_desde <= v_dias_mora
+        AND (cm.dias_hasta IS NULL OR cm.dias_hasta >= cm.dias_desde);
+
+      IF v_porcentaje_mora IS NULL THEN
+        v_porcentaje_mora := 0;
+      END IF;
+      v_monto_mora := ROUND((v_saldo_antes * v_porcentaje_mora) / 100.0, 2);
+      v_total_con_mora := ROUND(v_saldo_antes + v_monto_mora, 2);
+    END IF;
+
+    v_deuda_cuota_con_mora := ROUND(COALESCE(v_total_con_mora, v_saldo_antes), 2);
+    v_monto_aplicado := LEAST(v_restante, v_deuda_cuota_con_mora);
+    CONTINUE WHEN v_monto_aplicado <= 0;
+    v_monto_aplicado_capital := LEAST(v_monto_aplicado, v_saldo_antes);
+
+    v_saldo_despues := ROUND(v_saldo_antes - v_monto_aplicado_capital, 2);
     v_nuevo_estado := CASE WHEN ABS(v_saldo_despues) <= 0.009 THEN 'pagada' ELSE 'parcial' END;
 
     IF v_monto_aplicado > v_saldo_antes OR v_saldo_despues < -0.009 THEN
@@ -144,6 +175,10 @@ BEGIN
       'numero_cuota', v_cuota.numero_cuota,
       'monto_pagado_antes', v_pagado_antes,
       'monto_aplicado', v_monto_aplicado,
+      'dias_mora', v_dias_mora,
+      'porcentaje_mora', v_porcentaje_mora,
+      'monto_mora', v_monto_mora,
+      'total_con_mora', v_total_con_mora,
       'saldo_cuota_antes', v_saldo_antes,
       'saldo_cuota_despues', CASE WHEN ABS(v_saldo_despues) <= 0.009 THEN 0 ELSE v_saldo_despues END,
       'estado_resultante', v_nuevo_estado
@@ -244,6 +279,10 @@ BEGIN
       cliente_id,
       numero_cuota,
       monto_aplicado,
+      dias_mora,
+      porcentaje_mora,
+      monto_mora,
+      total_con_mora,
       saldo_cuota_antes,
       saldo_cuota_despues
     )
@@ -254,6 +293,10 @@ BEGIN
       v_pago.cliente_id,
       (v_cuota.item->>'numero_cuota')::integer,
       ROUND(COALESCE((v_cuota.item->>'monto_aplicado')::numeric, 0), 2),
+      COALESCE((v_cuota.item->>'dias_mora')::integer, 0),
+      ROUND(COALESCE((v_cuota.item->>'porcentaje_mora')::numeric, 0), 4),
+      ROUND(COALESCE((v_cuota.item->>'monto_mora')::numeric, 0), 2),
+      ROUND(COALESCE((v_cuota.item->>'total_con_mora')::numeric, COALESCE((v_cuota.item->>'saldo_cuota_antes')::numeric, 0)), 2),
       ROUND(COALESCE((v_cuota.item->>'saldo_cuota_antes')::numeric, 0), 2),
       ROUND(COALESCE((v_cuota.item->>'saldo_cuota_despues')::numeric, 0), 2)
     )

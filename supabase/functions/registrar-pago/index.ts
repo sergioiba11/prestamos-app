@@ -44,10 +44,67 @@ function normalizarMetodoPago(metodo: unknown) {
   return ''
 }
 
+type ReglaMora = {
+  tramo: string
+  dias_desde: number
+  dias_hasta: number | null
+  porcentaje_diario: number
+  activo?: boolean
+}
+
+const REGLAS_MORA_DEFAULT: ReglaMora[] = [
+  { tramo: 'gracia', dias_desde: 1, dias_hasta: 3, porcentaje_diario: 0, activo: true },
+  { tramo: 'mora_normal', dias_desde: 4, dias_hasta: 10, porcentaje_diario: 1, activo: true },
+  { tramo: 'mora_alta', dias_desde: 11, dias_hasta: null, porcentaje_diario: 2, activo: true },
+]
+
+function parseFechaLocal(fecha?: string | null) {
+  if (!fecha) return null
+  const [y, m, d] = String(fecha).slice(0, 10).split('-').map((v) => Number(v))
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+
+function calcularMoraCuota({
+  saldoPendiente,
+  fechaVencimiento,
+  hoy,
+  reglasMora,
+}: {
+  saldoPendiente: number
+  fechaVencimiento?: string | null
+  hoy: Date
+  reglasMora: ReglaMora[]
+}) {
+  const saldo = Number(saldoPendiente || 0)
+  if (saldo <= 0) return { diasAtraso: 0, porcentajeTotalMora: 0, montoMora: 0, totalConMora: saldo }
+  const vto = parseFechaLocal(fechaVencimiento)
+  if (!vto) return { diasAtraso: 0, porcentajeTotalMora: 0, montoMora: 0, totalConMora: saldo }
+
+  const hoyLocal = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const vtoLocal = new Date(vto.getFullYear(), vto.getMonth(), vto.getDate())
+  const diasAtraso = Math.max(0, Math.floor((hoyLocal.getTime() - vtoLocal.getTime()) / 86400000))
+  if (diasAtraso <= 0) return { diasAtraso: 0, porcentajeTotalMora: 0, montoMora: 0, totalConMora: saldo }
+
+  let porcentajeTotalMora = 0
+  for (const regla of reglasMora) {
+    const desde = Math.max(1, Number(regla.dias_desde || 0))
+    const hasta = regla.dias_hasta == null ? diasAtraso : Math.min(diasAtraso, Number(regla.dias_hasta || 0))
+    if (hasta < desde) continue
+    const diasTramo = hasta - desde + 1
+    porcentajeTotalMora += diasTramo * Number(regla.porcentaje_diario || 0)
+  }
+
+  const porcentaje = Number(porcentajeTotalMora.toFixed(4))
+  const montoMora = redondear((saldo * porcentaje) / 100)
+  return { diasAtraso, porcentajeTotalMora: porcentaje, montoMora, totalConMora: redondear(saldo + montoMora) }
+}
+
 function calcularAplicacionCuotas({
   cuotas,
   montoEntregado,
   aplicarAMultiples,
+  moraPorCuota = {},
 }: {
   cuotas: Array<{
     id: string
@@ -58,6 +115,7 @@ function calcularAplicacionCuotas({
   }>
   montoEntregado: number
   aplicarAMultiples: boolean
+  moraPorCuota?: Record<string, { dias_mora: number; porcentaje_mora: number; monto_mora: number; total_con_mora: number }>
 }) {
   let restante = montoEntregado
   const cuotasImpactadas: number[] = []
@@ -65,6 +123,10 @@ function calcularAplicacionCuotas({
     cuota_id: string
     numero_cuota: number
     monto_aplicado: number
+    dias_mora: number
+    porcentaje_mora: number
+    monto_mora: number
+    total_con_mora: number
     monto_pagado_despues: number
     saldo_cuota_antes: number
     saldo_cuota_despues: number
@@ -77,19 +139,22 @@ function calcularAplicacionCuotas({
     const saldoAnterior = redondear(
       Number(cuota.saldo_pendiente ?? cuota.monto_cuota ?? 0)
     )
+    const moraData = moraPorCuota[cuota.id] || { dias_mora: 0, porcentaje_mora: 0, monto_mora: 0, total_con_mora: saldoAnterior }
+    const deudaCuotaConMora = redondear(moraData.total_con_mora || saldoAnterior)
     const pagadoAnterior = redondear(Number(cuota.monto_pagado ?? 0))
 
     if (saldoAnterior <= 0) continue
 
     const montoAplicado = redondear(
       aplicarAMultiples
-        ? Math.min(restante, saldoAnterior)
-        : Math.min(montoEntregado, saldoAnterior)
+        ? Math.min(restante, deudaCuotaConMora)
+        : Math.min(montoEntregado, deudaCuotaConMora)
     )
 
     if (montoAplicado <= 0) continue
 
-    const nuevoSaldo = redondear(saldoAnterior - montoAplicado)
+    const montoAplicadoCapital = redondear(Math.min(saldoAnterior, montoAplicado))
+    const nuevoSaldo = redondear(saldoAnterior - montoAplicadoCapital)
     const nuevoMontoPagado = redondear(pagadoAnterior + montoAplicado)
     const nuevoEstado = esMontoCerrado(nuevoSaldo) ? 'pagada' : 'parcial'
     const saldoPersistido = esMontoCerrado(nuevoSaldo) ? 0 : nuevoSaldo
@@ -99,6 +164,10 @@ function calcularAplicacionCuotas({
       cuota_id: cuota.id,
       numero_cuota: cuota.numero_cuota,
       monto_aplicado: montoAplicado,
+      dias_mora: Number(moraData.dias_mora || 0),
+      porcentaje_mora: Number(moraData.porcentaje_mora || 0),
+      monto_mora: Number(moraData.monto_mora || 0),
+      total_con_mora: Number(moraData.total_con_mora || saldoAnterior),
       monto_pagado_despues: nuevoMontoPagado,
       saldo_cuota_antes: saldoAnterior,
       saldo_cuota_despues: saldoPersistido,
@@ -493,6 +562,9 @@ Deno.serve(async (req) => {
       Number(body?.monto_entregado ?? body?.monto_ingresado ?? body?.monto)
     )
     const aplicarAMultiples = body?.aplicar_a_multiples !== false
+    const fechaReferenciaMora = body?.fecha_referencia_mora
+      ? new Date(String(body.fecha_referencia_mora))
+      : new Date()
     console.log('[registrar-pago] metodo recibido:', metodo)
 
     if (!prestamo_id || !cliente_id || !metodo || !cuota_id_inicial) {
@@ -581,6 +653,24 @@ Deno.serve(async (req) => {
     }
 
     let cuotasAProcesar = cuotasPendientes
+    let reglasMora = REGLAS_MORA_DEFAULT
+
+    const { data: configMoraRows, error: configMoraError } = await supabase
+      .from('config_mora')
+      .select('tramo, dias_desde, dias_hasta, porcentaje_diario, activo')
+      .eq('activo', true)
+      .order('dias_desde', { ascending: true })
+
+    if (!configMoraError && configMoraRows && configMoraRows.length > 0) {
+      reglasMora = (configMoraRows as any[]).map((item) => ({
+        tramo: String(item?.tramo || ''),
+        dias_desde: Number(item?.dias_desde || 0),
+        dias_hasta: item?.dias_hasta == null ? null : Number(item?.dias_hasta),
+        porcentaje_diario: Number(item?.porcentaje_diario || 0),
+        activo: Boolean(item?.activo ?? true),
+      }))
+    }
+    console.log('config mora cargada:', reglasMora)
 
     if (cuota_id_inicial) {
       const index = cuotasPendientes.findIndex((c) => c.id === cuota_id_inicial)
@@ -611,11 +701,43 @@ Deno.serve(async (req) => {
       cuotasAProcesar = cuotasPendientes.slice(index)
     }
 
+    const moraPorCuota: Record<string, { dias_mora: number; porcentaje_mora: number; monto_mora: number; total_con_mora: number }> = {}
+    if (cuotasAProcesar[0]?.id === cuota_id_inicial) {
+      const cuotaBase = cuotasAProcesar[0]
+      const mora = calcularMoraCuota({
+        saldoPendiente: Number(cuotaBase.saldo_pendiente ?? cuotaBase.monto_cuota ?? 0),
+        fechaVencimiento: cuotaBase.fecha_vencimiento,
+        hoy: Number.isNaN(fechaReferenciaMora.getTime()) ? new Date() : fechaReferenciaMora,
+        reglasMora,
+      })
+      console.log('dias atraso:', mora.diasAtraso)
+      console.log('porcentaje mora:', mora.porcentajeTotalMora)
+      console.log('monto mora:', mora.montoMora)
+      console.log('total con mora:', mora.totalConMora)
+      moraPorCuota[cuotaBase.id] = {
+        dias_mora: mora.diasAtraso,
+        porcentaje_mora: mora.porcentajeTotalMora,
+        monto_mora: mora.montoMora,
+        total_con_mora: mora.totalConMora,
+      }
+    }
+
+    if (metodo === 'transferencia' && cuotasAProcesar[0]) {
+      const requerida = Number(moraPorCuota[cuotasAProcesar[0].id]?.total_con_mora || (cuotasAProcesar[0].saldo_pendiente ?? cuotasAProcesar[0].monto_cuota ?? 0))
+      if (montoEntregado + 0.009 < requerida) {
+        return jsonResponse(
+          { error: `La transferencia no alcanza para cancelar la cuota seleccionada con mora (${redondear(requerida)})` },
+          400
+        )
+      }
+    }
+
     if (metodo === 'transferencia') {
       const aplicacionTentativa = calcularAplicacionCuotas({
         cuotas: cuotasAProcesar,
         montoEntregado,
         aplicarAMultiples,
+        moraPorCuota,
       })
 
       const montoReferencia = aplicacionTentativa.totalAplicado > 0
@@ -659,6 +781,7 @@ Deno.serve(async (req) => {
           const payload = {
             prestamo_id,
             cliente_id,
+            cuota_id: cuota_id_inicial,
             monto: montoReferencia,
             metodo: 'transferencia',
             registrado_por: user.id,
@@ -728,6 +851,7 @@ Deno.serve(async (req) => {
       cuotas: cuotasAProcesar,
       montoEntregado,
       aplicarAMultiples,
+      moraPorCuota,
     })
 
     const cuotasImpactadas = aplicacionEfectivo.cuotasImpactadas
@@ -768,6 +892,7 @@ Deno.serve(async (req) => {
     const pagoEfectivoPayload = {
       prestamo_id,
       cliente_id,
+      cuota_id: cuota_id_inicial,
       monto: totalAplicado,
       metodo: 'efectivo',
       registrado_por: user.id,
@@ -802,6 +927,10 @@ Deno.serve(async (req) => {
       cliente_id,
       numero_cuota: item.numero_cuota,
       monto_aplicado: item.monto_aplicado,
+      dias_mora: item.dias_mora,
+      porcentaje_mora: item.porcentaje_mora,
+      monto_mora: item.monto_mora,
+      total_con_mora: item.total_con_mora,
       saldo_cuota_antes: item.saldo_cuota_antes,
       saldo_cuota_despues: item.saldo_cuota_despues,
     }))
