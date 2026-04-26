@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
+import { useAppTheme } from '../context/AppThemeContext'
 import {
   authenticateWithBiometrics,
   disableBiometric,
@@ -53,6 +54,8 @@ const DAILY_INTERES_DEFAULT = 2
 
 export default function Configuraciones() {
   const { session } = useAuth()
+  const { theme, mode, setTheme } = useAppTheme()
+  const colors = theme.colors
   const [estadoMp, setEstadoMp] = useState<EstadoMp>('loading')
   const [isConnectingMp, setIsConnectingMp] = useState(false)
   const [isDisconnectingMp, setIsDisconnectingMp] = useState(false)
@@ -635,21 +638,34 @@ export default function Configuraciones() {
   )
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}> 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Configuraciones</Text>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Text style={styles.backButtonText}>Volver</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Configuraciones</Text>
+            <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.back()}>
+              <Text style={[styles.backButtonText, { color: colors.textPrimary }]}>Volver</Text>
             </TouchableOpacity>
           </View>
 
-        <View style={[styles.card, styles.mpCard]}>
-          <Text style={styles.cardTitleActive}>Cobros con Mercado Pago</Text>
+        <View style={[styles.card, styles.cardActive, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Apariencia</Text>
+          <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Elegí cómo querés ver el panel autenticado.</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <TouchableOpacity onPress={() => setTheme('dark')} style={{ flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderColor: mode === 'dark' ? colors.primary : colors.border, backgroundColor: mode === 'dark' ? colors.primarySoft : colors.surfaceSoft }}>
+              <Text style={{ color: mode === 'dark' ? colors.primary : colors.textPrimary, fontWeight: '700' }}>Modo oscuro</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setTheme('light')} style={{ flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderColor: mode === 'light' ? colors.primary : colors.border, backgroundColor: mode === 'light' ? colors.primarySoft : colors.surfaceSoft }}>
+              <Text style={{ color: mode === 'light' ? colors.primary : colors.textPrimary, fontWeight: '700' }}>Modo claro</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={[styles.card, styles.mpCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Cobros con Mercado Pago</Text>
 
           <View style={styles.statusRow}>
-            <Text style={styles.cardTextActive}>{estadoTexto}</Text>
+            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{estadoTexto}</Text>
             <View style={[styles.statusBadge, badgeConectado ? styles.statusBadgeConnected : styles.statusBadgeDisconnected]}>
               <Text style={[styles.statusBadgeText, badgeConectado ? styles.statusBadgeTextConnected : styles.statusBadgeTextDisconnected]}>
                 {badgeConectado ? 'Conectado' : 'No conectado'}
@@ -698,12 +714,12 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
-          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('datos-negocio')} activeOpacity={0.85}>
-            <Text style={styles.accordionTitle}>Datos del negocio</Text>
-            <Text style={styles.accordionChevron}>{openSections['datos-negocio'] ? '−' : '+'}</Text>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('datos-negocio')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Datos del negocio</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['datos-negocio'] ? '−' : '+'}</Text>
           </TouchableOpacity>
           {openSections['datos-negocio'] ? (
-            <View style={[styles.card, styles.cardActive, styles.accordionBody]}>
+            <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.businessGrid}>
                 <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
                   <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
@@ -719,7 +735,7 @@ export default function Configuraciones() {
                 </View>
               </View>
               <View style={styles.preferenceRow}>
-                <Text style={styles.cardTextActive}>Enviar comprobante por SMS</Text>
+                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Enviar comprobante por SMS</Text>
                 <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
               </View>
               <TouchableOpacity style={[styles.connectButton, styles.businessSaveButton, !isWeb && styles.mobileFullButton]} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
@@ -730,14 +746,14 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
-          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('tasas-interes')} activeOpacity={0.85}>
-            <Text style={styles.accordionTitle}>Tasas de interés</Text>
-            <Text style={styles.accordionChevron}>{openSections['tasas-interes'] ? '−' : '+'}</Text>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('tasas-interes')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Tasas de interés</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['tasas-interes'] ? '−' : '+'}</Text>
           </TouchableOpacity>
           {openSections['tasas-interes'] ? (
             <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
-              <Text style={styles.cardTitleActive}>Préstamos mensuales</Text>
-              <Text style={styles.cardTextActive}>Administrá los porcentajes por cantidad de cuotas.</Text>
+              <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Préstamos mensuales</Text>
+              <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Administrá los porcentajes por cantidad de cuotas.</Text>
               {loadingIntereses ? (
                 <View style={styles.interesesLoading}><ActivityIndicator size="small" color="#60A5FA" /></View>
               ) : isWeb ? (
@@ -776,8 +792,8 @@ export default function Configuraciones() {
               )}
 
               <View style={styles.dailySection}>
-                <Text style={styles.cardTitleActive}>Préstamos diarios</Text>
-                <Text style={styles.cardTextActive}>Definí una tasa diaria base. Se aplica como interés total = tasa diaria × días.</Text>
+                <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Préstamos diarios</Text>
+                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Definí una tasa diaria base. Se aplica como interés total = tasa diaria × días.</Text>
                 <View style={styles.interesRow}>
                   <Text style={styles.interesCuotaText}>Tasa diaria base</Text>
                   <View style={styles.interesInputWrap}>
@@ -802,13 +818,13 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
-          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('mora-atraso')} activeOpacity={0.85}>
-            <Text style={styles.accordionTitle}>Mora por atraso</Text>
-            <Text style={styles.accordionChevron}>{openSections['mora-atraso'] ? '−' : '+'}</Text>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('mora-atraso')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Mora por atraso</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['mora-atraso'] ? '−' : '+'}</Text>
           </TouchableOpacity>
           {openSections['mora-atraso'] ? (
             <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
-              <Text style={styles.cardTextActive}>Configurá el porcentaje diario por tramo para cuotas vencidas.</Text>
+              <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Configurá el porcentaje diario por tramo para cuotas vencidas.</Text>
               {loadingMora ? (
                 <View style={styles.interesesLoading}><ActivityIndicator size="small" color="#60A5FA" /></View>
               ) : (
@@ -839,15 +855,15 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
-          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('opciones-avanzadas')} activeOpacity={0.85}>
-            <Text style={styles.accordionTitle}>Opciones avanzadas</Text>
-            <Text style={styles.accordionChevron}>{openSections['opciones-avanzadas'] ? '−' : '+'}</Text>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('opciones-avanzadas')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Opciones avanzadas</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['opciones-avanzadas'] ? '−' : '+'}</Text>
           </TouchableOpacity>
           {openSections['opciones-avanzadas'] ? (
             <View style={styles.accordionBody}>
               <View style={[styles.card, styles.cardActive]}>
-                <Text style={styles.cardTitleActive}>Ingreso con biometría</Text>
-                <Text style={styles.cardTextActive}>{biometricMessage}</Text>
+                <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Ingreso con biometría</Text>
+                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{biometricMessage}</Text>
                 <View style={styles.buttonRow}>
                   {biometricStatus === 'enabled' ? (
                     <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
@@ -861,8 +877,8 @@ export default function Configuraciones() {
                 </View>
               </View>
               <TouchableOpacity style={[styles.card, styles.cardActive]} onPress={() => router.push('/cambiar-password')}>
-                <Text style={styles.cardTitleActive}>Seguridad</Text>
-                <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
+                <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Seguridad</Text>
+                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Cambiar contraseña de tu cuenta</Text>
               </TouchableOpacity>
               <View style={[styles.card, styles.cardDisabled]}>
                 <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
