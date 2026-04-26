@@ -2037,7 +2037,7 @@ const styles = StyleSheet.create({
   },
   loanItemCardActive: {
     borderColor: '#2563EB',
-    backgroundColor: '#172554',
+    backgroundColor: '#1E293B',
   },
   loanItemRow: {
     flexDirection: 'row',
