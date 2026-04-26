@@ -60,9 +60,13 @@ export async function startRegistrationByDni(dni: string): Promise<RegistrationL
     throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
   }
 
+  console.log('[onboarding] iniciar-registro payload', { dni: cleanDni })
+
   const { data, error } = await supabase.functions.invoke('iniciar-registro', {
     body: { dni: cleanDni },
   })
+
+  console.log('[onboarding] iniciar-registro response', data)
 
   if (error) {
     console.error('[onboarding] iniciar-registro invoke error', error)
@@ -163,42 +167,150 @@ export async function registerUserFromOnboarding(params: {
   email?: string
   phone: string
   clienteId?: string | null
+  direccion?: string | null
 }) {
-  const payload = {
-    dni: normalizeDni(params.dni),
-    nombre: params.nombre?.trim() || 'Cliente',
-    email: (params.email || `${normalizeDni(params.dni)}@creditodo.app`).trim().toLowerCase(),
-    password: params.password,
-    telefono: normalizePhoneAR(params.phone),
-    clienteId: params.clienteId || null,
-  }
+  const dni = normalizeDni(params.dni)
+  const nombre = params.nombre?.trim() || 'Cliente'
+  const email = (params.email || `${dni}@creditodo.app`).trim().toLowerCase()
+  const telefono = normalizePhoneAR(params.phone)
+  const clienteId = params.clienteId || null
+  const direccion = params.direccion?.trim() || null
 
-  if (!payload.telefono) throw new Error('El teléfono verificado no es válido.')
+  if (dni.length < 7 || dni.length > 8) throw new Error('Ingresá un DNI válido de 7 u 8 dígitos.')
+  if (!nombre) throw new Error('Falta el nombre del cliente.')
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Ingresá un email válido.')
+  if (!telefono) throw new Error('Ingresá un teléfono válido de Argentina (+549...).')
+  if (!params.password || params.password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.')
 
-  console.log('[onboarding] registro-cliente-publico payload', payload)
+  const payload = { dni, nombre, email, telefono, clienteId, direccion }
+  console.log('[onboarding] registerUserFromOnboarding payload', payload)
 
-  const { data, error } = await supabase.functions.invoke('registro-cliente-publico', {
-    body: payload,
-  })
+  try {
+    const { data: clienteByDni, error: clienteError } = await supabase
+      .from('clientes')
+      .select('id, dni, usuario_id')
+      .eq('dni', dni)
+      .maybeSingle()
 
-  console.log('[onboarding] registro-cliente-publico response', data)
-
-  if (error) {
-    console.error('[onboarding] registro-cliente-publico invoke error', error)
-    if (error.message === 'Failed to send a request to the Edge Function') {
-      throw new Error('No se pudo conectar con el servidor de registro. Revisá conexión o deploy.')
+    if (clienteError) {
+      console.error('[onboarding] error buscando cliente por dni', clienteError)
+      throw new Error('No se pudo validar el DNI en este momento.')
     }
-    throw new Error(error.message || 'No se pudo crear la cuenta.')
+
+    if (clienteByDni?.usuario_id) {
+      throw new Error('Ese DNI ya tiene una cuenta activa')
+    }
+
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser()
+
+    let authUserId = currentUser?.id || null
+
+    if (!authUserId) {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: params.password,
+        phone: telefono,
+        options: {
+          data: {
+            dni,
+            role: 'cliente',
+            full_name: nombre,
+          },
+        },
+      })
+
+      console.log('[onboarding] signUp response', { userId: signUpData.user?.id })
+
+      if (signUpError || !signUpData.user?.id) {
+        console.error('[onboarding] signUp error', signUpError)
+        const msg = signUpError?.message?.toLowerCase() || ''
+        if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('email')) {
+          throw new Error('El email ya está registrado.')
+        }
+        if (msg.includes('password')) {
+          throw new Error('Error de auth: la contraseña no cumple los requisitos.')
+        }
+        throw new Error(signUpError?.message || 'Error de auth al crear el usuario.')
+      }
+
+      authUserId = signUpData.user.id
+    } else {
+      const { error: authUpdateError } = await supabase.auth.updateUser({
+        email,
+        password: params.password,
+        data: {
+          dni,
+          role: 'cliente',
+          full_name: nombre,
+        },
+      })
+
+      if (authUpdateError) {
+        console.error('[onboarding] updateUser error', authUpdateError)
+        const msg = authUpdateError.message.toLowerCase()
+        if (msg.includes('already')) throw new Error('El email ya está registrado.')
+        throw new Error(authUpdateError.message || 'Error de auth al actualizar el usuario.')
+      }
+    }
+
+    if (!authUserId) {
+      throw new Error('Error de auth: no se pudo obtener el usuario creado.')
+    }
+
+    const { error: usuarioError } = await supabase.from('usuarios').upsert({
+      id: authUserId,
+      nombre,
+      email,
+      rol: 'cliente',
+    })
+
+    if (usuarioError) {
+      console.error('[onboarding] usuarios upsert error', usuarioError)
+      if (usuarioError.message.toLowerCase().includes('duplicate')) {
+        throw new Error('El email ya está registrado.')
+      }
+      throw new Error('Error al guardar en usuarios.')
+    }
+
+    const targetClienteId = clienteId || clienteByDni?.id || null
+
+    const clientePayload: Record<string, unknown> = {
+      usuario_id: authUserId,
+      nombre,
+      telefono,
+      dni,
+    }
+
+    if (direccion) clientePayload.direccion = direccion
+
+    if (targetClienteId) {
+      const { error: updateClienteError } = await supabase
+        .from('clientes')
+        .update(clientePayload)
+        .eq('id', targetClienteId)
+
+      if (updateClienteError) {
+        console.error('[onboarding] clientes update error', updateClienteError)
+        throw new Error('Error al guardar en clientes.')
+      }
+    } else {
+      const { error: createClienteError } = await supabase.from('clientes').insert(clientePayload)
+
+      if (createClienteError) {
+        console.error('[onboarding] clientes insert error', createClienteError)
+        throw new Error('Error al guardar en clientes.')
+      }
+    }
+
+    const result = { ok: true, userId: authUserId }
+    console.log('[onboarding] registerUserFromOnboarding response', result)
+    return result
+  } catch (error: any) {
+    console.error('[onboarding] registerUserFromOnboarding error', error)
+    throw new Error(error?.message || 'No se pudo completar el registro.')
   }
-
-  const response = data as { ok?: boolean; userId?: string; clienteId?: string; error?: string } | null
-
-  if (!response?.ok) {
-    console.error('[onboarding] registro-cliente-publico business error', response)
-    throw new Error(response?.error || 'No se pudo crear la cuenta.')
-  }
-
-  return { userId: response.userId, clienteId: response.clienteId, email: payload.email }
 }
 
 export async function signInWithEmailOrDni(params: {
