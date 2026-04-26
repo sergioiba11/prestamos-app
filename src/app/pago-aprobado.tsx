@@ -5,11 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -168,10 +166,6 @@ function describirCuotasImpactadas(cuotas: CuotaImpactadaDetalle[]) {
     .map((item) => `Cuota #${item.numero_cuota} ${estadoCuotaLabel(item)}`)
     .join(', ')
 }
-function normalizePhone(value: string) {
-  return value.replace(/[^\d]/g, '')
-}
-
 function buildReceiptNumber(paymentId: string, loanId: string, dateTime: string) {
   if (paymentId) return `REC-${paymentId.slice(0, 8).toUpperCase()}`
   const datePart = dateTime.replace(/\D/g, '').slice(0, 12)
@@ -291,8 +285,6 @@ export default function PagoAprobado() {
       cliente?.cedula ||
       'No registrado'
     )
-  const clienteTelefono = String(cliente?.telefono || '')
-
   const isEfectivo = metodo.toLowerCase() === 'efectivo'
   const paymentMethodLabel =
     metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
@@ -538,17 +530,6 @@ export default function PagoAprobado() {
     void loadReceiptData()
   }, [pagoId])
 
-  const shareText = [
-    'Comprobante de pago - Creditodo',
-    `Recibo: ${receiptNumber}`,
-    `Cliente: ${clienteNombre}`,
-    `Monto aplicado: ${formatCurrencyArs(montoAplicado)}`,
-    `Método: ${paymentMethodLabel}`,
-    `Fecha: ${fechaFormateada}`,
-    `Cuotas impactadas: ${cuotasTexto}`,
-    `Saldo restante del préstamo: ${formatCurrencyArs(saldoRestante)}`,
-  ].join('\n')
-
   const backToPrestamoUrl = prestamoId
     ? `/cliente/${clienteId}?prestamo_id=${prestamoId}`
     : `/cliente/${clienteId}`
@@ -568,102 +549,126 @@ export default function PagoAprobado() {
     }
   }
 
-  const onShare = async () => {
-    try {
-      await Share.share({ message: shareText })
-    } catch {
-      const nav = globalThis as typeof globalThis & {
-        navigator?: { clipboard?: { writeText: (text: string) => Promise<void> } }
-      }
-      if (Platform.OS === 'web' && nav.navigator?.clipboard?.writeText) {
-        await nav.navigator.clipboard.writeText(shareText)
-        return
-      }
-      const toPhone = normalizePhone(clienteTelefono)
-      const waUrl = `https://wa.me/${toPhone}?text=${encodeURIComponent(shareText)}`
-      if (toPhone) {
-        await Linking.openURL(waUrl)
-      }
-    }
-  }
-
-  const onShareWhatsapp = async () => {
-    const toPhone = normalizePhone(clienteTelefono)
-    const waUrl = toPhone
-      ? `https://wa.me/${toPhone}?text=${encodeURIComponent(shareText)}`
-      : `https://wa.me/?text=${encodeURIComponent(shareText)}`
-    try {
-      await Linking.openURL(waUrl)
-    } catch {
-      await onShare()
-    }
-  }
-
-  const handleDownloadPDF = async () => {
-    if (downloadingPdf) return
-
+  const generateReceiptPdf = async () => {
     const webGlobal = globalThis as any
     const webWindow = webGlobal?.window
     const webDocument = webGlobal?.document
     if (Platform.OS !== 'web' || !webWindow || !webDocument) {
-      return
+      throw new Error('La generación de PDF está disponible solo en web')
     }
 
-    setDownloadingPdf(true)
-    try {
-      await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js', webDocument)
-      await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js', webDocument)
+    await loadScript('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js', webDocument)
+    await loadScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js', webDocument)
 
-      const html2canvas = webWindow?.html2canvas
-      const jsPDFCtor = webWindow?.jspdf?.jsPDF
-      if (!html2canvas || !jsPDFCtor) {
-        throw new Error('No se pudieron inicializar las librerías de PDF')
-      }
+    const html2canvas = webWindow?.html2canvas
+    const jsPDFCtor = webWindow?.jspdf?.jsPDF
+    if (!html2canvas || !jsPDFCtor) {
+      throw new Error('No se pudieron inicializar las librerías de PDF')
+    }
 
-      const targetElement =
-        (receiptRef.current as unknown as any) ||
-        webDocument.getElementById('receipt-print-area')
-      if (!targetElement) {
-        throw new Error('No se encontró el comprobante para exportar')
-      }
+    const targetElement =
+      (receiptRef.current as unknown as any) ||
+      webDocument.getElementById('receipt-print-area')
+    if (!targetElement) {
+      throw new Error('No se encontró el comprobante para exportar')
+    }
 
-      const originalBackground = targetElement.style.backgroundColor
-      targetElement.style.backgroundColor = '#FFFFFF'
+    const originalBackground = targetElement.style.backgroundColor
+    targetElement.style.backgroundColor = '#FFFFFF'
 
-      const canvas = await html2canvas(targetElement, {
-        scale: 2,
-        backgroundColor: '#FFFFFF',
-        useCORS: true,
-        logging: false,
-      })
+    const canvas = await html2canvas(targetElement, {
+      scale: 2,
+      backgroundColor: '#FFFFFF',
+      useCORS: true,
+      logging: false,
+    })
 
-      targetElement.style.backgroundColor = originalBackground
+    targetElement.style.backgroundColor = originalBackground
 
-      const imageData = canvas.toDataURL('image/png', 1.0)
-      const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const margin = 10
-      const usableWidth = pageWidth - margin * 2
-      const usableHeight = pageHeight - margin * 2
-      const imageHeight = (canvas.height * usableWidth) / canvas.width
+    const imageData = canvas.toDataURL('image/png', 1.0)
+    const pdf = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    const usableWidth = pageWidth - margin * 2
+    const usableHeight = pageHeight - margin * 2
+    const imageHeight = (canvas.height * usableWidth) / canvas.width
 
-      let y = margin
-      let heightLeft = imageHeight
+    let y = margin
+    let heightLeft = imageHeight
+    pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
+    heightLeft -= usableHeight
+
+    while (heightLeft > 0) {
+      y = heightLeft - imageHeight + margin
+      pdf.addPage()
       pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
       heightLeft -= usableHeight
+    }
 
-      while (heightLeft > 0) {
-        y = heightLeft - imageHeight + margin
-        pdf.addPage()
-        pdf.addImage(imageData, 'PNG', margin, y, usableWidth, imageHeight)
-        heightLeft -= usableHeight
-      }
+    const pdfBlob = pdf.output('blob')
+    return {
+      blob: pdfBlob as Blob,
+      fileName: formatFileName(clienteNombre, fechaRaw || new Date().toISOString()),
+    }
+  }
 
-      pdf.save(formatFileName(clienteNombre, fechaRaw || new Date().toISOString()))
+  const downloadReceiptPdf = async () => {
+    const { blob, fileName } = await generateReceiptPdf()
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = fileName
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  }
+
+  const handleDownloadPDF = async () => {
+    if (downloadingPdf) return
+    setDownloadingPdf(true)
+    try {
+      await downloadReceiptPdf()
     } catch (error) {
       console.error('Error al generar PDF', error)
       Alert.alert('No se pudo descargar el PDF', 'Intentá nuevamente en unos segundos.')
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
+  const onSharePdf = async () => {
+    if (downloadingPdf) return
+    setDownloadingPdf(true)
+    try {
+      const { blob, fileName } = await generateReceiptPdf()
+      const nav = globalThis.navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean
+      }
+      const shareFile = new File([blob], fileName, { type: 'application/pdf' })
+      const canShareFiles =
+        typeof nav?.share === 'function' &&
+        typeof nav?.canShare === 'function' &&
+        nav.canShare({ files: [shareFile] })
+
+      if (canShareFiles) {
+        await nav.share({
+          files: [shareFile],
+          title: `Comprobante ${receiptNumber}`,
+          text: `Comprobante de pago ${receiptNumber}`,
+        })
+        return
+      }
+
+      await downloadReceiptPdf()
+      Alert.alert(
+        'Compartir no disponible',
+        'Tu navegador no permite compartir archivos directamente. Se descargó el comprobante PDF para que puedas adjuntarlo o enviarlo.'
+      )
+    } catch (error) {
+      console.error('Error al compartir PDF', error)
+      Alert.alert('No se pudo compartir el PDF', 'Intentá nuevamente en unos segundos.')
     } finally {
       setDownloadingPdf(false)
     }
@@ -887,8 +892,14 @@ export default function PagoAprobado() {
               {downloadingPdf ? 'Generando PDF...' : 'Descargar PDF'}
             </Text>
           </Pressable>
-          <Pressable style={[styles.actionSecondary, !isMobile && styles.actionDesktopMain]} onPress={() => void onShareWhatsapp()}>
-            <Text style={styles.actionSecondaryText}>Compartir WhatsApp</Text>
+          <Pressable
+            style={[styles.actionSecondary, !isMobile && styles.actionDesktopMain]}
+            disabled={downloadingPdf}
+            onPress={() => void onSharePdf()}
+          >
+            <Text style={styles.actionSecondaryText}>
+              {downloadingPdf ? 'Generando PDF...' : 'Compartir PDF'}
+            </Text>
           </Pressable>
           <Pressable style={[styles.actionPrint, !isMobile && styles.actionDesktopSecondary]} onPress={onPrint}>
             <Text style={styles.actionPrintText}>Imprimir</Text>
