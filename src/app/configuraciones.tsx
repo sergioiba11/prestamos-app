@@ -24,6 +24,18 @@ type MercadoPagoConfig = {
   updated_at: string | null
 }
 
+const INTERESES_MENSUALES_DEFAULT: Record<number, number> = {
+  1: 15, 2: 22, 3: 30, 4: 38, 5: 46, 6: 55, 7: 63, 8: 71, 9: 79, 10: 87, 11: 95, 12: 105,
+  13: 114, 14: 123, 15: 132, 16: 141, 17: 150, 18: 160, 19: 169, 20: 178, 21: 187, 22: 196,
+  23: 205, 24: 215, 25: 224, 26: 233, 27: 242, 28: 251, 29: 260, 30: 270, 31: 279, 32: 288,
+  33: 297, 34: 306, 35: 315, 36: 325,
+}
+
+type InteresRow = {
+  cuotas: number
+  porcentaje: string
+}
+
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
 
@@ -41,6 +53,11 @@ export default function Configuraciones() {
   const [brandingPrimario, setBrandingPrimario] = useState('#2563EB')
   const [preferenciaComprobanteSms, setPreferenciaComprobanteSms] = useState(true)
   const [savingBusinessData, setSavingBusinessData] = useState(false)
+  const [userRole, setUserRole] = useState('empleado')
+  const [interesesRows, setInteresesRows] = useState<InteresRow[]>([])
+  const [interesesErrors, setInteresesErrors] = useState<Record<number, string>>({})
+  const [loadingIntereses, setLoadingIntereses] = useState(true)
+  const [savingIntereses, setSavingIntereses] = useState(false)
 
   const loadBiometricStatus = useCallback(async () => {
     if (!session?.user?.id) {
@@ -132,11 +149,149 @@ export default function Configuraciones() {
     }
   }, [brandingPrimario, negocioAlias, negocioNombre, negocioTelefono, preferenciaComprobanteSms, savingBusinessData, session?.user?.id])
 
+  const buildDefaultInteresesRows = useCallback(
+    () => Array.from({ length: 36 }, (_, idx) => {
+      const cuota = idx + 1
+      return { cuotas: cuota, porcentaje: String(INTERESES_MENSUALES_DEFAULT[cuota] ?? 0) }
+    }),
+    []
+  )
+
+  const cargarRolUsuario = useCallback(async () => {
+    if (!session?.user?.id) return
+    const { data } = await supabase
+      .from('usuarios')
+      .select('rol')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    setUserRole(String(data?.rol || 'empleado').toLowerCase())
+  }, [session?.user?.id])
+
+  const cargarIntereses = useCallback(async () => {
+    setLoadingIntereses(true)
+    setInteresesErrors({})
+    setInteresesRows(buildDefaultInteresesRows())
+    try {
+      const { data, error } = await supabase
+        .from('config_intereses')
+        .select('cuotas, porcentaje')
+        .eq('tipo', 'mensual')
+        .eq('activo', true)
+        .order('cuotas', { ascending: true })
+
+      if (error || !data || data.length === 0) return
+
+      const porCuota = new Map<number, string>()
+      for (const item of data as any[]) {
+        const cuota = Number(item?.cuotas || 0)
+        if (!cuota || cuota < 1 || cuota > 36) continue
+        porCuota.set(cuota, String(Number(item?.porcentaje || 0)))
+      }
+
+      setInteresesRows(
+        Array.from({ length: 36 }, (_, idx) => {
+          const cuota = idx + 1
+          return { cuotas: cuota, porcentaje: porCuota.get(cuota) ?? String(INTERESES_MENSUALES_DEFAULT[cuota] ?? 0) }
+        })
+      )
+    } finally {
+      setLoadingIntereses(false)
+    }
+  }, [buildDefaultInteresesRows])
+
+  const esAdmin = userRole === 'admin'
+
+  const onChangeInteres = (cuotas: number, value: string) => {
+    const cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    setInteresesRows((prev) => prev.map((row) => (row.cuotas === cuotas ? { ...row, porcentaje: cleaned } : row)))
+    setInteresesErrors((prev) => ({ ...prev, [cuotas]: '' }))
+  }
+
+  const validarIntereses = useCallback(() => {
+    const errors: Record<number, string> = {}
+    for (const row of interesesRows) {
+      const raw = String(row.porcentaje || '').trim()
+      const num = Number(raw)
+      if (raw === '') {
+        errors[row.cuotas] = 'Requerido'
+        continue
+      }
+      if (!Number.isFinite(num)) {
+        errors[row.cuotas] = 'Número inválido'
+        continue
+      }
+      if (num < 0) {
+        errors[row.cuotas] = 'Debe ser >= 0'
+        continue
+      }
+      if (num > 500) {
+        errors[row.cuotas] = 'Máximo 500'
+      }
+    }
+    setInteresesErrors(errors)
+    return Object.keys(errors).length === 0
+  }, [interesesRows])
+
+  const guardarIntereses = useCallback(async () => {
+    if (!esAdmin || savingIntereses) return
+    if (!validarIntereses()) {
+      Alert.alert('Error', 'Hay porcentajes inválidos. Revisá los campos marcados.')
+      return
+    }
+
+    setSavingIntereses(true)
+    try {
+      const payload = interesesRows.map((row) => ({
+        tipo: 'mensual',
+        cuotas: row.cuotas,
+        dias: null,
+        porcentaje: Number(Number(row.porcentaje).toFixed(2)),
+        activo: true,
+        updated_at: new Date().toISOString(),
+      }))
+
+      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,cuotas' })
+      if (error) throw error
+      Alert.alert('Listo', 'Tasas de interés guardadas.')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo guardar tasas de interés')
+    } finally {
+      setSavingIntereses(false)
+    }
+  }, [esAdmin, interesesRows, savingIntereses, validarIntereses])
+
+  const restaurarInteresesDefault = useCallback(async () => {
+    if (!esAdmin || savingIntereses) return
+    const defaults = buildDefaultInteresesRows()
+    setInteresesRows(defaults)
+    setInteresesErrors({})
+    setSavingIntereses(true)
+    try {
+      const payload = defaults.map((row) => ({
+        tipo: 'mensual',
+        cuotas: row.cuotas,
+        dias: null,
+        porcentaje: Number(Number(row.porcentaje).toFixed(2)),
+        activo: true,
+        updated_at: new Date().toISOString(),
+      }))
+      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,cuotas' })
+      if (error) throw error
+      Alert.alert('Listo', 'Se restauraron los valores por defecto.')
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo restaurar valores por defecto')
+    } finally {
+      setSavingIntereses(false)
+    }
+  }, [buildDefaultInteresesRows, esAdmin, savingIntereses])
+
   useFocusEffect(
     useCallback(() => {
       void cargarEstadoMercadoPago()
       void loadBiometricStatus()
-    }, [cargarEstadoMercadoPago, loadBiometricStatus])
+      void cargarRolUsuario()
+      void cargarIntereses()
+    }, [cargarEstadoMercadoPago, cargarIntereses, cargarRolUsuario, loadBiometricStatus])
   )
 
   const handleEnableBiometrics = useCallback(async () => {
@@ -418,17 +573,76 @@ export default function Configuraciones() {
           </TouchableOpacity>
         </View>
 
+        <View style={[styles.card, styles.interesesCard]}>
+          <Text style={styles.cardTitleActive}>Tasas de interés</Text>
+          <Text style={styles.cardTextActive}>
+            Administrá los porcentajes que se aplican según la cantidad de cuotas.
+          </Text>
+
+          {loadingIntereses ? (
+            <View style={styles.interesesLoading}>
+              <ActivityIndicator size="small" color="#60A5FA" />
+            </View>
+          ) : (
+            <ScrollView style={styles.interesesList} nestedScrollEnabled>
+              {interesesRows.map((row) => (
+                <View key={row.cuotas} style={styles.interesRow}>
+                  <Text style={styles.interesCuotaText}>{row.cuotas} cuota{row.cuotas > 1 ? 's' : ''}</Text>
+                  <View style={styles.interesInputWrap}>
+                    <TextInput
+                      value={row.porcentaje}
+                      onChangeText={(value) => onChangeInteres(row.cuotas, value)}
+                      editable={esAdmin}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="#64748B"
+                      style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, interesesErrors[row.cuotas] && styles.interesInputError]}
+                    />
+                    <Text style={styles.interesPercent}>%</Text>
+                  </View>
+                  <View style={styles.interesBadge}>
+                    <Text style={styles.interesBadgeText}>Activo</Text>
+                  </View>
+                  {interesesErrors[row.cuotas] ? (
+                    <Text style={styles.interesErrorText}>{interesesErrors[row.cuotas]}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {!esAdmin ? (
+            <Text style={styles.readonlyHint}>Solo un admin puede editar estas tasas.</Text>
+          ) : null}
+
+          <View style={styles.interesesButtons}>
+            <TouchableOpacity
+              style={[styles.saveInteresesButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
+              onPress={guardarIntereses}
+              disabled={!esAdmin || savingIntereses || loadingIntereses}
+            >
+              {savingIntereses ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar cambios</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.restoreInteresesButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
+              onPress={restaurarInteresesDefault}
+              disabled={!esAdmin || savingIntereses || loadingIntereses}
+            >
+              <Text style={styles.restoreInteresesButtonText}>Restaurar valores por defecto</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.interesesNotice}>
+            <Text style={styles.interesesNoticeText}>
+              Estos porcentajes se aplicarán automáticamente en nuevos préstamos.
+            </Text>
+          </View>
+        </View>
+
         <View style={[styles.card, styles.cardDisabled]}>
           <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
           <Text style={styles.cardTextDisabled}>
             Efectivo: habilitado. Transferencia: habilitada con validación. Mercado Pago: {badgeConectado ? 'conectado' : 'próximamente / pendiente de conexión'}.
-          </Text>
-        </View>
-
-        <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Preferencias avanzadas</Text>
-          <Text style={styles.cardTextDisabled}>
-            Próximamente: intereses por cuotas, límites, modalidades y reglas de mora automáticas.
           </Text>
         </View>
 
@@ -577,6 +791,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
+  interesesCard: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
   cardTitleActive: {
     color: '#FFFFFF',
     fontSize: 18,
@@ -602,6 +821,131 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  interesesLoading: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  interesesList: {
+    marginTop: 12,
+    maxHeight: 460,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 12,
+    backgroundColor: '#0F172A',
+    padding: 10,
+    gap: 8,
+  },
+  interesRow: {
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 10,
+    backgroundColor: '#111827',
+    padding: 10,
+    gap: 8,
+  },
+  interesCuotaText: {
+    color: '#E2E8F0',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  interesInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  interesInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    color: '#E2E8F0',
+    backgroundColor: '#020817',
+  },
+  interesInputReadonly: {
+    opacity: 0.65,
+  },
+  interesInputError: {
+    borderColor: '#DC2626',
+  },
+  interesPercent: {
+    color: '#93C5FD',
+    fontWeight: '800',
+  },
+  interesBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: '#052E16',
+    borderWidth: 1,
+    borderColor: '#166534',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  interesBadgeText: {
+    color: '#86EFAC',
+    fontWeight: '800',
+    fontSize: 11,
+  },
+  interesErrorText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  readonlyHint: {
+    marginTop: 10,
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  interesesButtons: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  saveInteresesButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    minHeight: 42,
+    minWidth: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveInteresesButtonText: {
+    color: '#DBEAFE',
+    fontWeight: '800',
+  },
+  restoreInteresesButton: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restoreInteresesButtonText: {
+    color: '#CBD5E1',
+    fontWeight: '700',
+  },
+  interesesNotice: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#7C3AED',
+    backgroundColor: '#2E1065',
+    borderRadius: 10,
+    padding: 10,
+  },
+  interesesNoticeText: {
+    color: '#E9D5FF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardDisabled: {
     backgroundColor: '#0F172A',
