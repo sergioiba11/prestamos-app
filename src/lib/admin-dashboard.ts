@@ -658,6 +658,9 @@ export type ClientePagoDetalleItem = {
   monto: number
   metodo: string
   estado: string
+  impactado: boolean
+  comprobanteUrl: string
+  tieneComprobante: boolean
   createdAt: string
 }
 
@@ -683,7 +686,7 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       .order('fecha_inicio', { ascending: false }),
     supabase
       .from('pagos')
-      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado')
+      .select('id,cliente_id,prestamo_id,monto,metodo,created_at,estado,impactado,comprobante_url')
       .order('created_at', { ascending: false }),
   ])
 
@@ -727,6 +730,9 @@ export async function fetchClienteDetalleConsolidado(clienteId: string): Promise
       monto: toNumber(pago.monto),
       metodo: pago.metodo || 'sin_metodo',
       estado: low(pago.estado) || 'pendiente_aprobacion',
+      impactado: Boolean(pago.impactado),
+      comprobanteUrl: String(pago.comprobante_url || ''),
+      tieneComprobante: Boolean(pago.impactado) && Boolean(String(pago.comprobante_url || '').trim()),
       createdAt: pago.created_at || '',
     }))
 

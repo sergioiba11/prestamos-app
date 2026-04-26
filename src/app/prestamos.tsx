@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
 import { badgePrestamo } from '../lib/statuses'
@@ -18,7 +18,11 @@ function formatDate(value?: string) {
 }
 
 export default function PrestamosScreen() {
+  const { width } = useWindowDimensions()
+  const mobile = width < 980
+
   const [loading, setLoading] = useState(true)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('admin')
   const [items, setItems] = useState<HistorialPrestamoItem[]>([])
@@ -26,6 +30,7 @@ export default function PrestamosScreen() {
   const [stateFilter, setStateFilter] = useState<'todos' | 'activos' | 'vencidos' | 'pagados'>('todos')
 
   const onNavigate = (key: AdminNavKey) => {
+    setShowMobileMenu(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
     if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
@@ -94,7 +99,17 @@ export default function PrestamosScreen() {
 
   return (
     <View style={styles.page}>
-      <AdminSidebar active="prestamos" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      {!mobile ? (
+        <AdminSidebar active="prestamos" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      ) : (
+        <View style={styles.mobileTopBar}>
+          <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
+            <Ionicons name="menu" size={24} color="#E2E8F0" />
+          </TouchableOpacity>
+          <Text style={styles.mobileTitle}>Préstamos</Text>
+          <View style={{ width: 24 }} />
+        </View>
+      )}
       <View style={styles.main}>
         {loading ? (
           <View style={styles.center}>
@@ -102,7 +117,7 @@ export default function PrestamosScreen() {
             <Text style={styles.loadingText}>Cargando préstamos...</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
             <Text style={styles.title}>Préstamos</Text>
             <Text style={styles.subtitle}>Vista operativa con detalle de estado, fechas y saldos.</Text>
 
@@ -159,6 +174,14 @@ export default function PrestamosScreen() {
                   <Ionicons name="open-outline" size={14} color="#93C5FD" />
                   <Text style={styles.cardLinkText}>Ver detalle del cliente / préstamo</Text>
                 </View>
+                {loan.comprobantePagoId ? (
+                  <TouchableOpacity
+                    style={styles.receiptButton}
+                    onPress={() => router.push(`/pago-aprobado?id=${loan.comprobantePagoId}` as any)}
+                  >
+                    <Text style={styles.receiptButtonText}>Ver comprobante</Text>
+                  </TouchableOpacity>
+                ) : null}
               </TouchableOpacity>
             ))}
 
@@ -166,6 +189,21 @@ export default function PrestamosScreen() {
           </ScrollView>
         )}
       </View>
+
+      <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
+          <AdminSidebar
+            active="prestamos"
+            adminName={adminName}
+            adminRole={adminRole}
+            onNavigate={onNavigate}
+            onLogout={onLogout}
+            mobile
+            onCloseMobile={() => setShowMobileMenu(false)}
+          />
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -173,6 +211,22 @@ export default function PrestamosScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   main: { flex: 1 },
+  mobileTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    height: 56,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: '#CBD5E1', marginTop: 10 },
   content: { padding: 16, gap: 10, paddingBottom: 30 },
@@ -193,5 +247,18 @@ const styles = StyleSheet.create({
   meta: { color: '#94A3B8', fontSize: 12 },
   cardLinkRow: { marginTop: 6, flexDirection: 'row', gap: 5, alignItems: 'center' },
   cardLinkText: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
+  receiptButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#0E1A35',
+  },
+  receiptButtonText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
   empty: { color: '#94A3B8' },
+  modalWrap: { flex: 1, flexDirection: 'row' },
+  overlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.55)' },
 })

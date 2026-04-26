@@ -171,6 +171,11 @@ export default function ClienteDetalleUnificadoScreen() {
                 <Text style={styles.itemTitle}>{date(pago.createdAt)} · {money(pago.monto)}</Text>
                 <Text style={styles.itemMeta}>Método: {pago.metodo || '—'} · Estado: {pago.estado || '—'}</Text>
                 <Text style={styles.itemMeta}>Préstamo: {pago.prestamoId || '—'}</Text>
+                {pago.tieneComprobante ? (
+                  <TouchableOpacity style={styles.receiptButton} onPress={() => router.push(`/pago-aprobado?id=${pago.id}` as any)}>
+                    <Text style={styles.receiptButtonText}>Ver comprobante</Text>
+                  </TouchableOpacity>
+                ) : null}
                 <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
                   <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
                 </View>
@@ -221,6 +226,17 @@ const styles = StyleSheet.create({
   itemMeta: { color: '#94A3B8' },
   badge: { borderWidth: 1, borderRadius: 999, alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4, marginTop: 6 },
   badgeText: { fontWeight: '700', fontSize: 11, textTransform: 'capitalize' },
+  receiptButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#0E1A35',
+  },
+  receiptButtonText: { color: '#DBEAFE', fontWeight: '700', fontSize: 12 },
   actionsRow: { gap: 8, marginTop: 2 },
   primaryBtn: { borderRadius: 10, backgroundColor: '#2563EB', paddingVertical: 12, alignItems: 'center' },
   primaryText: { color: '#fff', fontWeight: '800' },
