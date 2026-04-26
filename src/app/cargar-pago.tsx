@@ -544,6 +544,7 @@ export default function CargarPago() {
           estado
         `)
         .eq('prestamo_id', prestamoId)
+        .in('estado', ['pendiente', 'parcial'])
         .order('numero_cuota', { ascending: true })
 
       if (error) {
@@ -555,11 +556,7 @@ export default function CargarPago() {
 
       const lista = (data || []) as Cuota[]
       setCuotas(lista)
-      const cuotaInicial =
-        lista.find((cuota) => String(cuota.estado || '').toLowerCase() !== 'pagado') ||
-        lista[0] ||
-        null
-      setCuotaSeleccionada(cuotaInicial)
+      setCuotaSeleccionada(lista[0] || null)
       setCuotasPorPrestamo((prev) => ({ ...prev, [prestamoId]: lista }))
       setMonto('')
     } catch (error: any) {
