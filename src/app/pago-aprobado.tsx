@@ -290,20 +290,25 @@ export default function PagoAprobado() {
       cliente?.cedula ||
       'No registrado'
     )
-  const isEfectivo = metodo.toLowerCase() === 'efectivo'
+  const metodoNormalizado = metodo.toLowerCase().trim()
+  const isEfectivo = metodoNormalizado === 'efectivo'
+  const isPagoDigital = metodoNormalizado === 'transferencia' || metodoNormalizado === 'mercadopago' || metodoNormalizado === 'mercado_pago'
   const paymentMethodLabel =
-    metodo.toLowerCase() === 'mercadopago' || metodo.toLowerCase() === 'mercado_pago'
+    metodoNormalizado === 'mercadopago' || metodoNormalizado === 'mercado_pago'
       ? 'Mercado Pago'
       : metodo
         ? metodo[0]?.toUpperCase() + metodo.slice(1)
         : 'No informado'
+  const labelEntregado = isPagoDigital ? 'Monto transferido' : 'Monto entregado'
+  const montoEntregadoVisual = isPagoDigital ? montoAplicado : montoIngresado
 
   const computedVuelto = isEfectivo ? Math.max(0, Number((montoIngresado - montoAplicado).toFixed(2))) : 0
-  const vuelto = isEfectivo
+  const vueltoReal = isEfectivo
     ? Number.isFinite(Number(vueltoParam))
       ? Number(vueltoParam)
       : computedVuelto
     : 0
+  const vueltoVisual = isPagoDigital ? 0 : vueltoReal
 
   const cuotasDetalleNormalizadas = useMemo(() => {
     if (cuotasImpactadasDetalleDb.length > 0) return cuotasImpactadasDetalleDb
@@ -807,12 +812,12 @@ export default function PagoAprobado() {
                   <Text style={styles.summaryValue}>{formatCurrencyArs(montoAplicado)}</Text>
                 </View>
                 <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Entregado</Text>
-                  <Text style={styles.summaryValue}>{formatCurrencyArs(montoIngresado)}</Text>
+                  <Text style={styles.summaryLabel}>{labelEntregado}</Text>
+                  <Text style={styles.summaryValue}>{formatCurrencyArs(montoEntregadoVisual)}</Text>
                 </View>
                 <View style={[styles.summaryCard, styles.summaryCardVuelto]}>
                   <Text style={styles.summaryLabelVuelto}>Vuelto 💵</Text>
-                  <Text style={styles.summaryValueVuelto}>{formatCurrencyArs(vuelto)}</Text>
+                  <Text style={styles.summaryValueVuelto}>{formatCurrencyArs(vueltoVisual)}</Text>
                 </View>
               </View>
             </View>
