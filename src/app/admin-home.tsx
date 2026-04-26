@@ -26,7 +26,8 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from '../lib/activity'
-import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
+import { buildAprobacionRedirect, invocarAprobarPago } from '../lib/aprobar-pago'
+import { supabase } from '../lib/supabase'
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
@@ -190,46 +191,15 @@ export default function AdminHome() {
     try {
       setProcessingPaymentId(pagoId)
 
-      const { error: refreshError } = await supabase.auth.refreshSession()
-      if (refreshError) throw refreshError
-
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) throw sessionError
-
-      const token = sessionData.session?.access_token
-      if (!token) throw new Error('No hay sesión activa')
-
-      const response = await fetch(`${supabaseUrl}/functions/v1/aprobar-pago`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey,
-        },
-        body: JSON.stringify({
-          pago_id: pagoId,
-          accion,
-        }),
+      const result = await invocarAprobarPago({
+        pago_id: pagoId,
+        accion,
       })
-
-      let json: any = null
-      try {
-        json = await response.json()
-      } catch {
-        json = null
-      }
-
-      console.log('aprobar status:', response.status)
-      console.log('respuesta:', json)
-
-      if (!response.ok) {
-        throw new Error(json?.error || `Error HTTP ${response.status}`)
-      }
 
       await loadData()
 
       if (accion === 'aprobar') {
-        router.push(`/pago-aprobado?pago_id=${encodeURIComponent(String(json?.pago_id || pagoId))}` as any)
+        router.push(buildAprobacionRedirect(result, pagoId) as any)
       }
     } catch (error: any) {
       console.error(error)

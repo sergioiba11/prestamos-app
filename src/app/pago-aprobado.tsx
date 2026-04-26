@@ -248,7 +248,12 @@ export default function PagoAprobado() {
   const prestamoId = String(prestamo?.id || pago?.prestamo_id || '')
   const clienteId = String(cliente?.id || pago?.cliente_id || '')
   const pagoIdParam = Array.isArray(params.pago_id) ? params.pago_id[0] : params.pago_id
-  const pagoId = typeof pagoIdParam === 'string' ? pagoIdParam.trim() : ''
+  const pagoIdAliasParam = Array.isArray(params.id) ? params.id[0] : params.id
+  const pagoId = typeof pagoIdParam === 'string' && pagoIdParam.trim()
+    ? pagoIdParam.trim()
+    : typeof pagoIdAliasParam === 'string'
+      ? pagoIdAliasParam.trim()
+      : ''
   const pagoInternoId = String(pago?.id || '')
   const fechaRaw = String(pago?.fecha_pago || pago?.created_at || '')
   const fechaFormateada = formatDateTimeLocal(fechaRaw)
@@ -826,13 +831,13 @@ export default function PagoAprobado() {
               <View style={styles.row}><Text style={styles.rowLabel}>Deuda restante del préstamo</Text><Text style={styles.rowValue}>{saldoRestante <= 0 ? 'Préstamo saldado' : formatCurrencyArs(saldoRestante)}</Text></View>
             </View>
 
-            {moraResumen.monto > 0 ? (
+            {(moraResumen.dias > 0 || moraResumen.porcentaje > 0 || moraResumen.monto > 0) ? (
               <View style={[styles.section, styles.moraSection]}>
                 <Text style={styles.sectionTitle}>Mora</Text>
                 <View style={styles.row}><Text style={styles.rowLabel}>Días de atraso</Text><Text style={styles.rowValue}>{moraResumen.dias}</Text></View>
                 <View style={styles.row}><Text style={styles.rowLabel}>Porcentaje de mora</Text><Text style={styles.rowValue}>{moraResumen.porcentaje.toFixed(2)}%</Text></View>
                 <View style={styles.row}><Text style={styles.rowLabel}>Monto de mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.monto)}</Text></View>
-                <View style={styles.row}><Text style={styles.rowLabel}>Total abonado con mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.total)}</Text></View>
+                <View style={styles.row}><Text style={styles.rowLabel}>Total con mora</Text><Text style={styles.rowValue}>{formatCurrencyArs(moraResumen.total)}</Text></View>
               </View>
             ) : null}
 
