@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -44,8 +44,12 @@ type MoraRow = {
   porcentaje_diario: string
 }
 
+type AccordionKey = 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'opciones-avanzadas'
+
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
+const DAILY_INTEREST_DAYS_RANGE = 365
+const DAILY_INTERES_DEFAULT = 2
 
 export default function Configuraciones() {
   const { session } = useAuth()
@@ -66,10 +70,19 @@ export default function Configuraciones() {
   const [interesesErrors, setInteresesErrors] = useState<Record<number, string>>({})
   const [loadingIntereses, setLoadingIntereses] = useState(true)
   const [savingIntereses, setSavingIntereses] = useState(false)
+  const [dailyInterestBase, setDailyInterestBase] = useState(String(DAILY_INTERES_DEFAULT))
+  const [dailyInterestError, setDailyInterestError] = useState('')
   const [moraRows, setMoraRows] = useState<MoraRow[]>([])
   const [moraErrors, setMoraErrors] = useState<Record<string, string>>({})
   const [loadingMora, setLoadingMora] = useState(true)
   const [savingMora, setSavingMora] = useState(false)
+  const [openSections, setOpenSections] = useState<Record<AccordionKey, boolean>>({
+    'datos-negocio': true,
+    'tasas-interes': false,
+    'mora-atraso': false,
+    'opciones-avanzadas': false,
+  })
+  const [selectedCuotaMobile, setSelectedCuotaMobile] = useState(1)
 
   const loadBiometricStatus = useCallback(async () => {
     if (!session?.user?.id) {
@@ -186,18 +199,25 @@ export default function Configuraciones() {
     try {
       const { data, error } = await supabase
         .from('config_intereses')
-        .select('plazo, porcentaje')
-        .eq('tipo', 'mensual')
+        .select('tipo, plazo, porcentaje')
         .eq('activo', true)
         .order('plazo', { ascending: true })
 
       if (error || !data || data.length === 0) return
 
       const porCuota = new Map<number, string>()
+      const interesesDiarios = new Map<number, number>()
       for (const item of data as any[]) {
+        const tipo = String(item?.tipo || '').toLowerCase()
         const cuota = Number(item?.plazo || 0)
-        if (!cuota || cuota < 1 || cuota > 36) continue
-        porCuota.set(cuota, String(Number(item?.porcentaje || 0)))
+        if (!cuota || cuota < 1) continue
+        if (tipo === 'mensual') {
+          if (cuota > 36) continue
+          porCuota.set(cuota, String(Number(item?.porcentaje || 0)))
+        }
+        if (tipo === 'diario') {
+          interesesDiarios.set(cuota, Number(item?.porcentaje || 0))
+        }
       }
 
       setInteresesRows(
@@ -206,6 +226,13 @@ export default function Configuraciones() {
           return { cuotas: cuota, porcentaje: porCuota.get(cuota) ?? String(INTERESES_MENSUALES_DEFAULT[cuota] ?? 0) }
         })
       )
+
+      const dailyBaseFromConfig = interesesDiarios.get(1)
+      if (typeof dailyBaseFromConfig === 'number' && Number.isFinite(dailyBaseFromConfig)) {
+        setDailyInterestBase(String(dailyBaseFromConfig))
+      } else {
+        setDailyInterestBase(String(DAILY_INTERES_DEFAULT))
+      }
     } finally {
       setLoadingIntereses(false)
     }
@@ -226,6 +253,16 @@ export default function Configuraciones() {
     const cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
     setInteresesRows((prev) => prev.map((row) => (row.cuotas === cuotas ? { ...row, porcentaje: cleaned } : row)))
     setInteresesErrors((prev) => ({ ...prev, [cuotas]: '' }))
+  }
+
+  const onChangeDailyInterestBase = (value: string) => {
+    const cleaned = value.replace(',', '.').replace(/[^0-9.]/g, '')
+    setDailyInterestBase(cleaned)
+    setDailyInterestError('')
+  }
+
+  const toggleSection = (section: AccordionKey) => {
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
   const validarIntereses = useCallback(() => {
@@ -250,8 +287,27 @@ export default function Configuraciones() {
       }
     }
     setInteresesErrors(errors)
+    const dailyRaw = String(dailyInterestBase || '').trim()
+    const dailyValue = Number(dailyRaw)
+    if (dailyRaw === '') {
+      setDailyInterestError('Requerido')
+      return false
+    }
+    if (!Number.isFinite(dailyValue)) {
+      setDailyInterestError('Número inválido')
+      return false
+    }
+    if (dailyValue < 0) {
+      setDailyInterestError('Debe ser >= 0')
+      return false
+    }
+    if (dailyValue > 100) {
+      setDailyInterestError('Máximo 100')
+      return false
+    }
+    setDailyInterestError('')
     return Object.keys(errors).length === 0
-  }, [interesesRows])
+  }, [dailyInterestBase, interesesRows])
 
   const guardarIntereses = useCallback(async () => {
     if (!esAdmin || savingIntereses) return
@@ -262,15 +318,26 @@ export default function Configuraciones() {
 
     setSavingIntereses(true)
     try {
-      const payload = interesesRows.map((row) => ({
+      const payloadMensual = interesesRows.map((row) => ({
         tipo: 'mensual',
         plazo: row.cuotas,
         porcentaje: Number(Number(row.porcentaje).toFixed(2)),
         activo: true,
         updated_at: new Date().toISOString(),
       }))
+      const dailyBase = Number(Number(dailyInterestBase).toFixed(4))
+      const payloadDiario = Array.from({ length: DAILY_INTEREST_DAYS_RANGE }, (_, idx) => {
+        const day = idx + 1
+        return {
+          tipo: 'diario',
+          plazo: day,
+          porcentaje: Number((dailyBase * day).toFixed(2)),
+          activo: true,
+          updated_at: new Date().toISOString(),
+        }
+      })
 
-      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,plazo' })
+      const { error } = await supabase.from('config_intereses').upsert([...payloadMensual, ...payloadDiario], { onConflict: 'tipo,plazo' })
       if (error) throw error
       Alert.alert('Listo', 'Tasas de interés guardadas.')
     } catch (error: any) {
@@ -278,7 +345,7 @@ export default function Configuraciones() {
     } finally {
       setSavingIntereses(false)
     }
-  }, [esAdmin, interesesRows, savingIntereses, validarIntereses])
+  }, [dailyInterestBase, esAdmin, interesesRows, savingIntereses, validarIntereses])
 
   const restaurarInteresesDefault = useCallback(async () => {
     if (!esAdmin || savingIntereses) return
@@ -287,14 +354,25 @@ export default function Configuraciones() {
     setInteresesErrors({})
     setSavingIntereses(true)
     try {
-      const payload = defaults.map((row) => ({
+      const payloadMensual = defaults.map((row) => ({
         tipo: 'mensual',
         plazo: row.cuotas,
         porcentaje: Number(Number(row.porcentaje).toFixed(2)),
         activo: true,
         updated_at: new Date().toISOString(),
       }))
-      const { error } = await supabase.from('config_intereses').upsert(payload, { onConflict: 'tipo,plazo' })
+      const payloadDiario = Array.from({ length: DAILY_INTEREST_DAYS_RANGE }, (_, idx) => {
+        const day = idx + 1
+        return {
+          tipo: 'diario',
+          plazo: day,
+          porcentaje: Number((DAILY_INTERES_DEFAULT * day).toFixed(2)),
+          activo: true,
+          updated_at: new Date().toISOString(),
+        }
+      })
+      setDailyInterestBase(String(DAILY_INTERES_DEFAULT))
+      const { error } = await supabase.from('config_intereses').upsert([...payloadMensual, ...payloadDiario], { onConflict: 'tipo,plazo' })
       if (error) throw error
       Alert.alert('Listo', 'Se restauraron los valores por defecto.')
     } catch (error: any) {
@@ -551,6 +629,10 @@ export default function Configuraciones() {
           ? 'No tenés biometría configurada en este dispositivo.'
           : 'Podés activar huella o rostro para ingreso rápido.'
   const isWeb = Platform.OS === 'web'
+  const selectedInteresMobile = useMemo(
+    () => interesesRows.find((row) => row.cuotas === selectedCuotaMobile) ?? interesesRows[0],
+    [interesesRows, selectedCuotaMobile]
+  )
 
   return (
     <View style={styles.screen}>
@@ -615,211 +697,187 @@ export default function Configuraciones() {
           </View>
         </View>
 
-        <View style={[styles.card, styles.cardActive]}>
-          <Text style={styles.cardTitleActive}>Ingreso con biometría</Text>
-          <Text style={styles.cardTextActive}>{biometricMessage}</Text>
-
-          <View style={styles.buttonRow}>
-            {biometricStatus === 'enabled' ? (
-              <TouchableOpacity
-                style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]}
-                onPress={handleDisableBiometrics}
-                disabled={updatingBiometric}
-              >
-                {updatingBiometric ? (
-                  <ActivityIndicator size="small" color="#FECACA" />
-                ) : (
-                  <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[
-                  styles.connectButton,
-                  (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric)
-                    ? styles.connectButtonDisabled
-                    : null,
-                ]}
-                onPress={handleEnableBiometrics}
-                disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}
-              >
-                {updatingBiometric ? (
-                  <ActivityIndicator size="small" color="#082F49" />
-                ) : (
-                  <Text style={styles.connectButtonText}>Activar biometría</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.card, styles.cardActive]}
-          onPress={() => router.push('/cambiar-password')}
-        >
-          <Text style={styles.cardTitleActive}>Seguridad</Text>
-          <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
-        </TouchableOpacity>
-
-        <View style={[styles.card, styles.cardActive]}>
-          <Text style={styles.cardTitleActive}>Datos del negocio y branding</Text>
-          <View style={styles.businessGrid}>
-            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-              <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
-            </View>
-            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-              <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
-            </View>
-            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-              <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
-            </View>
-            <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-              <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
-            </View>
-          </View>
-          <View style={styles.preferenceRow}>
-            <Text style={styles.cardTextActive}>Enviar comprobante por SMS</Text>
-            <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
-          </View>
-          <TouchableOpacity style={[styles.connectButton, styles.businessSaveButton, !isWeb && styles.mobileFullButton]} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
-            {savingBusinessData ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar configuración</Text>}
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('datos-negocio')} activeOpacity={0.85}>
+            <Text style={styles.accordionTitle}>Datos del negocio</Text>
+            <Text style={styles.accordionChevron}>{openSections['datos-negocio'] ? '−' : '+'}</Text>
           </TouchableOpacity>
+          {openSections['datos-negocio'] ? (
+            <View style={[styles.card, styles.cardActive, styles.accordionBody]}>
+              <View style={styles.businessGrid}>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
+                </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
+                </View>
+              </View>
+              <View style={styles.preferenceRow}>
+                <Text style={styles.cardTextActive}>Enviar comprobante por SMS</Text>
+                <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
+              </View>
+              <TouchableOpacity style={[styles.connectButton, styles.businessSaveButton, !isWeb && styles.mobileFullButton]} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
+                {savingBusinessData ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar configuración</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
-        <View style={[styles.card, styles.interesesCard]}>
-          <Text style={styles.cardTitleActive}>Tasas de interés mensual</Text>
-          <Text style={styles.cardTextActive}>
-            Administrá los porcentajes que se aplican según la cantidad de cuotas.
-          </Text>
-
-          {loadingIntereses ? (
-            <View style={styles.interesesLoading}>
-              <ActivityIndicator size="small" color="#60A5FA" />
-            </View>
-          ) : (
-            <View style={styles.interesesGrid}>
-              {interesesRows.map((row) => (
-                <View key={row.cuotas} style={[styles.interesRow, isWeb && styles.interesRowWeb]}>
-                  <Text style={styles.interesCuotaText}>{row.cuotas} cuota{row.cuotas > 1 ? 's' : ''}</Text>
-                  <View style={styles.interesInputWrap}>
-                    <TextInput
-                      value={row.porcentaje}
-                      onChangeText={(value) => onChangeInteres(row.cuotas, value)}
-                      editable={esAdmin}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor="#64748B"
-                      style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, interesesErrors[row.cuotas] && styles.interesInputError]}
-                    />
-                    <Text style={styles.interesPercent}>%</Text>
-                  </View>
-                  <View style={styles.interesBadge}>
-                    <Text style={styles.interesBadgeText}>Activo</Text>
-                  </View>
-                  {interesesErrors[row.cuotas] ? (
-                    <Text style={styles.interesErrorText}>{interesesErrors[row.cuotas]}</Text>
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('tasas-interes')} activeOpacity={0.85}>
+            <Text style={styles.accordionTitle}>Tasas de interés</Text>
+            <Text style={styles.accordionChevron}>{openSections['tasas-interes'] ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSections['tasas-interes'] ? (
+            <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
+              <Text style={styles.cardTitleActive}>Préstamos mensuales</Text>
+              <Text style={styles.cardTextActive}>Administrá los porcentajes por cantidad de cuotas.</Text>
+              {loadingIntereses ? (
+                <View style={styles.interesesLoading}><ActivityIndicator size="small" color="#60A5FA" /></View>
+              ) : isWeb ? (
+                <View style={styles.interesesGrid}>
+                  {interesesRows.map((row) => (
+                    <View key={row.cuotas} style={[styles.interesRow, styles.interesRowWeb]}>
+                      <Text style={styles.interesCuotaText}>{row.cuotas} cuota{row.cuotas > 1 ? 's' : ''}</Text>
+                      <View style={styles.interesInputWrap}>
+                        <TextInput value={row.porcentaje} onChangeText={(value) => onChangeInteres(row.cuotas, value)} editable={esAdmin} keyboardType="numeric" placeholder="0" placeholderTextColor="#64748B" style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, interesesErrors[row.cuotas] && styles.interesInputError]} />
+                        <Text style={styles.interesPercent}>%</Text>
+                      </View>
+                      {!!interesesErrors[row.cuotas] && <Text style={styles.interesErrorText}>{interesesErrors[row.cuotas]}</Text>}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.mobileInteresCompact}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cuotasChipsContainer}>
+                    {interesesRows.map((row) => (
+                      <TouchableOpacity key={row.cuotas} onPress={() => setSelectedCuotaMobile(row.cuotas)} style={[styles.cuotaChip, selectedCuotaMobile === row.cuotas && styles.cuotaChipActive]}>
+                        <Text style={[styles.cuotaChipText, selectedCuotaMobile === row.cuotas && styles.cuotaChipTextActive]}>{row.cuotas}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {selectedInteresMobile ? (
+                    <View style={styles.interesRow}>
+                      <Text style={styles.interesCuotaText}>Cuota {selectedInteresMobile.cuotas}</Text>
+                      <View style={styles.interesInputWrap}>
+                        <TextInput value={selectedInteresMobile.porcentaje} onChangeText={(value) => onChangeInteres(selectedInteresMobile.cuotas, value)} editable={esAdmin} keyboardType="numeric" placeholder="0" placeholderTextColor="#64748B" style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, interesesErrors[selectedInteresMobile.cuotas] && styles.interesInputError]} />
+                        <Text style={styles.interesPercent}>%</Text>
+                      </View>
+                      {!!interesesErrors[selectedInteresMobile.cuotas] && <Text style={styles.interesErrorText}>{interesesErrors[selectedInteresMobile.cuotas]}</Text>}
+                    </View>
                   ) : null}
                 </View>
-              ))}
-            </View>
-          )}
+              )}
 
-          {!esAdmin ? (
-            <Text style={styles.readonlyHint}>Solo un admin puede editar estas tasas.</Text>
-          ) : null}
-
-          <View style={styles.interesesButtons}>
-            <TouchableOpacity
-              style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
-              onPress={guardarIntereses}
-              disabled={!esAdmin || savingIntereses || loadingIntereses}
-            >
-              {savingIntereses ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar cambios</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.restoreInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]}
-              onPress={restaurarInteresesDefault}
-              disabled={!esAdmin || savingIntereses || loadingIntereses}
-            >
-              <Text style={styles.restoreInteresesButtonText}>Restaurar valores por defecto</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.interesesNotice}>
-            <Text style={styles.interesesNoticeText}>
-              Estos porcentajes se aplicarán automáticamente en nuevos préstamos.
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.card, styles.interesesCard]}>
-          <Text style={styles.cardTitleActive}>Mora por atraso</Text>
-          <Text style={styles.cardTextActive}>
-            Configurá el porcentaje diario por tramo para cuotas vencidas.
-          </Text>
-
-          {loadingMora ? (
-            <View style={styles.interesesLoading}>
-              <ActivityIndicator size="small" color="#60A5FA" />
-            </View>
-          ) : (
-            <View style={styles.moraList}>
-              {moraRows.map((row) => {
-                const etiqueta =
-                  row.tramo === 'gracia'
-                    ? 'Días 1 a 3'
-                    : row.tramo === 'mora_normal'
-                      ? 'Días 4 a 10'
-                      : 'Día 11 en adelante'
-                return (
-                  <View key={row.tramo} style={[styles.interesRow, isWeb && styles.moraRowWeb]}>
-                    <Text style={styles.interesCuotaText}>{etiqueta}</Text>
-                    <View style={styles.interesInputWrap}>
-                      <TextInput
-                        value={row.porcentaje_diario}
-                        onChangeText={(value) => onChangeMora(row.tramo, value)}
-                        editable={esAdmin}
-                        keyboardType="numeric"
-                        placeholder="0"
-                        placeholderTextColor="#64748B"
-                        style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, moraErrors[row.tramo] && styles.interesInputError]}
-                      />
-                      <Text style={styles.interesPercent}>% diario</Text>
-                    </View>
-                    {moraErrors[row.tramo] ? <Text style={styles.interesErrorText}>{moraErrors[row.tramo]}</Text> : null}
+              <View style={styles.dailySection}>
+                <Text style={styles.cardTitleActive}>Préstamos diarios</Text>
+                <Text style={styles.cardTextActive}>Definí una tasa diaria base. Se aplica como interés total = tasa diaria × días.</Text>
+                <View style={styles.interesRow}>
+                  <Text style={styles.interesCuotaText}>Tasa diaria base</Text>
+                  <View style={styles.interesInputWrap}>
+                    <TextInput value={dailyInterestBase} onChangeText={onChangeDailyInterestBase} editable={esAdmin} keyboardType="numeric" placeholder="0" placeholderTextColor="#64748B" style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, !!dailyInterestError && styles.interesInputError]} />
+                    <Text style={styles.interesPercent}>% diario</Text>
                   </View>
-                )
-              })}
+                  {!!dailyInterestError && <Text style={styles.interesErrorText}>{dailyInterestError}</Text>}
+                </View>
+              </View>
+
+              {!esAdmin ? <Text style={styles.readonlyHint}>Solo un admin puede editar estas tasas.</Text> : null}
+              <View style={styles.interesesButtons}>
+                <TouchableOpacity style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]} onPress={guardarIntereses} disabled={!esAdmin || savingIntereses || loadingIntereses}>
+                  {savingIntereses ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar cambios</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.restoreInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingIntereses || loadingIntereses) && styles.connectButtonDisabled]} onPress={restaurarInteresesDefault} disabled={!esAdmin || savingIntereses || loadingIntereses}>
+                  <Text style={styles.restoreInteresesButtonText}>Restaurar valores por defecto</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
-
-          {!esAdmin ? (
-            <Text style={styles.readonlyHint}>Solo un admin puede editar la mora por atraso.</Text>
           ) : null}
-
-          <View style={styles.interesesButtons}>
-            <TouchableOpacity
-              style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingMora || loadingMora) && styles.connectButtonDisabled]}
-              onPress={guardarMora}
-              disabled={!esAdmin || savingMora || loadingMora}
-            >
-              {savingMora ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar mora</Text>}
-            </TouchableOpacity>
-          </View>
         </View>
 
-        <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
-          <Text style={styles.cardTextDisabled}>
-            Efectivo: habilitado. Transferencia: habilitada con validación. Mercado Pago: {badgeConectado ? 'conectado' : 'próximamente / pendiente de conexión'}.
-          </Text>
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('mora-atraso')} activeOpacity={0.85}>
+            <Text style={styles.accordionTitle}>Mora por atraso</Text>
+            <Text style={styles.accordionChevron}>{openSections['mora-atraso'] ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSections['mora-atraso'] ? (
+            <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
+              <Text style={styles.cardTextActive}>Configurá el porcentaje diario por tramo para cuotas vencidas.</Text>
+              {loadingMora ? (
+                <View style={styles.interesesLoading}><ActivityIndicator size="small" color="#60A5FA" /></View>
+              ) : (
+                <View style={styles.moraList}>
+                  {moraRows.map((row) => {
+                    const etiqueta = row.tramo === 'gracia' ? 'Días 1 a 3' : row.tramo === 'mora_normal' ? 'Días 4 a 10' : 'Día 11 en adelante'
+                    return (
+                      <View key={row.tramo} style={[styles.interesRow, isWeb && styles.moraRowWeb]}>
+                        <Text style={styles.interesCuotaText}>{etiqueta}</Text>
+                        <View style={styles.interesInputWrap}>
+                          <TextInput value={row.porcentaje_diario} onChangeText={(value) => onChangeMora(row.tramo, value)} editable={esAdmin} keyboardType="numeric" placeholder="0" placeholderTextColor="#64748B" style={[styles.interesInput, !esAdmin && styles.interesInputReadonly, moraErrors[row.tramo] && styles.interesInputError]} />
+                          <Text style={styles.interesPercent}>% diario</Text>
+                        </View>
+                        {!!moraErrors[row.tramo] && <Text style={styles.interesErrorText}>{moraErrors[row.tramo]}</Text>}
+                      </View>
+                    )
+                  })}
+                </View>
+              )}
+              {!esAdmin ? <Text style={styles.readonlyHint}>Solo un admin puede editar la mora por atraso.</Text> : null}
+              <View style={styles.interesesButtons}>
+                <TouchableOpacity style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, (!esAdmin || savingMora || loadingMora) && styles.connectButtonDisabled]} onPress={guardarMora} disabled={!esAdmin || savingMora || loadingMora}>
+                  {savingMora ? <ActivityIndicator size="small" color="#DBEAFE" /> : <Text style={styles.saveInteresesButtonText}>Guardar mora</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
         </View>
 
-        <View style={[styles.card, styles.cardDisabled]}>
-          <Text style={styles.cardTitleDisabled}>Integración Mercado Pago</Text>
-          <Text style={styles.cardTextDisabled}>
-            Próximamente: conciliación automática, webhook de estados y reportes por canal de cobro.
-          </Text>
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={styles.accordionHeader} onPress={() => toggleSection('opciones-avanzadas')} activeOpacity={0.85}>
+            <Text style={styles.accordionTitle}>Opciones avanzadas</Text>
+            <Text style={styles.accordionChevron}>{openSections['opciones-avanzadas'] ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSections['opciones-avanzadas'] ? (
+            <View style={styles.accordionBody}>
+              <View style={[styles.card, styles.cardActive]}>
+                <Text style={styles.cardTitleActive}>Ingreso con biometría</Text>
+                <Text style={styles.cardTextActive}>{biometricMessage}</Text>
+                <View style={styles.buttonRow}>
+                  {biometricStatus === 'enabled' ? (
+                    <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
+                      {updatingBiometric ? <ActivityIndicator size="small" color="#FECACA" /> : <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>}
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={[styles.connectButton, (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric) ? styles.connectButtonDisabled : null]} onPress={handleEnableBiometrics} disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}>
+                      {updatingBiometric ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Activar biometría</Text>}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity style={[styles.card, styles.cardActive]} onPress={() => router.push('/cambiar-password')}>
+                <Text style={styles.cardTitleActive}>Seguridad</Text>
+                <Text style={styles.cardTextActive}>Cambiar contraseña de tu cuenta</Text>
+              </TouchableOpacity>
+              <View style={[styles.card, styles.cardDisabled]}>
+                <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
+                <Text style={styles.cardTextDisabled}>
+                  Efectivo: habilitado. Transferencia: habilitada con validación. Mercado Pago: {badgeConectado ? 'conectado' : 'próximamente / pendiente de conexión'}.
+                </Text>
+              </View>
+              <View style={[styles.card, styles.cardDisabled]}>
+                <Text style={styles.cardTitleDisabled}>Integración Mercado Pago</Text>
+                <Text style={styles.cardTextDisabled}>
+                  Próximamente: conciliación automática, webhook de estados y reportes por canal de cobro.
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </View>
         </View>
       </ScrollView>
@@ -870,6 +928,35 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 22,
     marginBottom: 20,
+  },
+  accordionSection: {
+    marginBottom: 14,
+  },
+  accordionHeader: {
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  accordionTitle: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  accordionChevron: {
+    color: '#93C5FD',
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: -2,
+  },
+  accordionBody: {
+    marginTop: 10,
+    marginBottom: 0,
   },
   mpCard: {
     backgroundColor: '#0F172A',
@@ -1027,6 +1114,32 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginHorizontal: -6,
   },
+  mobileInteresCompact: {
+    marginTop: 12,
+  },
+  cuotasChipsContainer: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  cuotaChip: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#0B1220',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  cuotaChipActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#1E3A8A',
+  },
+  cuotaChipText: {
+    color: '#CBD5E1',
+    fontWeight: '700',
+  },
+  cuotaChipTextActive: {
+    color: '#DBEAFE',
+  },
   moraList: {
     marginTop: 12,
     flexDirection: 'row',
@@ -1106,6 +1219,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: '#94A3B8',
     fontSize: 12,
+  },
+  dailySection: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#233047',
+    paddingTop: 14,
   },
   interesesButtons: {
     marginTop: 14,
