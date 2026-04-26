@@ -1018,7 +1018,6 @@ export default function CargarPago() {
         monto_ingresado: Number(montoNormalizado.toFixed(2)),
         metodo: normalizarMetodoPago(metodo),
         comprobante: metodo === 'transferencia' ? comprobante.trim() || null : null,
-        comprobante_url: metodo === 'transferencia' ? comprobante.trim() || null : null,
         mp_preference_id:
           metodo === 'mp' ? mpData?.preference_id || null : null,
         aplicar_a_multiples: aplicarAMultiples,

@@ -32,6 +32,7 @@ export default function ClienteDetalleUnificadoScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [detalle, setDetalle] = useState<ClienteDetalleConsolidado | null>(null)
+  const prestamosPagados = detalle?.historialPrestamos.filter((prestamo) => prestamo.estado === 'pagado') || []
 
   const cargar = useCallback(async () => {
     try {
@@ -117,12 +118,10 @@ export default function ClienteDetalleUnificadoScreen() {
         <Text style={styles.meta}>DNI: {detalle.cliente.dni}</Text>
         <Text style={styles.meta}>Teléfono: {detalle.cliente.telefono}</Text>
         <Text style={styles.meta}>Email: {detalle.cliente.email}</Text>
-        <Text style={styles.meta}>Préstamos activos (panel): {detalle.cliente.cantidadPrestamosActivos}</Text>
-        <Text style={styles.meta}>Préstamos activos (detalle): {detalle.prestamosActivos.length}</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Préstamos activos reales</Text>
+        <Text style={styles.sectionTitle}>Préstamos activos</Text>
         {detalle.prestamosActivos.length === 0 ? (
           <Text style={styles.empty}>No hay préstamos activos para este cliente.</Text>
         ) : (
@@ -134,8 +133,8 @@ export default function ClienteDetalleUnificadoScreen() {
                 <Text style={styles.itemMeta}>Estado: {prestamo.estado}</Text>
                 <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)}</Text>
                 <Text style={styles.itemMeta}>Total: {money(prestamo.totalAPagar)}</Text>
-                <Text style={styles.itemMeta}>Saldo pendiente: {money(prestamo.saldoPendiente)}</Text>
-                <Text style={styles.itemMeta}>Inicio: {date(prestamo.fechaInicio)} · Límite: {date(prestamo.fechaLimite)}</Text>
+                <Text style={styles.itemMeta}>Restante: {money(prestamo.saldoPendiente)}</Text>
+                <Text style={styles.itemMeta}>Próxima cuota: {date(prestamo.proximaCuota)}</Text>
                 <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
                   <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
                 </View>
@@ -146,15 +145,14 @@ export default function ClienteDetalleUnificadoScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Historial de préstamos</Text>
-        {detalle.historialPrestamos.length === 0 ? (
-          <Text style={styles.empty}>Sin préstamos registrados.</Text>
+        <Text style={styles.sectionTitle}>Préstamos pagados</Text>
+        {prestamosPagados.length === 0 ? (
+          <Text style={styles.empty}>Sin préstamos pagados registrados.</Text>
         ) : (
-          detalle.historialPrestamos.map((prestamo) => (
+          prestamosPagados.map((prestamo) => (
             <View key={prestamo.id} style={styles.item}>
-              <Text style={styles.itemTitle}>#{prestamo.id.slice(0, 8)} · {prestamo.estado}</Text>
+              <Text style={styles.itemTitle}>#{prestamo.id.slice(0, 8)} · pagado</Text>
               <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)} · Total: {money(prestamo.totalAPagar)}</Text>
-              <Text style={styles.itemMeta}>Saldo: {money(prestamo.saldoPendiente)} · Inicio: {date(prestamo.fechaInicio)}</Text>
             </View>
           ))
         )}

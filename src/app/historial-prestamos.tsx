@@ -128,7 +128,7 @@ export default function HistorialPrestamosScreen() {
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color="#3B82F6" size="large" />
-            <Text style={styles.loadingText}>Cargando historial...</Text>
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando historial...</Text>
           </View>
         ) : (
           <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>

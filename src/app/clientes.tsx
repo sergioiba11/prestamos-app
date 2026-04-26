@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { ClienteAdminListadoItem, fetchAdminClientesListado } from '../lib/admin-dashboard'
+import { useAppTheme } from '../context/AppThemeContext'
 import { safeGoBack } from '../lib/navigation'
 
 function formatearMoneda(valor: number) {
@@ -38,6 +39,8 @@ function isClienteConPrestamoActivo(cliente: ClienteAdminListadoItem) {
 }
 
 export default function ClientesScreen() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [clientes, setClientes] = useState<ClienteAdminListadoItem[]>([])
@@ -110,15 +113,15 @@ export default function ClientesScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator color="#3B82F6" size="large" />
-        <Text style={styles.loadingText}>Cargando clientes...</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando clientes...</Text>
       </View>
     )
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <LinearGradient colors={['#0F172A', '#1E3A8A', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>Administración</Text>
@@ -130,16 +133,16 @@ export default function ClientesScreen() {
         </TouchableOpacity>
       </LinearGradient>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text style={[styles.errorText, { color: theme.isLight ? '#B91C1C' : '#FCA5A5' }]}>{error}</Text> : null}
 
       <View style={styles.searchContainer}>
-        <Text style={styles.searchLabel}>Buscar por nombre, DNI, email o teléfono</Text>
+        <Text style={[styles.searchLabel, { color: colors.textSecondary }]}>Buscar por nombre, DNI, email o teléfono</Text>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
           value={busqueda}
           onChangeText={setBusqueda}
           placeholder="Ej: María / 30123456 / correo@dominio.com"
-          placeholderTextColor="#64748B"
+          placeholderTextColor={colors.textSecondary}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
@@ -168,9 +171,9 @@ export default function ClientesScreen() {
         }
       >
         {clientesMostrados.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>{busquedaDebounced ? 'No encontramos resultados' : 'No hay clientes para mostrar'}</Text>
-            <Text style={styles.emptyText}>
+            <View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{busquedaDebounced ? 'No encontramos resultados' : 'No hay clientes para mostrar'}</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               {busquedaDebounced
                 ? 'Probá con otro criterio de búsqueda.'
                 : 'Cuando existan clientes, se mostrarán acá automáticamente.'}
@@ -182,13 +185,13 @@ export default function ClientesScreen() {
           const badge = badgeByEstado(cliente)
 
           return (
-            <View key={cliente.clienteId} style={styles.card}>
+            <View key={cliente.clienteId} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.cardTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.nombre}>{cliente.nombre}</Text>
-                  <Text style={styles.meta}>DNI: {cliente.dni}</Text>
-                  <Text style={styles.meta}>Email: {cliente.email}</Text>
-                  <Text style={styles.metaMuted}>Teléfono: {cliente.telefono}</Text>
+                  <Text style={[styles.nombre, { color: colors.textPrimary }]}>{cliente.nombre}</Text>
+                  <Text style={[styles.meta, { color: colors.textSecondary }]}>DNI: {cliente.dni}</Text>
+                  <Text style={[styles.meta, { color: colors.textSecondary }]}>Email: {cliente.email}</Text>
+                  <Text style={[styles.metaMuted, { color: colors.textSecondary }]}>Teléfono: {cliente.telefono}</Text>
                 </View>
 
                 <View style={[styles.badge, badge.style]}>

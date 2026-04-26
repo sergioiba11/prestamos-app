@@ -121,7 +121,7 @@ export default function PrestamosScreen() {
           </View>
         ) : (
           <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
-            <Text style={styles.title}>Préstamos</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Préstamos</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Vista operativa con detalle de estado, fechas y saldos.</Text>
 
             <View style={[styles.filtersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -156,21 +156,21 @@ export default function PrestamosScreen() {
                   const badge = badgePrestamo(loan.estado)
                   return (
                 <View style={styles.rowBetween}>
-                  <Text style={styles.loanTitle}>{loan.cliente}</Text>
+                <Text style={[styles.loanTitle, { color: colors.textPrimary }]}>{loan.cliente}</Text>
                   <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
                     <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
                   </View>
                 </View>
                   )
                 })()}
-                <Text style={styles.meta}>Cliente DNI: {loan.dni}</Text>
-                <Text style={styles.meta}>Monto: {money(loan.monto)} · Interés: {loan.interes}%</Text>
-                <Text style={styles.meta}>Total a pagar: {money(loan.total)} · Restante: {money(loan.restante)}</Text>
-                <Text style={styles.meta}>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>Cliente DNI: {loan.dni}</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>Monto: {money(loan.monto)} · Interés: {loan.interes}%</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>Total a pagar: {money(loan.total)} · Restante: {money(loan.restante)}</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>
                   Modalidad: {loan.modalidad === 'diario' ? 'Diario' : loan.modalidad === 'mensual' ? 'Mensual' : '—'} · Cuotas: {loan.cuotasPlan || '—'}
                 </Text>
-                <Text style={styles.meta}>Fecha inicio: {formatDate(loan.fechaInicio)} · Fecha límite: {formatDate(loan.fechaLimite)} · Fecha mora: {formatDate(loan.fechaMora)}</Text>
-                <Text style={styles.meta}>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>Fecha inicio: {formatDate(loan.fechaInicio)} · Fecha límite: {formatDate(loan.fechaLimite)} · Fecha mora: {formatDate(loan.fechaMora)}</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>
                   Cuotas pagadas: {loan.cuotasPagadas} · Pendientes: {loan.cuotasPendientes} · Próxima: {loan.proximaCuotaNumero ? `#${loan.proximaCuotaNumero} (${formatDate(loan.proximaCuotaVencimiento)})` : '—'}
                 </Text>
                 <View style={styles.cardLinkRow}>
@@ -188,7 +188,7 @@ export default function PrestamosScreen() {
               </TouchableOpacity>
             ))}
 
-            {filtered.length === 0 ? <Text style={styles.empty}>No se encontraron préstamos para el filtro actual.</Text> : null}
+            {filtered.length === 0 ? <Text style={[styles.empty, { color: colors.textSecondary }]}>No se encontraron préstamos para el filtro actual.</Text> : null}
           </ScrollView>
         )}
       </View>

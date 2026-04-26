@@ -35,7 +35,6 @@ export type PagoPrestamo = {
   metodo: string | null
   estado: string | null
   impactado: boolean | null
-  comprobante_url: string | null
   fecha_pago: string | null
   created_at: string | null
 }
@@ -78,7 +77,7 @@ async function construirDetallePrestamo(prestamoData: PrestamoBase): Promise<Pre
       .order('numero_cuota', { ascending: true }),
     supabase
       .from('pagos')
-      .select('id, prestamo_id, cliente_id, monto, metodo, estado, impactado, comprobante_url, fecha_pago, created_at')
+      .select('id, prestamo_id, cliente_id, monto, metodo, estado, impactado, fecha_pago, created_at')
       .eq('prestamo_id', prestamoData.id)
       .order('created_at', { ascending: false }),
   ])
