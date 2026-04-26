@@ -19,6 +19,7 @@ import {
 import { AdminNotificationsPanel, AdminNotification } from '../components/admin/AdminNotificationsPanel'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
+import { useAppTheme } from '../context/AppThemeContext'
 import { ClienteAdminListadoItem, ClientePrestamoActivo, PagoPendienteItem, fetchAdminPanelData } from '../lib/admin-dashboard'
 import {
   getTopNotifications,
@@ -49,6 +50,8 @@ function GradientCard({ children, style }: { children: ReactNode; style?: ViewSt
 }
 
 export default function AdminHome() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
   const isDesktop = !isMobile
@@ -242,7 +245,7 @@ export default function AdminHome() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color="#3B82F6" size="large" />
         <Text style={styles.loadingText}>Cargando panel admin...</Text>
       </View>
@@ -250,15 +253,15 @@ export default function AdminHome() {
   }
 
   return (
-    <View style={styles.page}>
+    <View style={[styles.page, { backgroundColor: colors.background }]}>
       {!isMobile ? (
         <AdminSidebar active="inicio" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
-        <View style={styles.mobileTopBar}>
+        <View style={[styles.mobileTopBar, { backgroundColor: colors.surfaceSoft, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => setMenuOpen(true)}>
-            <Ionicons name="menu" size={24} color="#E2E8F0" />
+            <Ionicons name="menu" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Admin</Text>
+          <Text style={[styles.mobileTitle, { color: colors.textPrimary }]}>Admin</Text>
           <View
             collapsable={false}
             ref={(node) => {
@@ -281,8 +284,8 @@ export default function AdminHome() {
         <ScrollView contentContainerStyle={[styles.content, isMobile ? styles.mobileContent : styles.desktopContent]}>
           <View style={[styles.pageTopRow, isDesktop && styles.pageTopRowDesktop]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop]}>Bienvenido, {adminName}</Text>
-              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop]}>Dashboard financiero · {todayLabel}</Text>
+              <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop, { color: colors.textPrimary }]}>Bienvenido, {adminName}</Text>
+              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop, { color: colors.textSecondary }]}>Dashboard financiero · {todayLabel}</Text>
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>

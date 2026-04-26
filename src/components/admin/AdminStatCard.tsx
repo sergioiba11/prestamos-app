@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { StyleSheet, Text, View } from 'react-native'
+import { useAppTheme } from '../../context/AppThemeContext'
 
 export function AdminStatCard({
   label,
@@ -14,14 +15,16 @@ export function AdminStatCard({
   icon: keyof typeof Ionicons.glyphMap
   tone: 'blue' | 'violet' | 'teal' | 'orange'
 }) {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   return (
-    <View style={[styles.card, toneStyles[tone].card]}>
-      <View style={[styles.iconWrap, toneStyles[tone].iconWrap]}>
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: theme.isLight ? colors.border : toneStyles[tone].card.borderColor }, toneStyles[tone].card]}>
+      <View style={[styles.iconWrap, toneStyles[tone].iconWrap, theme.isLight && { backgroundColor: colors.primarySoft }]}>
         <Ionicons name={icon} size={18} color={toneStyles[tone].iconColor} />
       </View>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.value, { color: colors.textPrimary }]}>{value}</Text>
+      {subtitle ? <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
     </View>
   )
 }

@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { useAppTheme } from '../context/AppThemeContext'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
 import { badgePrestamo } from '../lib/statuses'
 import { supabase } from '../lib/supabase'
@@ -18,6 +19,8 @@ function formatDate(value?: string) {
 }
 
 export default function PrestamosScreen() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const { width } = useWindowDimensions()
   const mobile = width < 980
 
@@ -98,15 +101,15 @@ export default function PrestamosScreen() {
   }, [items, search, stateFilter])
 
   return (
-    <View style={styles.page}>
+    <View style={[styles.page, { backgroundColor: colors.background }]}>
       {!mobile ? (
         <AdminSidebar active="prestamos" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
-        <View style={styles.mobileTopBar}>
+        <View style={[styles.mobileTopBar, { backgroundColor: colors.surfaceSoft, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
-            <Ionicons name="menu" size={24} color="#E2E8F0" />
+            <Ionicons name="menu" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Préstamos</Text>
+          <Text style={[styles.mobileTitle, { color: colors.textPrimary }]}>Préstamos</Text>
           <View style={{ width: 24 }} />
         </View>
       )}
@@ -119,20 +122,20 @@ export default function PrestamosScreen() {
         ) : (
           <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
             <Text style={styles.title}>Préstamos</Text>
-            <Text style={styles.subtitle}>Vista operativa con detalle de estado, fechas y saldos.</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Vista operativa con detalle de estado, fechas y saldos.</Text>
 
-            <View style={styles.filtersCard}>
+            <View style={[styles.filtersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { backgroundColor: colors.surfaceSoft, borderColor: colors.border, color: colors.textPrimary }]}
                 placeholder="Buscar por cliente, DNI o ID de préstamo"
-                placeholderTextColor="#64748B"
+                placeholderTextColor={colors.textSecondary}
                 value={search}
                 onChangeText={setSearch}
               />
               <View style={styles.filterRow}>
                 {(['todos', 'activos', 'vencidos', 'pagados'] as const).map((filter) => (
                   <TouchableOpacity key={filter} onPress={() => setStateFilter(filter)} style={[styles.filterChip, filter === stateFilter && styles.filterChipActive]}>
-                    <Text style={[styles.filterChipText, filter === stateFilter && styles.filterChipTextActive]}>{filter}</Text>
+                    <Text style={[styles.filterChipText, { color: colors.textSecondary }, filter === stateFilter && styles.filterChipTextActive]}>{filter}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -141,7 +144,7 @@ export default function PrestamosScreen() {
             {filtered.map((loan) => (
               <TouchableOpacity
                 key={loan.prestamoId}
-                style={styles.loanCard}
+                style={[styles.loanCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() =>
                   router.push({
                     pathname: `/cliente/${loan.clienteId}`,
@@ -171,8 +174,8 @@ export default function PrestamosScreen() {
                   Cuotas pagadas: {loan.cuotasPagadas} · Pendientes: {loan.cuotasPendientes} · Próxima: {loan.proximaCuotaNumero ? `#${loan.proximaCuotaNumero} (${formatDate(loan.proximaCuotaVencimiento)})` : '—'}
                 </Text>
                 <View style={styles.cardLinkRow}>
-                  <Ionicons name="open-outline" size={14} color="#93C5FD" />
-                  <Text style={styles.cardLinkText}>Ver detalle del cliente / préstamo</Text>
+                  <Ionicons name="open-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.cardLinkText, { color: colors.primary }]}>Ver detalle del cliente / préstamo</Text>
                 </View>
                 {loan.comprobantePagoId ? (
                   <TouchableOpacity

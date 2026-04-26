@@ -4,6 +4,7 @@ import { Image, View } from 'react-native'
 import { authTheme } from '../constants/auth-theme'
 import { AuthProvider } from '../context/AuthContext'
 import { OnboardingProvider } from '../context/OnboardingContext'
+import { AppThemeProvider } from '../context/AppThemeContext'
 
 export default function RootLayout() {
   const [mounted, setMounted] = useState(false)
@@ -16,6 +17,7 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      <AppThemeProvider>
       <OnboardingProvider>
         <Stack
           screenOptions={{
@@ -62,6 +64,7 @@ export default function RootLayout() {
           <Stack.Screen name="cliente/[id]" options={{ headerShown: false }} />
         </Stack>
       </OnboardingProvider>
+      </AppThemeProvider>
     </AuthProvider>
   )
 }

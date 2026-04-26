@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useAppTheme } from '../../context/AppThemeContext'
 
 export type AdminNavKey =
   | 'inicio'
@@ -39,6 +40,8 @@ const navItems: Array<{ key: AdminNavKey; label: string; icon: keyof typeof Ioni
 ]
 
 export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogout, mobile, onCloseMobile }: Props) {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const role = String(adminRole || '').toLowerCase()
   const visibleItems = navItems.filter((item) => {
     if (role === 'admin') return true
@@ -47,19 +50,19 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
   })
 
   return (
-    <View style={[styles.sidebar, mobile && styles.sidebarMobile]}>
+    <View style={[styles.sidebar, mobile && styles.sidebarMobile, { backgroundColor: colors.sidebarBg, borderRightColor: colors.border }]}>
       <View>
-        <View style={styles.logoWrap}>
-          <View style={styles.logoBadge}>
+        <View style={[styles.logoWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={[styles.logoBadge, { backgroundColor: colors.primary }]}>
             <Image source={require('../../../assets/images/logo-sidebar.png')} style={{ width: 28, height: 28, resizeMode: 'contain' }} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.logoText}>CrediTodo</Text>
-            <Text style={styles.logoSub}>Panel Admin</Text>
+            <Text style={[styles.logoText, { color: colors.textPrimary }]}>CrediTodo</Text>
+            <Text style={[styles.logoSub, { color: colors.textSecondary }]}>Panel Admin</Text>
           </View>
           {mobile ? (
             <TouchableOpacity onPress={onCloseMobile}>
-              <Ionicons name="close" size={20} color="#94A3B8" />
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -68,30 +71,30 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
           {visibleItems.map((item) => (
             <Pressable
               key={item.key}
-              style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover]}
+              style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover, item.key === active && { borderColor: colors.primary, backgroundColor: theme.isLight ? colors.primarySoft : 'rgba(37,99,235,0.2)' }, pressed && { backgroundColor: theme.isLight ? colors.surfaceSoft : '#111C30' } ]}
               onPress={() => onNavigate(item.key)}
             >
-              <View style={[styles.navIconWrap, item.key === active && styles.navIconWrapActive]}>
-                <Ionicons name={item.icon} size={17} color={item.key === active ? '#DBEAFE' : '#94A3B8'} />
+              <View style={[styles.navIconWrap, { borderColor: colors.border, backgroundColor: colors.surface }, item.key === active && styles.navIconWrapActive, item.key === active && { borderColor: colors.primary, backgroundColor: theme.isLight ? colors.primarySoft : '#1E3A8A' }]}>
+                <Ionicons name={item.icon} size={17} color={item.key === active ? (theme.isLight ? colors.primary : '#DBEAFE') : colors.textSecondary} />
               </View>
-              <Text style={[styles.linkText, item.key === active && styles.linkTextActive]}>{item.label}</Text>
+              <Text style={[styles.linkText, { color: colors.textSecondary }, item.key === active && styles.linkTextActive, item.key === active && { color: theme.isLight ? colors.primary : '#DBEAFE' }]}>{item.label}</Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      <View style={styles.footer}>
-        <View style={styles.userBox}>
-          <View style={styles.userAvatar}><Ionicons name="person" size={16} color="#BFDBFE" /></View>
+      <View style={[styles.footer, { borderTopColor: colors.border }]}>
+        <View style={[styles.userBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={[styles.userAvatar, { backgroundColor: theme.isLight ? colors.primarySoft : '#1E3A8A' }]}><Ionicons name="person" size={16} color={theme.isLight ? colors.primary : '#BFDBFE'} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.userName}>{adminName}</Text>
-            <Text style={styles.userRole}>{adminRole || 'Administrador'}</Text>
+            <Text style={[styles.userName, { color: colors.textPrimary }]}>{adminName}</Text>
+            <Text style={[styles.userRole, { color: colors.textSecondary }]}>{adminRole || 'Administrador'}</Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <Ionicons name="log-out-outline" size={16} color="#E2E8F0" />
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
+        <TouchableOpacity style={[styles.logoutBtn, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]} onPress={onLogout}>
+          <Ionicons name="log-out-outline" size={16} color={colors.textPrimary} />
+          <Text style={[styles.logoutText, { color: colors.textPrimary }]}>Cerrar sesión</Text>
         </TouchableOpacity>
       </View>
     </View>
