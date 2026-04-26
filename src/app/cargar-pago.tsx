@@ -1586,9 +1586,10 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: '#E2E8F0',
-    fontSize: 16,
-    fontWeight: '700',
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.4,
     marginBottom: 8,
     marginTop: 12,
   },
@@ -1633,7 +1634,7 @@ const styles = StyleSheet.create({
 
   listBox: {
     marginTop: 10,
-    gap: 10,
+    gap: 16,
   },
 
   selectCard: {
@@ -1641,7 +1642,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.20)',
     borderRadius: 18,
-    padding: 16,
+    padding: 18,
   },
   loanCardCompact: {
     padding: 12,
@@ -1719,13 +1720,13 @@ const styles = StyleSheet.create({
   mainCard: {
     marginTop: 18,
     shadowColor: '#020617',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
   workflowLayout: {
-    gap: 14,
+    gap: 18,
   },
   workflowLayoutDesktop: {
     flexDirection: 'row',
@@ -1746,17 +1747,17 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   sectionTitle: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 10,
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.9,
+    marginBottom: 12,
   },
 
   infoName: {
     color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 21,
+    fontWeight: '700',
     marginBottom: 6,
   },
 
@@ -1790,7 +1791,7 @@ const styles = StyleSheet.create({
   helperText: {
     color: '#94A3B8',
     marginTop: 8,
-    fontSize: 13,
+    fontSize: 14,
   },
 
   methodsRow: {
@@ -1833,13 +1834,13 @@ const styles = StyleSheet.create({
   },
 
   resumeCard: {
-    backgroundColor: '#0A1A3A',
+    backgroundColor: 'rgba(30,58,138,0.42)',
     borderWidth: 1,
     borderColor: '#1D4ED8',
     borderRadius: 18,
-    padding: 18,
+    padding: 22,
     marginTop: 14,
-    gap: 12,
+    gap: 14,
   },
   resumeTitle: {
     color: '#BFDBFE',
@@ -1857,13 +1858,13 @@ const styles = StyleSheet.create({
   },
 
   resumeLabel: {
-    color: '#BFDBFE',
+    color: '#93C5FD',
     fontSize: 15,
   },
 
   resumeValue: {
     color: '#F8FAFC',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
     textAlign: 'right',
   },
@@ -1871,8 +1872,10 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#2563EB',
     borderRadius: 14,
-    paddingVertical: 16,
+    minHeight: 50,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 14,
   },
 
@@ -1883,7 +1886,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   desktopSaveButton: {
     width: '100%',
@@ -1891,35 +1894,35 @@ const styles = StyleSheet.create({
   },
 
   sobranteCard: {
-    marginTop: 10,
-    borderRadius: 14,
+    marginTop: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0B1220',
-    padding: 12,
-    gap: 8,
+    borderColor: '#7C3AED',
+    backgroundColor: 'rgba(30,58,138,0.20)',
+    padding: 16,
+    gap: 12,
   },
   sobranteTitle: {
-    color: '#F8FAFC',
-    fontSize: 14,
+    color: '#E2E8F0',
+    fontSize: 16,
     fontWeight: '700',
   },
   sobranteText: {
     color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 18,
   },
   sobranteOptions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   sobranteOption: {
     flex: 1,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#334155',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     backgroundColor: '#0F172A',
   },
   sobranteOptionActive: {
@@ -2000,19 +2003,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   loanCardsWrap: {
-    gap: 10,
+    gap: 16,
   },
   loanItemCard: {
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.20)',
     borderRadius: 16,
     backgroundColor: '#111C35',
-    padding: 12,
-    gap: 4,
+    padding: 16,
+    gap: 6,
   },
   loanItemCardActive: {
     borderColor: '#2563EB',
-    backgroundColor: '#172554',
+    backgroundColor: '#1E293B',
   },
   loanItemId: {
     color: '#E2E8F0',
@@ -2033,9 +2036,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1D4ED8',
-    backgroundColor: '#0A1A3A',
-    padding: 14,
-    gap: 8,
+    backgroundColor: 'rgba(30,58,138,0.36)',
+    padding: 18,
+    gap: 10,
   },
   loanSummaryHeader: {
     borderBottomWidth: 1,
@@ -2050,7 +2053,7 @@ const styles = StyleSheet.create({
   },
   remainingValue: {
     color: '#3B82F6',
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -2063,7 +2066,7 @@ const styles = StyleSheet.create({
   quotaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 14,
   },
   quotaDesktopScroll: {
     maxHeight: 420,
@@ -2071,8 +2074,8 @@ const styles = StyleSheet.create({
   quotaTile: {
     borderRadius: 14,
     borderWidth: 1,
-    minHeight: 94,
-    padding: 13,
+    minHeight: 108,
+    padding: 16,
     justifyContent: 'space-between',
   },
   quotaTileActive: {
@@ -2090,17 +2093,17 @@ const styles = StyleSheet.create({
   },
   quotaTileTitle: {
     color: '#E2E8F0',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
   },
   quotaTileAmount: {
     color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
   },
   quotaTileBadge: {
     marginTop: 6,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   amountInput: {
@@ -2116,7 +2119,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   paymentNotesCard: {
-    marginTop: 10,
+    marginTop: 16,
   },
   fixedFooterWrap: {
     position: 'absolute',
