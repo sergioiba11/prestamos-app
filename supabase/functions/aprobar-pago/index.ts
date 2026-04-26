@@ -175,6 +175,7 @@ Deno.serve(async (req) => {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser(token)
+    const supabaseAdmin = supabase
 
     if (userError || !user) {
       return jsonResponse({ error: 'Token inválido o usuario no autenticado' }, 401)
@@ -209,7 +210,7 @@ Deno.serve(async (req) => {
 
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
-      .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id, created_at')
+      .select('id, estado, impactado, metodo, monto, prestamo_id, cliente_id, cuota_id, created_at, dias_mora, porcentaje_mora, monto_mora, total_con_mora')
       .eq('id', pago_id)
       .maybeSingle()
 
@@ -282,13 +283,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, estado: 'rechazado', pago_id: pago.id })
     }
 
-    const preview = await calcularPreviewAplicacion(supabase, pago)
-
-    const { data: resultado, error: rpcError } = await supabase.rpc('aprobar_pago_pendiente', {
-      p_pago_id: pago.id,
-      p_actor_id: user.id,
-      p_observacion: observacionRevision,
-      p_preview_esperado: preview,
+    const { data: resultado, error: rpcError } = await supabaseAdmin.rpc('aprobar_pago_pendiente', {
+      pago_id_input: pago_id,
     })
 
     if (rpcError) {
@@ -304,6 +300,13 @@ Deno.serve(async (req) => {
         pago_id: pago.id,
         idempotente: true,
         saldo_restante: Number(resultado?.saldo_restante || 0),
+        redirect_to: `/pago-aprobado?id=${pago_id}`,
+        mora: {
+          dias_mora: Number((pago as any).dias_mora || 0),
+          porcentaje_mora: Number((pago as any).porcentaje_mora || 0),
+          monto_mora: Number((pago as any).monto_mora || 0),
+          total_con_mora: Number((pago as any).total_con_mora || pago.monto || 0),
+        },
       })
     }
 
@@ -317,7 +320,7 @@ Deno.serve(async (req) => {
           {
             error: errorMsg,
             code: 'preview_mismatch',
-            preview_esperado: resultado?.preview_esperado ?? preview,
+            preview_esperado: resultado?.preview_esperado ?? null,
             impacto_real: resultado?.impacto_real_calculado ?? null,
           },
           409
@@ -355,6 +358,13 @@ Deno.serve(async (req) => {
       saldo_restante: Number(resultado?.saldo_restante || 0),
       prestamo_estado: resultado?.prestamo_estado || null,
       detalle_aplicacion: resultado?.detalle_aplicacion || [],
+      redirect_to: `/pago-aprobado?id=${pago_id}`,
+      mora: {
+        dias_mora: Number((pago as any).dias_mora || 0),
+        porcentaje_mora: Number((pago as any).porcentaje_mora || 0),
+        monto_mora: Number((pago as any).monto_mora || 0),
+        total_con_mora: Number((pago as any).total_con_mora || pago.monto || 0),
+      },
     })
   } catch (error) {
     return jsonResponse(
