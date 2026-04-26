@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
+import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
 type CuotaImpactadaDetalle = {
@@ -757,7 +758,7 @@ export default function PagoAprobado() {
       <View style={styles.loadingWrap}>
         <Text style={styles.deniedTitle}>Comprobante no disponible</Text>
         <Text style={styles.deniedText}>{loadError || 'Esta pantalla solo muestra pagos aprobados e impactados.'}</Text>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/pagos-pendientes' as any)}>
+        <Pressable style={styles.backButton} onPress={() => safeGoBack('admin')}>
           <Text style={styles.backButtonText}>Ir a pagos pendientes</Text>
         </Pressable>
       </View>
@@ -773,7 +774,7 @@ export default function PagoAprobado() {
         <View style={[styles.toolbar, styles.noPrint, isDesktop && styles.toolbarDesktop]} nativeID="receipt-screen-actions-top">
           <Pressable
             style={styles.actionGhost}
-            onPress={() => router.replace(backToPrestamoUrl as any)}
+            onPress={() => safeGoBack('admin')}
           >
             <Text style={styles.actionGhostText}>Volver</Text>
           </Pressable>
@@ -914,7 +915,7 @@ export default function PagoAprobado() {
           <Pressable style={[styles.actionPrint, !isMobile && styles.actionDesktopSecondary]} onPress={onPrint}>
             <Text style={styles.actionPrintText}>Imprimir</Text>
           </Pressable>
-          <Pressable style={[styles.actionGhost, !isMobile && styles.actionDesktopSecondary]} onPress={() => router.replace(backToPrestamoUrl as any)}>
+          <Pressable style={[styles.actionGhost, !isMobile && styles.actionDesktopSecondary]} onPress={() => safeGoBack('admin')}>
             <Text style={styles.actionGhostText}>Volver</Text>
           </Pressable>
         </View>

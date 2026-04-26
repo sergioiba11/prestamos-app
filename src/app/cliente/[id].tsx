@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { badgePago, badgePrestamo } from '../../lib/statuses'
 import { fetchClienteDetalleConsolidado, type ClienteDetalleConsolidado } from '../../lib/admin-dashboard'
+import { safeGoBack } from '../../lib/navigation'
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
@@ -106,7 +107,7 @@ export default function ClienteDetalleUnificadoScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => safeGoBack('admin')}>
         <Text style={styles.backBtnText}>← Volver</Text>
       </TouchableOpacity>
 

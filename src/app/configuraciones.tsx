@@ -13,6 +13,7 @@ import {
   getBiometricState,
 } from '../lib/biometrics'
 import { REGLAS_MORA_DEFAULT } from '../lib/mora'
+import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
 type EstadoMp = 'loading' | 'connected' | 'disconnected'
@@ -643,7 +644,7 @@ export default function Configuraciones() {
         <View style={styles.container}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>Configuraciones</Text>
-            <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.back()}>
+            <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => safeGoBack('admin')}>
               <Text style={[styles.backButtonText, { color: colors.textPrimary }]}>Volver</Text>
             </TouchableOpacity>
           </View>

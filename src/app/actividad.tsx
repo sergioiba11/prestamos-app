@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { useAppTheme } from '../context/AppThemeContext'
 import { ActivityFeedFilter, ActivityItem, getActivityFeed } from '../lib/activity'
 import { supabase } from '../lib/supabase'
 
@@ -69,6 +70,8 @@ function Section({ title, items }: { title: string; items: ActivityItem[] }) {
 }
 
 export default function ActividadScreen() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const { width } = useWindowDimensions()
   const mobile = width < 980
 
@@ -134,15 +137,15 @@ export default function ActividadScreen() {
   }, [items])
 
   return (
-    <View style={styles.page}>
+    <View style={[styles.page, { backgroundColor: colors.background }]}>
       {!mobile ? (
         <AdminSidebar active="actividad" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
-        <View style={styles.mobileTopBar}>
+        <View style={[styles.mobileTopBar, { backgroundColor: colors.surfaceSoft, borderBottomColor: colors.border }]}> 
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
-            <Ionicons name="menu" size={24} color="#E2E8F0" />
+            <Ionicons name="menu" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Actividad</Text>
+          <Text style={[styles.mobileTitle, { color: colors.textPrimary }]}>Actividad</Text>
           <View style={{ width: 24 }} />
         </View>
       )}
@@ -154,13 +157,13 @@ export default function ActividadScreen() {
           </View>
         ) : (
           <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
-            <Text style={styles.title}>Actividad del sistema</Text>
-            <Text style={styles.subtitle}>Historial completo de clientes, préstamos, pagos y accesos.</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Actividad del sistema</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Historial completo de clientes, préstamos, pagos y accesos.</Text>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersRow}>
               {FILTERS.map((f) => (
-                <TouchableOpacity key={f.key} style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]} onPress={() => setFilter(f.key)}>
-                  <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+                <TouchableOpacity key={f.key} style={[styles.filterBtn, { borderColor: colors.border, backgroundColor: colors.surface }, filter === f.key && styles.filterBtnActive]} onPress={() => setFilter(f.key)}>
+                  <Text style={[styles.filterText, { color: colors.textSecondary }, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -173,7 +176,7 @@ export default function ActividadScreen() {
             {items.length === 0 ? (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyText}>Todavía no hay actividad registrada.</Text>
-                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/admin-home' as any)}>
+                <TouchableOpacity style={[styles.emptyBtn, { backgroundColor: colors.primary }]} onPress={() => router.push('/admin-home' as any)}>
                   <Text style={styles.emptyBtnText}>Volver al panel</Text>
                 </TouchableOpacity>
               </View>

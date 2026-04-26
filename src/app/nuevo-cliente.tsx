@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
 } from 'react-native'
+import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 import { createSystemActivity } from '../lib/activity'
 
@@ -141,7 +142,7 @@ console.log('TOKEN FINAL:', tokenAntes)
       setEmail('')
       setPassword('')
 
-     router.back()
+     safeGoBack('admin')
     } catch (error: any) {
       console.log('ERROR crear-cliente:', error)
 
@@ -165,7 +166,7 @@ console.log('TOKEN FINAL:', tokenAntes)
     >
       <TouchableOpacity
         style={styles.headerBack}
-        onPress={() => router.back()}
+        onPress={() => safeGoBack('admin')}
         disabled={loading}
       >
         <Text style={styles.headerBackText}>←</Text>
@@ -238,7 +239,7 @@ console.log('TOKEN FINAL:', tokenAntes)
 
       <TouchableOpacity
         style={styles.secondaryButton}
-        onPress={() => router.back()}
+        onPress={() => safeGoBack('admin')}
         disabled={loading}
       >
         <Text style={styles.secondaryButtonText}>Volver</Text>

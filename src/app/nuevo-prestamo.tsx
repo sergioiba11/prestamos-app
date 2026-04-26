@@ -14,6 +14,8 @@ import {
 import { supabase } from '../lib/supabase'
 import { calcularFechaCuotaMensual, construirCronogramaCuotas } from '../lib/cuotas'
 import { createSystemActivity } from '../lib/activity'
+import { useAppTheme } from '../context/AppThemeContext'
+import { safeGoBack } from '../lib/navigation'
 
 type Cliente = {
   id: string
@@ -138,6 +140,8 @@ function redondear2(valor: number) {
 }
 
 export default function NuevoPrestamo() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const params = useLocalSearchParams()
   const clienteIdParam =
     typeof params.cliente_id === 'string' ? params.cliente_id : ''
@@ -452,7 +456,7 @@ export default function NuevoPrestamo() {
   }
 
   const volverPantalla = () => {
-    router.back()
+    safeGoBack('admin')
   }
 
   const mostrarMensaje = (titulo: string, mensaje: string) => {
@@ -675,7 +679,7 @@ export default function NuevoPrestamo() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={{ paddingBottom: 30 }}
       showsVerticalScrollIndicator={false}
     >
@@ -683,18 +687,18 @@ export default function NuevoPrestamo() {
         <Text style={styles.headerBackText}>←</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Nuevo préstamo</Text>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>Nuevo préstamo</Text>
 
       {!clienteSeleccionado ? (
         <>
-          <Text style={styles.label}>Elegí un cliente</Text>
+          <Text style={[styles.label, { color: colors.textPrimary }]}>Elegí un cliente</Text>
 
           <View style={styles.searchContainer}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               style={styles.searchInput}
               placeholder="Buscar por nombre, teléfono o DNI"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.textSecondary}
               value={busqueda}
               onChangeText={setBusqueda}
             />
@@ -781,7 +785,7 @@ export default function NuevoPrestamo() {
             <TextInput
               style={styles.input}
               placeholder="Monto"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.textSecondary}
               keyboardType="numeric"
               value={monto}
               onChangeText={(texto) => setMonto(formatearMonedaInput(texto))}
@@ -790,7 +794,7 @@ export default function NuevoPrestamo() {
             <TextInput
               style={styles.input}
               placeholder="Interés (%)"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.textSecondary}
               value={interes ? `${interes}%` : ''}
               editable={false}
             />
@@ -851,7 +855,7 @@ export default function NuevoPrestamo() {
                   <TextInput
                     style={styles.input}
                     placeholder="Día del mes de pago (1 al 31)"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.textSecondary}
                     keyboardType="numeric"
                     value={diaPagoMensual}
                     onChangeText={setDiaPagoMensual}
@@ -916,7 +920,7 @@ export default function NuevoPrestamo() {
             <TextInput
               style={styles.input}
               placeholder="Fecha inicio (YYYY-MM-DD)"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.textSecondary}
               value={fechaInicio}
               onChangeText={setFechaInicio}
             />
