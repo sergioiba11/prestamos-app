@@ -673,6 +673,21 @@ export default function CargarPago() {
     setMpCheckout(null)
   }
 
+  const limpiarClienteSeleccionado = () => {
+    setClienteSeleccionado(null)
+    setPrestamos([])
+    setPrestamoSeleccionado(null)
+    setCuotas([])
+    setCuotaSeleccionada(null)
+    setMostrarTodasCuotas(false)
+    setPrestamoExpandidoId(null)
+    setCuotasPorPrestamo({})
+    setMonto('')
+    setMetodo('efectivo')
+    setComprobante('')
+    setMpCheckout(null)
+  }
+
   const volver = () => {
     router.replace('/admin-home' as any)
   }
