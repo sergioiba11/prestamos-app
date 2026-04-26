@@ -72,7 +72,10 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
             <Pressable
               key={item.key}
               style={({ pressed }) => [styles.link, item.key === active && styles.linkActive, pressed && styles.linkHover, item.key === active && { borderColor: colors.primary, backgroundColor: theme.isLight ? colors.primarySoft : 'rgba(37,99,235,0.2)' }, pressed && { backgroundColor: theme.isLight ? colors.surfaceSoft : '#111C30' } ]}
-              onPress={() => onNavigate(item.key)}
+              onPress={() => {
+                onNavigate(item.key)
+                if (mobile) onCloseMobile?.()
+              }}
             >
               <View style={[styles.navIconWrap, { borderColor: colors.border, backgroundColor: colors.surface }, item.key === active && styles.navIconWrapActive, item.key === active && { borderColor: colors.primary, backgroundColor: theme.isLight ? colors.primarySoft : '#1E3A8A' }]}>
                 <Ionicons name={item.icon} size={17} color={item.key === active ? (theme.isLight ? colors.primary : '#DBEAFE') : colors.textSecondary} />

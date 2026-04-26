@@ -184,7 +184,6 @@ export default function ActividadScreen() {
 
       <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
         <View style={styles.modalWrap}>
-          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
           <AdminSidebar
             active="actividad"
             adminName={adminName}
@@ -194,6 +193,7 @@ export default function ActividadScreen() {
             mobile
             onCloseMobile={() => setShowMobileMenu(false)}
           />
+          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
         </View>
       </Modal>
     </View>

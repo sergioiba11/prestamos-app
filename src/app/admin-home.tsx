@@ -508,7 +508,6 @@ export default function AdminHome() {
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.modalWrap}>
-          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
           <AdminSidebar
             active="inicio"
             adminName={adminName}
@@ -518,6 +517,7 @@ export default function AdminHome() {
             mobile
             onCloseMobile={() => setMenuOpen(false)}
           />
+          <Pressable style={styles.modalOverlay} onPress={() => setMenuOpen(false)} />
         </View>
       </Modal>
     </View>

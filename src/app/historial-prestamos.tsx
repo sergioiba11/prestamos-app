@@ -192,7 +192,6 @@ export default function HistorialPrestamosScreen() {
 
       <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
         <View style={styles.modalWrap}>
-          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
           <AdminSidebar
             active="historial"
             adminName={adminName}
@@ -202,6 +201,7 @@ export default function HistorialPrestamosScreen() {
             mobile
             onCloseMobile={() => setShowMobileMenu(false)}
           />
+          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
         </View>
       </Modal>
     </View>
