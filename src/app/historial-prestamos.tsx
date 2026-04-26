@@ -175,12 +175,7 @@ export default function HistorialPrestamosScreen() {
                     {item.comprobantePagoId ? (
                       <TouchableOpacity
                         style={[styles.actionButton, styles.receiptButton]}
-                        onPress={() =>
-                          router.push({
-                            pathname: '/pago-aprobado',
-                            params: { pago_id: item.comprobantePagoId, prestamo_id: item.prestamoId, cliente_id: item.clienteId },
-                          } as any)
-                        }
+                        onPress={() => router.push(`/pago-aprobado?id=${item.comprobantePagoId}` as any)}
                       >
                         <Text style={styles.receiptButtonText}>Ver comprobante</Text>
                       </TouchableOpacity>

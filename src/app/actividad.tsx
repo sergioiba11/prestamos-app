@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { ActivityFeedFilter, ActivityItem, getActivityFeed } from '../lib/activity'
 import { supabase } from '../lib/supabase'
@@ -69,13 +69,18 @@ function Section({ title, items }: { title: string; items: ActivityItem[] }) {
 }
 
 export default function ActividadScreen() {
+  const { width } = useWindowDimensions()
+  const mobile = width < 980
+
   const [loading, setLoading] = useState(true)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('admin')
   const [items, setItems] = useState<ActivityItem[]>([])
   const [filter, setFilter] = useState<ActivityFeedFilter>('todos')
 
   const onNavigate = (key: AdminNavKey) => {
+    setShowMobileMenu(false)
     if (key === 'inicio') return router.push('/admin-home' as any)
     if (key === 'prestamos') return router.push('/prestamos' as any)
     if (key === 'historial') return router.push('/historial-prestamos' as any)
@@ -130,7 +135,17 @@ export default function ActividadScreen() {
 
   return (
     <View style={styles.page}>
-      <AdminSidebar active="actividad" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      {!mobile ? (
+        <AdminSidebar active="actividad" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
+      ) : (
+        <View style={styles.mobileTopBar}>
+          <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
+            <Ionicons name="menu" size={24} color="#E2E8F0" />
+          </TouchableOpacity>
+          <Text style={styles.mobileTitle}>Actividad</Text>
+          <View style={{ width: 24 }} />
+        </View>
+      )}
       <View style={styles.main}>
         {loading ? (
           <View style={styles.center}>
@@ -138,7 +153,7 @@ export default function ActividadScreen() {
             <Text style={styles.loadingText}>Cargando actividad...</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
             <Text style={styles.title}>Actividad del sistema</Text>
             <Text style={styles.subtitle}>Historial completo de clientes, préstamos, pagos y accesos.</Text>
 
@@ -166,6 +181,21 @@ export default function ActividadScreen() {
           </ScrollView>
         )}
       </View>
+
+      <Modal visible={showMobileMenu} transparent animationType="fade" onRequestClose={() => setShowMobileMenu(false)}>
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.overlay} onPress={() => setShowMobileMenu(false)} />
+          <AdminSidebar
+            active="actividad"
+            adminName={adminName}
+            adminRole={adminRole}
+            onNavigate={onNavigate}
+            onLogout={onLogout}
+            mobile
+            onCloseMobile={() => setShowMobileMenu(false)}
+          />
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -173,6 +203,22 @@ export default function ActividadScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#020817', flexDirection: 'row' },
   main: { flex: 1 },
+  mobileTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    height: 56,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    backgroundColor: '#0B1220',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#CBD5E1', marginTop: 8 },
   content: { padding: 16, gap: 10, paddingBottom: 28 },
@@ -201,4 +247,6 @@ const styles = StyleSheet.create({
   emptyText: { color: '#94A3B8' },
   emptyBtn: { backgroundColor: '#1D4ED8', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8 },
   emptyBtnText: { color: '#fff', fontWeight: '700' },
+  modalWrap: { flex: 1, flexDirection: 'row' },
+  overlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.55)' },
 })
