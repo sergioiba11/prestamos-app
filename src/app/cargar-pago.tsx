@@ -1212,7 +1212,7 @@ export default function CargarPago() {
 
           {cuotaSeleccionada && (
             <View style={[styles.workflowRight, isDesktop && styles.workflowRightDesktop]}>
-            <View
+            <View style={styles.rightPanelStack}
               onLayout={(event) => {
                 paymentFormYRef.current = event.nativeEvent.layout.y
               }}
@@ -1648,7 +1648,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#111C35',
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.20)',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
   },
   loanCardCompact: {
@@ -1725,7 +1725,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   mainCard: {
-    marginTop: 18,
+    marginTop: 20,
     ...Platform.select({
       web: {
         shadowColor: '#020617',
@@ -1744,20 +1744,23 @@ const styles = StyleSheet.create({
   workflowLayoutDesktop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 16,
+    gap: 20,
   },
   workflowLeft: {
     width: '100%',
   },
   workflowLeftDesktop: {
-    flex: 1.35,
+    flex: 1.1,
   },
   workflowRight: {
     width: '100%',
   },
   workflowRightDesktop: {
-    flex: 0.85,
+    flex: 0.9,
     alignSelf: 'flex-start',
+  },
+  rightPanelStack: {
+    gap: 18,
   },
   sectionTitle: {
     color: '#94A3B8',
@@ -1850,10 +1853,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(30,58,138,0.42)',
     borderWidth: 1,
     borderColor: '#1D4ED8',
-    borderRadius: 18,
-    padding: 22,
-    marginTop: 14,
-    gap: 14,
+    borderRadius: 20,
+    padding: 24,
+    marginTop: 16,
+    gap: 16,
   },
   resumeTitle: {
     color: '#BFDBFE',
@@ -1871,13 +1874,13 @@ const styles = StyleSheet.create({
   },
 
   resumeLabel: {
-    color: '#93C5FD',
-    fontSize: 15,
+    color: '#BFDBFE',
+    fontSize: 16,
   },
 
   resumeValue: {
     color: '#F8FAFC',
-    fontSize: 24,
+    fontSize: 27,
     fontWeight: '800',
     textAlign: 'right',
   },
@@ -1889,7 +1892,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 14,
+    marginTop: 18,
     ...Platform.select({
       web: {
         shadowColor: '#2563EB',
@@ -2030,7 +2033,7 @@ const styles = StyleSheet.create({
   loanItemCard: {
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.18)',
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: '#0F172A',
     padding: 16,
     gap: 6,
@@ -2038,6 +2041,19 @@ const styles = StyleSheet.create({
   loanItemCardActive: {
     borderColor: '#2563EB',
     backgroundColor: '#1E293B',
+  },
+  loanItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  loanItemLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  loanItemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   loanItemRow: {
     flexDirection: 'row',
@@ -2072,8 +2088,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   loanSummaryCard: {
-    marginTop: 2,
-    borderRadius: 16,
+    marginTop: 6,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#1D4ED8',
     backgroundColor: 'rgba(30,58,138,0.36)',
@@ -2112,10 +2128,10 @@ const styles = StyleSheet.create({
     maxHeight: 420,
   },
   quotaTile: {
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    minHeight: 108,
-    padding: 16,
+    minHeight: 94,
+    padding: 12,
     justifyContent: 'space-between',
   },
   quotaTileActive: {
@@ -2138,7 +2154,7 @@ const styles = StyleSheet.create({
   },
   quotaTileAmount: {
     color: '#F8FAFC',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   quotaTileBadge: {
@@ -2163,9 +2179,10 @@ const styles = StyleSheet.create({
   },
   paymentPrimaryCard: {
     marginTop: 0,
+    padding: 22,
   },
   paymentNotesCard: {
-    marginTop: 16,
+    marginTop: 18,
   },
   fixedFooterWrap: {
     position: 'absolute',
