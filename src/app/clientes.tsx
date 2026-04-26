@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { ClienteAdminListadoItem, fetchAdminClientesListado } from '../lib/admin-dashboard'
+import { safeGoBack } from '../lib/navigation'
 
 function formatearMoneda(valor: number) {
   return `$${Number(valor || 0).toLocaleString('es-AR')}`
@@ -124,7 +125,7 @@ export default function ClientesScreen() {
           <Text style={styles.title}>Listado de clientes</Text>
           <Text style={styles.subtitle}>Fuente: panel consolidado</Text>
         </View>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => safeGoBack('admin')}>
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
       </LinearGradient>

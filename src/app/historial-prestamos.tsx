@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native'
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
+import { useAppTheme } from '../context/AppThemeContext'
 import { HistorialPrestamoItem, fetchAdminPanelData } from '../lib/admin-dashboard'
 import { supabase } from '../lib/supabase'
 
@@ -30,6 +31,8 @@ function fecha(v?: string) {
 const filterStates = ['todos', 'activo', 'pagado', 'vencido', 'cancelado'] as const
 
 export default function HistorialPrestamosScreen() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const { width } = useWindowDimensions()
   const mobile = width < 980
 
@@ -108,15 +111,15 @@ export default function HistorialPrestamosScreen() {
   }, [items, query, stateFilter])
 
   return (
-    <View style={styles.page}>
+    <View style={[styles.page, { backgroundColor: colors.background }]}>
       {!mobile ? (
         <AdminSidebar active="historial" adminName={adminName} adminRole={adminRole} onNavigate={onNavigate} onLogout={onLogout} />
       ) : (
-        <View style={styles.mobileTopBar}>
+        <View style={[styles.mobileTopBar, { backgroundColor: colors.surfaceSoft, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => setShowMobileMenu(true)}>
-            <Ionicons name="menu" size={24} color="#E2E8F0" />
+            <Ionicons name="menu" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.mobileTitle}>Historial</Text>
+          <Text style={[styles.mobileTitle, { color: colors.textPrimary }]}>Historial</Text>
           <View style={{ width: 24 }} />
         </View>
       )}
@@ -129,14 +132,14 @@ export default function HistorialPrestamosScreen() {
           </View>
         ) : (
           <ScrollView contentContainerStyle={[styles.content, mobile && { paddingTop: 72 }]}>
-            <Text style={styles.title}>Historial de préstamos</Text>
-            <Text style={styles.subtitle}>Activos, pagados, vencidos y cancelados</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Historial de préstamos</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Activos, pagados, vencidos y cancelados</Text>
 
-            <View style={styles.filterCard}>
+            <View style={[styles.filterCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { backgroundColor: colors.surfaceSoft, borderColor: colors.border, color: colors.textPrimary }]}
                 placeholder="Buscar por cliente, DNI o ID de préstamo"
-                placeholderTextColor="#64748B"
+                placeholderTextColor={colors.textSecondary}
                 value={query}
                 onChangeText={setQuery}
               />
@@ -145,10 +148,10 @@ export default function HistorialPrestamosScreen() {
                 {filterStates.map((state) => (
                   <TouchableOpacity
                     key={state}
-                    style={[styles.filterChip, stateFilter === state && styles.filterChipActive]}
+                    style={[styles.filterChip, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, stateFilter === state && styles.filterChipActive]}
                     onPress={() => setStateFilter(state)}
                   >
-                    <Text style={[styles.filterChipText, stateFilter === state && styles.filterChipTextActive]}>{state}</Text>
+                    <Text style={[styles.filterChipText, { color: colors.textSecondary }, stateFilter === state && styles.filterChipTextActive]}>{state}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -156,21 +159,21 @@ export default function HistorialPrestamosScreen() {
 
             <View style={styles.listWrap}>
               {filtered.map((item) => (
-                <View key={item.prestamoId} style={styles.itemCard}>
-                  <Text style={styles.itemTitle}>{item.cliente}</Text>
-                  <Text style={styles.itemMeta}>DNI: {item.dni}</Text>
-                  <Text style={styles.itemMeta}>Monto: {money(item.monto)} · Interés: {item.interes}%</Text>
-                  <Text style={styles.itemMeta}>Total: {money(item.total)} · Pagado: {money(item.pagado)}</Text>
-                  <Text style={styles.itemMeta}>Restante: {money(item.restante)} · Estado: {item.estado}</Text>
-                  <Text style={styles.itemMeta}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)}</Text>
+                <View key={item.prestamoId} style={[styles.itemCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.itemTitle, { color: colors.textPrimary }]}>{item.cliente}</Text>
+                  <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>DNI: {item.dni}</Text>
+                  <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>Monto: {money(item.monto)} · Interés: {item.interes}%</Text>
+                  <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>Total: {money(item.total)} · Pagado: {money(item.pagado)}</Text>
+                  <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>Restante: {money(item.restante)} · Estado: {item.estado}</Text>
+                  <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>Inicio: {fecha(item.fechaInicio)} · Límite: {fecha(item.fechaLimite)}</Text>
                   <View style={styles.actionsRow}>
                     <TouchableOpacity
-                      style={styles.actionButton}
+                      style={[styles.actionButton, { borderColor: colors.primary, backgroundColor: theme.isLight ? colors.primarySoft : '#0E1A35' }]}
                       onPress={() =>
                         router.push(`/cliente/${item.clienteId}?prestamo_id=${item.prestamoId}` as any)
                       }
                     >
-                      <Text style={styles.actionButtonText}>Ver detalle</Text>
+                      <Text style={[styles.actionButtonText, { color: colors.primary }]}>Ver detalle</Text>
                     </TouchableOpacity>
                     {item.comprobantePagoId ? (
                       <TouchableOpacity
@@ -184,7 +187,7 @@ export default function HistorialPrestamosScreen() {
                 </View>
               ))}
 
-              {filtered.length === 0 ? <Text style={styles.empty}>No hay préstamos para ese filtro.</Text> : null}
+              {filtered.length === 0 ? <Text style={[styles.empty, { color: colors.textSecondary }]}>No hay préstamos para ese filtro.</Text> : null}
             </View>
           </ScrollView>
         )}

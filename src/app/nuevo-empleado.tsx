@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useState } from 'react'
 import {
@@ -8,6 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { useAppTheme } from '../context/AppThemeContext'
+import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
 export const options = {
@@ -15,11 +18,15 @@ export const options = {
 }
 
 export default function NuevoEmpleado() {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const goBack = () => safeGoBack('admin')
 
   const crearEmpleado = async () => {
     if (loading) return
@@ -79,12 +86,6 @@ export default function NuevoEmpleado() {
 
       const json = await res.json()
 
-      console.log('STATUS CREAR EMPLEADO:', res.status)
-      console.log(
-        'RESPUESTA CREAR EMPLEADO JSON:',
-        JSON.stringify(json, null, 2)
-      )
-
       if (!res.ok) {
         Alert.alert('Error', json?.error || JSON.stringify(json))
         return
@@ -100,7 +101,7 @@ export default function NuevoEmpleado() {
       setEmail('')
       setPassword('')
       setAdminPassword('')
-      router.back()
+      goBack()
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Ocurrió un error inesperado')
     } finally {
@@ -109,21 +110,26 @@ export default function NuevoEmpleado() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Nuevo empleado</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}> 
+      <TouchableOpacity style={[styles.backButton, { borderColor: colors.border, backgroundColor: colors.surface }]} onPress={goBack}>
+        <Ionicons name="arrow-back" size={16} color={colors.textPrimary} />
+        <Text style={[styles.backButtonText, { color: colors.textPrimary }]}>Volver</Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.title, { color: colors.textPrimary }]}>Nuevo empleado</Text>
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
         placeholder="Nombre"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor={colors.textSecondary}
         value={nombre}
         onChangeText={setNombre}
       />
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
         placeholder="Email"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor={colors.textSecondary}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -131,18 +137,18 @@ export default function NuevoEmpleado() {
       />
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
         placeholder="Contraseña del empleado"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor={colors.textSecondary}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
       />
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
         placeholder="Tu contraseña de admin"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor={colors.textSecondary}
         value={adminPassword}
         onChangeText={setAdminPassword}
         secureTextEntry
@@ -164,19 +170,30 @@ export default function NuevoEmpleado() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
     padding: 20,
     justifyContent: 'center',
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  backButtonText: {
+    fontWeight: '700',
+  },
   title: {
-    color: '#fff',
     fontSize: 26,
     fontWeight: 'bold',
     marginBottom: 20,
   },
   input: {
-    backgroundColor: '#1E293B',
-    color: '#fff',
+    borderWidth: 1,
     padding: 14,
     borderRadius: 10,
     marginBottom: 12,
