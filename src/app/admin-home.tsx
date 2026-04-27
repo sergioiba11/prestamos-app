@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -78,6 +79,9 @@ export default function AdminHome() {
   const isMobile = width < 1024
   const isDesktop = !isMobile
   const isCompactMobile = width < 768
+  const kpiGridWebStyle = isDesktop && Platform.OS === 'web'
+    ? ({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 } as const)
+    : null
 
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -385,7 +389,7 @@ export default function AdminHome() {
           />
 
           {!isCompactMobile ? (
-            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
+            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
               <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
               <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
               <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
@@ -497,7 +501,7 @@ export default function AdminHome() {
           </GradientCard>
 
           {isCompactMobile ? (
-            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
+            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
               <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
               <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
               <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
@@ -738,15 +742,15 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 24, gap: 22, paddingBottom: 40, backgroundColor: '#020817' },
-  desktopContent: { padding: 16, gap: 12, paddingBottom: 18 },
+  content: { padding: 16, gap: 14, paddingBottom: 24, backgroundColor: '#020817', width: '100%', maxWidth: 1400, alignSelf: 'center' },
+  desktopContent: { padding: 14, gap: 10, paddingBottom: 14 },
   mobileContent: { paddingTop: 78 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   pageTopRowDesktop: { marginBottom: 2 },
-  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 28 },
-  pageTitleDesktop: { fontSize: 28, lineHeight: 32 },
+  pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 24 },
+  pageTitleDesktop: { fontSize: 24, lineHeight: 28 },
   pageTitleMobileCompact: { fontSize: 22, lineHeight: 26 },
   pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
   pageSubtitleDesktop: { marginTop: 2, fontSize: 12 },
@@ -803,15 +807,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  kpiGridDesktop: { flexWrap: 'nowrap', gap: 10, alignItems: 'stretch' },
+  kpiGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  kpiGridDesktop: { gap: 8, alignItems: 'stretch' },
   kpiGridMobileCompact: { gap: 8 },
   sectionCard: {
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1E293B',
     backgroundColor: '#020617',
-    padding: 22,
+    padding: 16,
     shadowColor: '#000',
     shadowOpacity: 0.4,
     shadowRadius: 25,
@@ -826,36 +830,36 @@ const styles = StyleSheet.create({
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 12 },
   },
-  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
-  featureActionsWrap: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  featureActionsWrapDesktop: { marginTop: 10, gap: 10 },
+  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 14 },
+  featureActionsWrap: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  featureActionsWrapDesktop: { marginTop: 8, gap: 8 },
   featureActionsWrapMobileCompact: { marginTop: 8, gap: 8 },
   featureActionCard: {
     flex: 1,
-    minHeight: 144,
-    borderRadius: 16,
+    minHeight: 120,
+    borderRadius: 14,
     overflow: 'hidden',
   },
-  featureActionCardDesktop: { minHeight: 100 },
+  featureActionCardDesktop: { minHeight: 88 },
   featureActionCardMobileCompact: { minHeight: 108 },
   featureGradient: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.22)',
-    padding: 18,
+    padding: 12,
     justifyContent: 'space-between',
   },
-  featureGradientDesktop: { borderRadius: 14, padding: 12, minHeight: 98 },
+  featureGradientDesktop: { borderRadius: 12, padding: 10, minHeight: 86 },
   featureGradientMobileCompact: { borderRadius: 12, padding: 12, minHeight: 96 },
-  featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 18, marginTop: 10 },
-  featureTitleDesktop: { fontSize: 16, marginTop: 6 },
+  featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 15, marginTop: 6 },
+  featureTitleDesktop: { fontSize: 14, marginTop: 4 },
   featureTitleMobileCompact: { fontSize: 16, marginTop: 5 },
-  featureSubtitle: { color: '#DBEAFE', marginTop: 6, fontSize: 12 },
-  featureSubtitleDesktop: { marginTop: 3, fontSize: 11 },
+  featureSubtitle: { color: '#DBEAFE', marginTop: 4, fontSize: 11 },
+  featureSubtitleDesktop: { marginTop: 2, fontSize: 10 },
   featureSubtitleMobileCompact: { marginTop: 3, fontSize: 10 },
-  smallActionGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  smallActionGridDesktop: { marginTop: 10, gap: 8 },
+  smallActionGrid: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  smallActionGridDesktop: { marginTop: 8, gap: 6 },
   smallActionGridMobileCompact: { marginTop: 8, gap: 8 },
   smallAction: {
     flexDirection: 'row',
@@ -864,15 +868,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#020617',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
   smallActionMobileCompact: { width: '48%', justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
-  smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
-  mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  mainGridDesktop: { flexWrap: 'nowrap', gap: 10 },
+  smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 11 },
+  mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  mainGridDesktop: { flexWrap: 'nowrap', gap: 8 },
   pendingCard: { flex: 1.2, minWidth: 320 },
   clientsCard: { flex: 1, minWidth: 320 },
   mainGridCardDesktop: { flex: 1, minWidth: 0, maxWidth: '50%', minHeight: 262, maxHeight: 262, padding: 14 },

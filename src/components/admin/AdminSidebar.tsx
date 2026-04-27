@@ -106,7 +106,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
 
 const styles = StyleSheet.create({
   sidebar: {
-    width: 282,
+    width: 220,
     backgroundColor: '#030B1A',
     borderRightWidth: 1,
     borderRightColor: '#1E293B',
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     justifyContent: 'space-between',
   },
-  sidebarMobile: { width: 290, height: '100%' },
+  sidebarMobile: { width: 240, height: '100%' },
   logoWrap: {
     flexDirection: 'row',
     alignItems: 'center',

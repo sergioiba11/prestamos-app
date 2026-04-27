@@ -40,12 +40,13 @@ export function AdminStatCard({
 
 const styles = StyleSheet.create({
   card: {
-    minWidth: 210,
+    minWidth: 180,
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     backgroundColor: '#0B1220',
-    padding: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   cardCompact: {
     minWidth: 0,
@@ -56,19 +57,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   iconWrapCompact: { width: 30, height: 30, borderRadius: 8, marginBottom: 6 },
-  label: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  label: { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
   labelCompact: { fontSize: 11 },
-  value: { color: '#fff', fontWeight: '800', fontSize: 24, marginTop: 5 },
+  value: { color: '#fff', fontWeight: '800', fontSize: 20, marginTop: 4 },
   valueCompact: { fontSize: 19, marginTop: 3 },
-  subtitle: { color: '#64748B', fontSize: 11, marginTop: 4 },
+  subtitle: { color: '#64748B', fontSize: 10, marginTop: 3 },
   subtitleCompact: { fontSize: 10, marginTop: 3 },
 })
 
