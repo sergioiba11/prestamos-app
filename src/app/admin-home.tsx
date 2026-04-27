@@ -76,11 +76,18 @@ export default function AdminHome() {
   const colors = theme.colors
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
+  const isTablet = width >= 768 && width < 1024
   const isDesktop = !isMobile
   const isCompactMobile = width < 768
-  const kpiGridWebStyle = isDesktop && Platform.OS === 'web'
-    ? ({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 } as const)
-    : null
+  const kpiGridWebStyle =
+    Platform.OS === 'web'
+      ? ({
+          display: 'grid',
+          gridTemplateColumns: isDesktop ? 'repeat(5, minmax(0, 1fr))' : isTablet ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+          gap: isDesktop ? 8 : 10,
+          width: '100%',
+        } as const)
+      : null
 
   const [loading, setLoading] = useState(true)
   const [refetching, setRefetching] = useState(false)
@@ -293,7 +300,7 @@ export default function AdminHome() {
         </View>
       )}
 
-      <View style={styles.mainWrap}>
+      <View style={[styles.mainWrap, isMobile && styles.mainWrapMobile]}>
         <ScrollView contentContainerStyle={[styles.content, { backgroundColor: colors.background }, isMobile ? styles.mobileContent : styles.desktopContent]}>
           <View style={[styles.pageTopRow, isDesktop && styles.pageTopRowDesktop]}>
             <View style={{ flex: 1 }}>
@@ -349,7 +356,15 @@ export default function AdminHome() {
             }}
           />
 
-          <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
+          <View
+            style={[
+              styles.kpiGrid,
+              isDesktop && styles.kpiGridDesktop,
+              isTablet && styles.kpiGridTablet,
+              isCompactMobile && styles.kpiGridMobileCompact,
+              kpiGridWebStyle as any,
+            ]}
+          >
             <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Vence hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
             <AdminStatCard compact={isCompactMobile} label="A cobrar semana" subtitle="Próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
             <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
@@ -361,7 +376,7 @@ export default function AdminHome() {
             <AdminStatCard compact={isCompactMobile} label="Pendiente total" subtitle="Saldo por cobrar" value={money(resumenCaja.pendienteTotal)} icon="wallet-outline" tone="violet" />
             <Pressable
               onPress={() => router.push('/detalle-mora' as any)}
-              style={({ hovered }) => [styles.moraCardPressable, hovered && styles.cardHover]}
+              style={({ hovered }) => [styles.moraCardPressable, isCompactMobile && styles.moraCardPressableMobile, hovered && styles.cardHover]}
             >
               <AdminStatCard
                 compact={isCompactMobile}
@@ -670,10 +685,11 @@ export default function AdminHome() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
-  mainWrap: { flex: 1 },
+  mainWrap: { flex: 1, minWidth: 0 },
+  mainWrapMobile: { width: '100%' },
   content: { padding: 12, gap: 10, paddingBottom: 16, backgroundColor: '#020817', width: '100%', maxWidth: 1400, alignSelf: 'center' },
   desktopContent: { padding: 10, gap: 8, paddingBottom: 10 },
-  mobileContent: { paddingTop: 78 },
+  mobileContent: { paddingTop: 78, width: '100%', maxWidth: '100%', alignSelf: 'stretch' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
@@ -738,10 +754,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  kpiGrid: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', width: '100%' },
   kpiGridDesktop: { gap: 6, alignItems: 'stretch' },
-  kpiGridMobileCompact: { gap: 6 },
+  kpiGridTablet: { gap: 8 },
+  kpiGridMobileCompact: { gap: 8, flexDirection: 'column', flexWrap: 'nowrap' },
   moraCardPressable: { flex: 1, minWidth: 180 },
+  moraCardPressableMobile: { width: '100%', minWidth: 0 },
   sectionCard: {
     borderRadius: 14,
     borderWidth: 1,
