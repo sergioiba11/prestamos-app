@@ -212,6 +212,18 @@ export type DetalleMoraData = {
   clientesConMora: number
   prestamosDemoradosOVencidos: number
   prestamos: PrestamoMoraDetalleItem[]
+  proximosEnMora: PrestamoProximoMoraItem[]
+}
+
+export type PrestamoProximoMoraItem = {
+  prestamoId: string
+  clienteId: string
+  cliente: string
+  dni: string
+  saldoPendiente: number
+  fechaInicioMora: string
+  diasRestantes: number
+  estadoActual: string
 }
 
 const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
@@ -247,6 +259,16 @@ function getDiffDaysFromToday(value?: string | null): number {
   today.setHours(0, 0, 0, 0)
   date.setHours(0, 0, 0, 0)
   return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function getDaysUntilFromToday(value?: string | null): number {
+  if (!value) return 0
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 0
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  date.setHours(0, 0, 0, 0)
+  return Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 
@@ -371,6 +393,7 @@ function buildMoraDetalleData({
   }
 
   const moraPrestamos: PrestamoMoraDetalleItem[] = []
+  const proximosEnMora: PrestamoProximoMoraItem[] = []
 
   for (const prestamo of prestamos) {
     const estado = low(prestamo.estado)
@@ -410,6 +433,34 @@ function buildMoraDetalleData({
     moraPrestamos.push(item)
   }
 
+  for (const prestamo of prestamos) {
+    const estado = low(prestamo.estado)
+    if (!MORA_LOAN_VALID_STATES.has(estado)) continue
+    const fechaBaseMora = (prestamo.fecha_inicio_mora || '').slice(0, 10)
+    if (!fechaBaseMora) continue
+    if (fechaBaseMora <= todayKey) continue
+
+    const cliente = clientesById.get(prestamo.cliente_id)
+    const totalAPagar = Math.max(toNumber(prestamo.total_a_pagar), 0)
+    const totalPagado = pagosByPrestamo.get(prestamo.id) || 0
+    const saldoPendiente = Math.max(totalAPagar - totalPagado, 0)
+    if (saldoPendiente <= 0) continue
+
+    const diasRestantes = Math.max(getDaysUntilFromToday(fechaBaseMora), 0)
+    if (diasRestantes <= 0) continue
+
+    proximosEnMora.push({
+      prestamoId: prestamo.id,
+      clienteId: prestamo.cliente_id,
+      cliente: cliente?.nombre || 'Cliente',
+      dni: cliente?.dni || '—',
+      saldoPendiente,
+      fechaInicioMora: ymd(fechaBaseMora),
+      diasRestantes,
+      estadoActual: estado || 'activo',
+    })
+  }
+
   const prestamosMora = moraPrestamos.sort(
     (a, b) => b.diasAtraso - a.diasAtraso || b.moraCalculada - a.moraCalculada,
   )
@@ -425,6 +476,7 @@ function buildMoraDetalleData({
     clientesConMora,
     prestamosDemoradosOVencidos: prestamosMora.length,
     prestamos: prestamosMora,
+    proximosEnMora: proximosEnMora.sort((a, b) => a.fechaInicioMora.localeCompare(b.fechaInicioMora)),
   }
 }
 
