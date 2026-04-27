@@ -363,7 +363,14 @@ export default function AdminHome() {
               onPress={() => router.push('/detalle-mora' as any)}
               style={({ hovered }) => [styles.moraCardPressable, hovered && styles.cardHover]}
             >
-              <AdminStatCard compact={isCompactMobile} label="Mora estimada" subtitle="Ver detalle del cálculo" value={money(resumenCaja.moraEstimada)} icon="warning-outline" tone="orange" />
+              <AdminStatCard
+                compact={isCompactMobile}
+                label="Mora estimada"
+                subtitle="Ver detalle del cálculo"
+                value={resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora actual'}
+                icon="warning-outline"
+                tone="orange"
+              />
             </Pressable>
             {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
           </View>

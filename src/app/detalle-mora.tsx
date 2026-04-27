@@ -69,7 +69,9 @@ export default function DetalleMoraScreen() {
 
         <View style={[styles.heroCard, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
           <Text style={[styles.heroLabel, { color: colors.textSecondary }]}>Mora estimada total</Text>
-          <Text style={[styles.heroValue, { color: colors.warning }]}>{money(data.totalMoraEstimada)}</Text>
+          <Text style={[styles.heroValue, { color: colors.warning }]}>
+            {data.totalMoraEstimada > 0 ? money(data.totalMoraEstimada) : 'Sin mora actual'}
+          </Text>
           <Text style={[styles.heroNote, { color: colors.textSecondary }]}>
             Esta mora se calcula sobre préstamos con saldo pendiente y fecha vencida. La tasa aplicada depende de los días de atraso configurados en Configuraciones {'>'} Mora por atraso.
           </Text>
@@ -89,7 +91,7 @@ export default function DetalleMoraScreen() {
         {data.prestamos.length === 0 ? (
           <View style={[styles.empty, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
             <Ionicons name="checkmark-circle-outline" size={22} color={colors.success} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No hay préstamos con mora actualmente.</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Sin mora actual</Text>
           </View>
         ) : (
           <View style={styles.listWrap}>
@@ -118,7 +120,9 @@ function PrestamoMoraCard({ prestamo, isMobile }: { prestamo: PrestamoMoraDetall
     ['Fecha límite / mora', prestamo.fechaLimiteOMora],
     ['Días de atraso', String(prestamo.diasAtraso)],
     ['Porcentaje aplicado', `${prestamo.porcentajeAplicado}% diario`],
+    ['Regla aplicada', prestamo.razonMora],
     ['Mora calculada', money(prestamo.moraCalculada)],
+    ['Total con mora', money(prestamo.totalConMora)],
     ['Estado actual', statusLabel(prestamo.estadoActual)],
   ]
 
