@@ -1,4 +1,4 @@
-import { Link } from 'expo-router'
+import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import { esNombreCompletoValido, normalizarNombreCompleto } from '../lib/nombre'
 import { supabase } from '../lib/supabase'
 
 export default function RegisterScreen() {
+  const router = useRouter()
   const [nombre, setNombre] = useState('')
   const [dni, setDni] = useState('')
   const [email, setEmail] = useState('')
@@ -166,8 +167,14 @@ export default function RegisterScreen() {
           return
         }
 
-        setSuccess('Te enviamos un correo para confirmar tu cuenta. Revisá tu email antes de iniciar sesión.')
+        setNombre('')
+        setDni('')
+        setEmail('')
+        setTelefono('')
         setPassword('')
+        setSuccess('Cuenta creada correctamente. Ya podés iniciar sesión.')
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        router.replace('/login')
       } finally {
         const { error: signOutError } = await supabase.auth.signOut()
         if (signOutError) {
