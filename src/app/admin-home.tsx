@@ -359,7 +359,12 @@ export default function AdminHome() {
             <AdminStatCard compact={isCompactMobile} label="Cobrado hoy" subtitle="Ingresos del día" value={money(resumenCaja.cobradoHoy)} icon="trending-up-outline" tone="teal" />
             <AdminStatCard compact={isCompactMobile} label="Cobrado semana" subtitle="Ingresos semanales" value={money(resumenCaja.cobradoSemana)} icon="bar-chart-outline" tone="blue" />
             <AdminStatCard compact={isCompactMobile} label="Pendiente total" subtitle="Saldo por cobrar" value={money(resumenCaja.pendienteTotal)} icon="wallet-outline" tone="violet" />
-            <AdminStatCard compact={isCompactMobile} label="Mora estimada" subtitle="Riesgo actual" value={money(resumenCaja.moraEstimada)} icon="warning-outline" tone="orange" />
+            <Pressable
+              onPress={() => router.push('/detalle-mora' as any)}
+              style={({ hovered }) => [styles.moraCardPressable, hovered && styles.cardHover]}
+            >
+              <AdminStatCard compact={isCompactMobile} label="Mora estimada" subtitle="Ver detalle del cálculo" value={money(resumenCaja.moraEstimada)} icon="warning-outline" tone="orange" />
+            </Pressable>
             {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
           </View>
 
@@ -729,6 +734,7 @@ const styles = StyleSheet.create({
   kpiGrid: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   kpiGridDesktop: { gap: 6, alignItems: 'stretch' },
   kpiGridMobileCompact: { gap: 6 },
+  moraCardPressable: { flex: 1, minWidth: 180 },
   sectionCard: {
     borderRadius: 14,
     borderWidth: 1,
