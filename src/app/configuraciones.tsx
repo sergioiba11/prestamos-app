@@ -13,6 +13,7 @@ import {
   getBiometricState,
 } from '../lib/biometrics'
 import { REGLAS_MORA_DEFAULT } from '../lib/mora'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../lib/nombre'
 import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
@@ -279,13 +280,14 @@ export default function Configuraciones() {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
-  const adminNombreTrimmed = adminNombre.trim()
+  const adminNombreTrimmed = normalizarNombreCompleto(adminNombre)
   const adminEmailTrimmed = adminEmail.trim().toLowerCase()
   const adminPasswordTrimmed = adminPassword.trim()
   const adminPasswordRepeatTrimmed = adminPasswordRepeat.trim()
   const adminCurrentPasswordTrimmed = adminCurrentPassword.trim()
   const adminFormReadyForCountdown = Boolean(
     adminNombreTrimmed &&
+      esNombreCompletoValido(adminNombreTrimmed) &&
       adminEmailTrimmed &&
       adminPasswordTrimmed &&
       adminPasswordRepeatTrimmed &&
@@ -519,16 +521,28 @@ export default function Configuraciones() {
   const crearAdmin = useCallback(async () => {
     if (!esAdmin || adminLoading) return
 
-    const nombre = adminNombre.trim()
+    const nombre = normalizarNombreCompleto(adminNombre)
     const email = adminEmail.trim().toLowerCase()
     const telefono = adminTelefono.trim()
     const password = adminPassword.trim()
     const repeatPassword = adminPasswordRepeat.trim()
     const currentAdminPassword = adminCurrentPassword.trim()
 
-    if (!nombre || !email || !password || !repeatPassword || !currentAdminPassword) {
-      setAdminStatus({ type: 'error', message: 'Completá nombre, email y contraseña.' })
-      Alert.alert('Error', 'Completá nombre, email y contraseña.')
+    if (!nombre) {
+      setAdminStatus({ type: 'error', message: 'El nombre y apellido es obligatorio' })
+      Alert.alert('Error', 'El nombre y apellido es obligatorio')
+      return
+    }
+
+    if (!esNombreCompletoValido(nombre)) {
+      setAdminStatus({ type: 'error', message: 'Ingresar nombre completo' })
+      Alert.alert('Error', 'Ingresar nombre completo')
+      return
+    }
+
+    if (!email || !password || !repeatPassword || !currentAdminPassword) {
+      setAdminStatus({ type: 'error', message: 'Completá email y contraseña.' })
+      Alert.alert('Error', 'Completá email y contraseña.')
       return
     }
 

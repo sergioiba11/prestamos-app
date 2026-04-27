@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useAppTheme } from '../context/AppThemeContext'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../lib/nombre'
 import { safeGoBack } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
@@ -30,13 +31,19 @@ export default function NuevoEmpleado() {
 
   const crearEmpleado = async () => {
     if (loading) return
+    const nombreLimpio = normalizarNombreCompleto(nombre)
 
-    if (
-      !nombre.trim() ||
-      !email.trim() ||
-      !password.trim() ||
-      !adminPassword.trim()
-    ) {
+    if (!nombreLimpio) {
+      Alert.alert('Error', 'El nombre y apellido es obligatorio')
+      return
+    }
+
+    if (!esNombreCompletoValido(nombreLimpio)) {
+      Alert.alert('Error', 'Ingresar nombre completo')
+      return
+    }
+
+    if (!email.trim() || !password.trim() || !adminPassword.trim()) {
       Alert.alert('Error', 'Completá todos los campos')
       return
     }
@@ -76,7 +83,7 @@ export default function NuevoEmpleado() {
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            nombre: nombre.trim(),
+            nombre: nombreLimpio,
             email: email.trim().toLowerCase(),
             password: password.trim(),
             adminPassword: adminPassword.trim(),
@@ -120,7 +127,7 @@ export default function NuevoEmpleado() {
 
       <TextInput
         style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
-        placeholder="Nombre"
+        placeholder="Nombre completo"
         placeholderTextColor={colors.textSecondary}
         value={nombre}
         onChangeText={setNombre}
