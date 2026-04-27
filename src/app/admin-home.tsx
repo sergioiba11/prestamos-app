@@ -118,6 +118,7 @@ export default function AdminHome() {
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
   const [pendingPaymentsError, setPendingPaymentsError] = useState<string | null>(null)
   const [lateClientsExpanded, setLateClientsExpanded] = useState(false)
+  const [showAllMobileMetrics, setShowAllMobileMetrics] = useState(false)
   const notificationsButtonRef = useRef<View | null>(null)
   const hasLoadedOnceRef = useRef(false)
   const loadingDashboardRef = useRef(false)
@@ -262,6 +263,23 @@ export default function AdminHome() {
 
   const pendingPaymentsPreview = isCompactMobile ? pendingPayments.slice(0, 3) : pendingPayments
   const activeClientsPreview = isCompactMobile ? activeClients.slice(0, 4) : activeClients.slice(0, 6)
+  const mobileMetricItems = useMemo(
+    () => [
+      { key: 'cobrarHoy', label: 'A cobrar hoy', value: money(kpis.cobrarHoy) },
+      { key: 'pagosPendientes', label: 'Pagos pendientes', value: String(kpis.pagosPendientes) },
+      { key: 'pendienteTotal', label: 'Pendiente total', value: money(resumenCaja.pendienteTotal) },
+      { key: 'moraEstimada', label: 'Mora estimada', value: resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora', isMora: true },
+      { key: 'cobrarSemana', label: 'A cobrar semana', value: money(kpis.cobrarSemana) },
+      { key: 'clientesActivos', label: 'Clientes activos', value: String(kpis.clientesActivos) },
+      { key: 'clientesDemorados', label: 'Clientes demorados', value: String(kpis.clientesDemorados) },
+      { key: 'prestamosVencidos', label: 'Préstamos vencidos', value: String(kpis.prestamosVencidos) },
+      { key: 'cobradoHoy', label: 'Cobrado hoy', value: money(resumenCaja.cobradoHoy) },
+      { key: 'cobradoSemana', label: 'Cobrado semana', value: money(resumenCaja.cobradoSemana) },
+      { key: 'noLeidas', label: 'No leídas', value: String(unreadCount) },
+    ],
+    [kpis, resumenCaja, unreadCount],
+  )
+  const mobileMetricsVisible = showAllMobileMetrics ? mobileMetricItems : mobileMetricItems.slice(0, 4)
 
   if (loading) {
     return (
@@ -356,40 +374,6 @@ export default function AdminHome() {
             }}
           />
 
-          <View
-            style={[
-              styles.kpiGrid,
-              isDesktop && styles.kpiGridDesktop,
-              isTablet && styles.kpiGridTablet,
-              isCompactMobile && styles.kpiGridMobileCompact,
-              kpiGridWebStyle as any,
-            ]}
-          >
-            <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Vence hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
-            <AdminStatCard compact={isCompactMobile} label="A cobrar semana" subtitle="Próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
-            <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
-            <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atraso vigente" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
-            <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
-            <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
-            <AdminStatCard compact={isCompactMobile} label="Cobrado hoy" subtitle="Ingresos del día" value={money(resumenCaja.cobradoHoy)} icon="trending-up-outline" tone="teal" />
-            <AdminStatCard compact={isCompactMobile} label="Cobrado semana" subtitle="Ingresos semanales" value={money(resumenCaja.cobradoSemana)} icon="bar-chart-outline" tone="blue" />
-            <AdminStatCard compact={isCompactMobile} label="Pendiente total" subtitle="Saldo por cobrar" value={money(resumenCaja.pendienteTotal)} icon="wallet-outline" tone="violet" />
-            <Pressable
-              onPress={() => router.push('/detalle-mora' as any)}
-              style={({ hovered }) => [styles.moraCardPressable, isCompactMobile && styles.moraCardPressableMobile, hovered && styles.cardHover]}
-            >
-              <AdminStatCard
-                compact={isCompactMobile}
-                label="Mora estimada"
-                subtitle="Ver detalle del cálculo"
-                value={resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora actual'}
-                icon="warning-outline"
-                tone="orange"
-              />
-            </Pressable>
-            {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
-          </View>
-
           <GradientCard
             isLight={theme.isLight}
             surfaceColor={colors.surface}
@@ -408,7 +392,7 @@ export default function AdminHome() {
                   end={{ x: 1, y: 1 }}
                   style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop, isCompactMobile && styles.featureGradientMobileCompact]}
                 >
-                  <Ionicons name="wallet-outline" size={isCompactMobile ? 20 : isDesktop ? 22 : 24} color="#DBEAFE" />
+                  <Ionicons name="wallet-outline" size={isCompactMobile ? 18 : isDesktop ? 22 : 24} color="#DBEAFE" />
                   <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop, isCompactMobile && styles.featureTitleMobileCompact]}>Nuevo préstamo</Text>
                   <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop, isCompactMobile && styles.featureSubtitleMobileCompact]}>
                     Crear préstamo y plan de cuotas
@@ -425,7 +409,7 @@ export default function AdminHome() {
                   end={{ x: 1, y: 1 }}
                   style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop, isCompactMobile && styles.featureGradientMobileCompact]}
                 >
-                  <Ionicons name="cash-outline" size={isCompactMobile ? 20 : isDesktop ? 22 : 24} color="#EDE9FE" />
+                  <Ionicons name="cash-outline" size={isCompactMobile ? 18 : isDesktop ? 22 : 24} color="#EDE9FE" />
                   <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop, isCompactMobile && styles.featureTitleMobileCompact]}>Registrar pago</Text>
                   <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop, isCompactMobile && styles.featureSubtitleMobileCompact]}>
                     Cargar abono recibido del cliente
@@ -489,6 +473,79 @@ export default function AdminHome() {
               </Pressable>
             </View>
           </GradientCard>
+
+          {isMobile ? (
+            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={styles.sectionCardMobileCompact}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Resumen financiero</Text>
+                <TouchableOpacity onPress={() => setShowAllMobileMetrics((prev) => !prev)}>
+                  <Text style={[styles.linkText, { color: colors.primary }]}>{showAllMobileMetrics ? 'Ver menos' : 'Ver más métricas'}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.mobileSummaryGrid}>
+                {mobileMetricsVisible.map((metric) => {
+                  const metricCard = (
+                    <View
+                      key={metric.key}
+                      style={[
+                        styles.mobileMetricCard,
+                        { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                        metric.isMora && styles.mobileMetricCardWarning,
+                      ]}
+                    >
+                      <Text style={[styles.mobileMetricValue, { color: metric.isMora ? colors.warning : colors.textPrimary }]} numberOfLines={1}>
+                        {metric.value}
+                      </Text>
+                      <Text style={[styles.mobileMetricLabel, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {metric.label}
+                      </Text>
+                    </View>
+                  )
+                  if (metric.isMora) {
+                    return (
+                      <Pressable key={metric.key} onPress={() => router.push('/detalle-mora' as any)}>
+                        {metricCard}
+                      </Pressable>
+                    )
+                  }
+                  return metricCard
+                })}
+              </View>
+            </GradientCard>
+          ) : (
+            <View
+              style={[
+                styles.kpiGrid,
+                isDesktop && styles.kpiGridDesktop,
+                isTablet && styles.kpiGridTablet,
+                isCompactMobile && styles.kpiGridMobileCompact,
+                kpiGridWebStyle as any,
+              ]}
+            >
+              <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Vence hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="A cobrar semana" subtitle="Próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atraso vigente" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
+              <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+              <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+              <AdminStatCard compact={isCompactMobile} label="Cobrado hoy" subtitle="Ingresos del día" value={money(resumenCaja.cobradoHoy)} icon="trending-up-outline" tone="teal" />
+              <AdminStatCard compact={isCompactMobile} label="Cobrado semana" subtitle="Ingresos semanales" value={money(resumenCaja.cobradoSemana)} icon="bar-chart-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="Pendiente total" subtitle="Saldo por cobrar" value={money(resumenCaja.pendienteTotal)} icon="wallet-outline" tone="violet" />
+              <Pressable
+                onPress={() => router.push('/detalle-mora' as any)}
+                style={({ hovered }) => [styles.moraCardPressable, isCompactMobile && styles.moraCardPressableMobile, hovered && styles.cardHover]}
+              >
+                <AdminStatCard
+                  compact={isCompactMobile}
+                  label="Mora estimada"
+                  subtitle="Ver detalle del cálculo"
+                  value={resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora actual'}
+                  icon="warning-outline"
+                  tone="orange"
+                />
+              </Pressable>
+            </View>
+          )}
 
           <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
             <GradientCard
@@ -791,7 +848,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   featureActionCardDesktop: { minHeight: 80 },
-  featureActionCardMobileCompact: { minHeight: 108 },
+  featureActionCardMobileCompact: { minHeight: 92 },
   featureGradient: {
     flex: 1,
     borderRadius: 14,
@@ -801,13 +858,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   featureGradientDesktop: { borderRadius: 12, padding: 9, minHeight: 80 },
-  featureGradientMobileCompact: { borderRadius: 12, padding: 12, minHeight: 96 },
+  featureGradientMobileCompact: { borderRadius: 12, padding: 10, minHeight: 88 },
   featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 15, marginTop: 6 },
   featureTitleDesktop: { fontSize: 13, marginTop: 3 },
-  featureTitleMobileCompact: { fontSize: 16, marginTop: 5 },
+  featureTitleMobileCompact: { fontSize: 14, marginTop: 4 },
   featureSubtitle: { color: '#DBEAFE', marginTop: 4, fontSize: 11 },
   featureSubtitleDesktop: { marginTop: 2, fontSize: 9 },
-  featureSubtitleMobileCompact: { marginTop: 3, fontSize: 10 },
+  featureSubtitleMobileCompact: { marginTop: 2, fontSize: 9 },
   smallActionGrid: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   smallActionGridDesktop: { marginTop: 8, gap: 6 },
   smallActionGridMobileCompact: { marginTop: 8, gap: 8 },
@@ -823,7 +880,20 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
-  smallActionMobileCompact: { width: '48%', justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
+  smallActionMobileCompact: { width: '49%', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, gap: 5 },
+  mobileSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  mobileMetricCard: {
+    width: '48%',
+    minHeight: 74,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    justifyContent: 'space-between',
+  },
+  mobileMetricCardWarning: { borderColor: 'rgba(245,158,11,0.5)' },
+  mobileMetricValue: { fontSize: 14, fontWeight: '800' },
+  mobileMetricLabel: { fontSize: 10, fontWeight: '600', marginTop: 4 },
   smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 10 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   mainGridDesktop: { flexWrap: 'nowrap', gap: 8 },
