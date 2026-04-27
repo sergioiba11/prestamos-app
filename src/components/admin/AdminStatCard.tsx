@@ -31,27 +31,38 @@ export function AdminStatCard({
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, toneStyles[tone].iconWrap, theme.isLight && { backgroundColor: colors.primarySoft }]}>
         <Ionicons name={icon} size={compact ? 16 : 18} color={toneStyles[tone].iconColor} />
       </View>
-      <Text style={[styles.label, compact && styles.labelCompact, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.value, compact && styles.valueCompact, { color: colors.textPrimary }]}>{value}</Text>
-      {subtitle ? <Text style={[styles.subtitle, compact && styles.subtitleCompact, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
+      <Text numberOfLines={1} style={[styles.label, compact && styles.labelCompact, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
+      <Text numberOfLines={1} style={[styles.value, compact && styles.valueCompact, { color: colors.textPrimary }]}>
+        {value}
+      </Text>
+      {subtitle ? (
+        <Text numberOfLines={1} style={[styles.subtitle, compact && styles.subtitleCompact, { color: colors.textSecondary }]}>
+          {subtitle}
+        </Text>
+      ) : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   card: {
-    minWidth: 180,
     flex: 1,
+    width: '100%',
+    minHeight: 110,
     borderRadius: 12,
     borderWidth: 1,
     backgroundColor: '#0B1220',
     paddingVertical: 10,
     paddingHorizontal: 10,
+    minWidth: 0,
+    flexShrink: 1,
+    overflow: 'hidden',
   },
   cardCompact: {
-    minWidth: 0,
-    width: '48%',
-    flexGrow: 0,
+    width: '100%',
+    flexGrow: 1,
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 10,
