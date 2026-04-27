@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons'
-import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Image, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useAppTheme } from '../../context/AppThemeContext'
 
 export type AdminNavKey =
@@ -51,7 +51,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
 
   return (
     <View style={[styles.sidebar, mobile && styles.sidebarMobile, { backgroundColor: colors.sidebarBg, borderRightColor: colors.border }]}>
-      <View>
+      <View style={styles.sidebarTop}>
         <View style={[styles.logoWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <View style={[styles.logoBadge, { backgroundColor: colors.primary }]}>
             <Image source={require('../../../assets/images/logo-sidebar.png')} style={{ width: 28, height: 28, resizeMode: 'contain' }} />
@@ -67,7 +67,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
           ) : null}
         </View>
 
-        <View style={styles.navList}>
+        <ScrollView style={styles.navScroll} contentContainerStyle={styles.navList} showsVerticalScrollIndicator={false}>
           {visibleItems.map((item) => (
             <Pressable
               key={item.key}
@@ -83,7 +83,7 @@ export function AdminSidebar({ active, adminName, adminRole, onNavigate, onLogou
               <Text style={[styles.linkText, { color: colors.textSecondary }, item.key === active && styles.linkTextActive, item.key === active && { color: theme.isLight ? colors.primary : '#DBEAFE' }]}>{item.label}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       </View>
 
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
@@ -113,8 +113,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 22,
     paddingBottom: 16,
-    justifyContent: 'space-between',
+    flexDirection: 'column',
   },
+  sidebarTop: { flex: 1, minHeight: 0 },
   sidebarMobile: { width: 240, height: '100%' },
   logoWrap: {
     flexDirection: 'row',
@@ -138,7 +139,8 @@ const styles = StyleSheet.create({
   },
   logoText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   logoSub: { color: '#94A3B8', fontSize: 11 },
-  navList: { gap: 6 },
+  navScroll: { flex: 1 },
+  navList: { gap: 6, paddingBottom: 8 },
   link: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 7 },
   linkActive: { backgroundColor: 'rgba(37,99,235,0.2)', borderWidth: 1, borderColor: '#2563EB' },
   linkHover: { backgroundColor: '#111C30' },

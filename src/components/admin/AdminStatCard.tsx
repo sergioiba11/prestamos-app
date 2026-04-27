@@ -42,11 +42,11 @@ const styles = StyleSheet.create({
   card: {
     minWidth: 180,
     flex: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     backgroundColor: '#0B1220',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
   },
   cardCompact: {
     minWidth: 0,
@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     paddingVertical: 10,
     paddingHorizontal: 10,
-    borderRadius: 12,
+    borderRadius: 10,
   },
   iconWrap: {
     width: 32,
@@ -65,12 +65,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   iconWrapCompact: { width: 30, height: 30, borderRadius: 8, marginBottom: 6 },
-  label: { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
-  labelCompact: { fontSize: 11 },
-  value: { color: '#fff', fontWeight: '800', fontSize: 20, marginTop: 4 },
-  valueCompact: { fontSize: 19, marginTop: 3 },
-  subtitle: { color: '#64748B', fontSize: 10, marginTop: 3 },
-  subtitleCompact: { fontSize: 10, marginTop: 3 },
+  label: { color: '#94A3B8', fontSize: 10, fontWeight: '600' },
+  labelCompact: { fontSize: 10 },
+  value: { color: '#fff', fontWeight: '800', fontSize: 18, marginTop: 3 },
+  valueCompact: { fontSize: 17, marginTop: 2 },
+  subtitle: { color: '#64748B', fontSize: 9, marginTop: 2 },
+  subtitleCompact: { fontSize: 9, marginTop: 2 },
 })
 
 const toneStyles = {
