@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import { useAppTheme } from '../context/AppThemeContext'
 import {
@@ -47,7 +47,7 @@ type MoraRow = {
   porcentaje_diario: string
 }
 
-type AccordionKey = 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'administradores' | 'opciones-avanzadas'
+type AccordionKey = 'mercado-pago' | 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'administradores'
 
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
@@ -90,13 +90,7 @@ export default function Configuraciones() {
   const [countdownSeconds, setCountdownSeconds] = useState(5)
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminStatus, setAdminStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [openSections, setOpenSections] = useState<Record<AccordionKey, boolean>>({
-    'datos-negocio': true,
-    'tasas-interes': false,
-    'mora-atraso': false,
-    administradores: false,
-    'opciones-avanzadas': false,
-  })
+  const [openSection, setOpenSection] = useState<AccordionKey>('mercado-pago')
   const [selectedCuotaMobile, setSelectedCuotaMobile] = useState(1)
 
   const loadBiometricStatus = useCallback(async () => {
@@ -277,7 +271,8 @@ export default function Configuraciones() {
   }
 
   const toggleSection = (section: AccordionKey) => {
-    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    setOpenSection(section)
   }
 
   const adminNombreTrimmed = normalizarNombreCompleto(adminNombre)
@@ -295,7 +290,7 @@ export default function Configuraciones() {
   )
 
   useEffect(() => {
-    if (!openSections.administradores) return
+    if (openSection !== 'administradores') return
     if (!adminFormReadyForCountdown) {
       setCountdownSeconds(5)
       return
@@ -307,7 +302,7 @@ export default function Configuraciones() {
     }, 1000)
 
     return () => clearTimeout(timeoutId)
-  }, [adminFormReadyForCountdown, countdownSeconds, openSections.administradores])
+  }, [adminFormReadyForCountdown, countdownSeconds, openSection])
 
   const validarIntereses = useCallback(() => {
     const errors: Record<number, string> = {}
@@ -784,6 +779,12 @@ export default function Configuraciones() {
     [interesesRows, selectedCuotaMobile]
   )
 
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true)
+    }
+  }, [])
+
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}> 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -808,64 +809,70 @@ export default function Configuraciones() {
           </View>
         </View>
 
-        <View style={[styles.card, styles.mpCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Cobros con Mercado Pago</Text>
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('mercado-pago')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Cobros con Mercado Pago</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'mercado-pago' ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSection === 'mercado-pago' ? (
+            <View style={[styles.card, styles.mpCard, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.statusRow}>
+                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{estadoTexto}</Text>
+                <View style={[styles.statusBadge, badgeConectado ? styles.statusBadgeConnected : styles.statusBadgeDisconnected]}>
+                  <Text style={[styles.statusBadgeText, badgeConectado ? styles.statusBadgeTextConnected : styles.statusBadgeTextDisconnected]}>
+                    {badgeConectado ? 'Conectado' : 'No conectado'}
+                  </Text>
+                </View>
+              </View>
 
-          <View style={styles.statusRow}>
-            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{estadoTexto}</Text>
-            <View style={[styles.statusBadge, badgeConectado ? styles.statusBadgeConnected : styles.statusBadgeDisconnected]}>
-              <Text style={[styles.statusBadgeText, badgeConectado ? styles.statusBadgeTextConnected : styles.statusBadgeTextDisconnected]}>
-                {badgeConectado ? 'Conectado' : 'No conectado'}
-              </Text>
-            </View>
-          </View>
+              {badgeConectado ? (
+                <View style={styles.mpInfoBox}>
+                  <Text style={styles.mpInfoText}>Cuenta: {mpConfig?.alias_cuenta || 'Sin alias'}</Text>
+                  <Text style={styles.mpInfoText}>MP user id: {mpConfig?.mp_user_id || '—'}</Text>
+                  <Text style={styles.mpInfoText}>Public key: {mpConfig?.public_key || '—'}</Text>
+                </View>
+              ) : null}
 
-          {badgeConectado ? (
-            <View style={styles.mpInfoBox}>
-              <Text style={styles.mpInfoText}>Cuenta: {mpConfig?.alias_cuenta || 'Sin alias'}</Text>
-              <Text style={styles.mpInfoText}>MP user id: {mpConfig?.mp_user_id || '—'}</Text>
-              <Text style={styles.mpInfoText}>Public key: {mpConfig?.public_key || '—'}</Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[styles.connectButton, isConnectingMp ? styles.connectButtonDisabled : null]}
+                  onPress={handleConnectMercadoPago}
+                  disabled={isConnectingMp}
+                  activeOpacity={0.8}
+                >
+                  {isConnectingMp ? (
+                    <ActivityIndicator size="small" color="#082F49" />
+                  ) : (
+                    <Text style={styles.connectButtonText}>{botonTexto}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {badgeConectado ? (
+                  <TouchableOpacity
+                    style={[styles.disconnectButton, isDisconnectingMp ? styles.connectButtonDisabled : null]}
+                    onPress={handleDisconnectMercadoPago}
+                    disabled={isDisconnectingMp}
+                  >
+                    {isDisconnectingMp ? (
+                      <ActivityIndicator size="small" color="#FECACA" />
+                    ) : (
+                      <Text style={styles.disconnectButtonText}>Desconectar</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+
+                {estadoMp === 'loading' ? <ActivityIndicator size="small" color="#38BDF8" /> : null}
+              </View>
             </View>
           ) : null}
-
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[styles.connectButton, isConnectingMp ? styles.connectButtonDisabled : null]}
-              onPress={handleConnectMercadoPago}
-              disabled={isConnectingMp}
-              activeOpacity={0.8}
-            >
-              {isConnectingMp ? (
-                <ActivityIndicator size="small" color="#082F49" />
-              ) : (
-                <Text style={styles.connectButtonText}>{botonTexto}</Text>
-              )}
-            </TouchableOpacity>
-
-            {badgeConectado ? (
-              <TouchableOpacity
-                style={[styles.disconnectButton, isDisconnectingMp ? styles.connectButtonDisabled : null]}
-                onPress={handleDisconnectMercadoPago}
-                disabled={isDisconnectingMp}
-              >
-                {isDisconnectingMp ? (
-                  <ActivityIndicator size="small" color="#FECACA" />
-                ) : (
-                  <Text style={styles.disconnectButtonText}>Desconectar</Text>
-                )}
-              </TouchableOpacity>
-            ) : null}
-
-            {estadoMp === 'loading' ? <ActivityIndicator size="small" color="#38BDF8" /> : null}
-          </View>
         </View>
 
         <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('datos-negocio')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Datos del negocio</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['datos-negocio'] ? '−' : '+'}</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'datos-negocio' ? '−' : '+'}</Text>
           </TouchableOpacity>
-          {openSections['datos-negocio'] ? (
+          {openSection === 'datos-negocio' ? (
             <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.businessGrid}>
                 <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
@@ -895,9 +902,9 @@ export default function Configuraciones() {
         <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('tasas-interes')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Tasas de interés</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['tasas-interes'] ? '−' : '+'}</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'tasas-interes' ? '−' : '+'}</Text>
           </TouchableOpacity>
-          {openSections['tasas-interes'] ? (
+          {openSection === 'tasas-interes' ? (
             <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
               <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Préstamos mensuales</Text>
               <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Administrá los porcentajes por cantidad de cuotas.</Text>
@@ -967,9 +974,9 @@ export default function Configuraciones() {
         <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('mora-atraso')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Mora por atraso</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['mora-atraso'] ? '−' : '+'}</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'mora-atraso' ? '−' : '+'}</Text>
           </TouchableOpacity>
-          {openSections['mora-atraso'] ? (
+          {openSection === 'mora-atraso' ? (
             <View style={[styles.card, styles.interesesCard, styles.accordionBody]}>
               <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Configurá el porcentaje diario por tramo para cuotas vencidas.</Text>
               {loadingMora ? (
@@ -1004,9 +1011,9 @@ export default function Configuraciones() {
         <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('administradores')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Administradores</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections.administradores ? '−' : '+'}</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'administradores' ? '−' : '+'}</Text>
           </TouchableOpacity>
-          {openSections.administradores ? (
+          {openSection === 'administradores' ? (
             <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Agregar admin</Text>
               <View style={[styles.adminWarningBox, { backgroundColor: colors.surfaceSoft, borderColor: '#EF4444' }]}>
@@ -1120,46 +1127,26 @@ export default function Configuraciones() {
           ) : null}
         </View>
 
-        <View style={styles.accordionSection}>
-          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('opciones-avanzadas')} activeOpacity={0.85}>
-            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Opciones avanzadas</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSections['opciones-avanzadas'] ? '−' : '+'}</Text>
-          </TouchableOpacity>
-          {openSections['opciones-avanzadas'] ? (
-            <View style={styles.accordionBody}>
-              <View style={[styles.card, styles.cardActive]}>
-                <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Ingreso con biometría</Text>
-                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{biometricMessage}</Text>
-                <View style={styles.buttonRow}>
-                  {biometricStatus === 'enabled' ? (
-                    <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
-                      {updatingBiometric ? <ActivityIndicator size="small" color="#FECACA" /> : <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>}
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity style={[styles.connectButton, (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric) ? styles.connectButtonDisabled : null]} onPress={handleEnableBiometrics} disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}>
-                      {updatingBiometric ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Activar biometría</Text>}
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-              <TouchableOpacity style={[styles.card, styles.cardActive]} onPress={() => router.push('/cambiar-password')}>
-                <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Seguridad</Text>
-                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Cambiar contraseña de tu cuenta</Text>
-              </TouchableOpacity>
-              <View style={[styles.card, styles.cardDisabled]}>
-                <Text style={styles.cardTitleDisabled}>Medios de cobro</Text>
-                <Text style={styles.cardTextDisabled}>
-                  Efectivo: habilitado. Transferencia: habilitada con validación. Mercado Pago: {badgeConectado ? 'conectado' : 'próximamente / pendiente de conexión'}.
-                </Text>
-              </View>
-              <View style={[styles.card, styles.cardDisabled]}>
-                <Text style={styles.cardTitleDisabled}>Integración Mercado Pago</Text>
-                <Text style={styles.cardTextDisabled}>
-                  Próximamente: conciliación automática, webhook de estados y reportes por canal de cobro.
-                </Text>
-              </View>
+        <View style={styles.accordionBody}>
+          <View style={[styles.card, styles.cardActive]}>
+            <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Ingreso con biometría</Text>
+            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{biometricMessage}</Text>
+            <View style={styles.buttonRow}>
+              {biometricStatus === 'enabled' ? (
+                <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
+                  {updatingBiometric ? <ActivityIndicator size="small" color="#FECACA" /> : <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={[styles.connectButton, (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric) ? styles.connectButtonDisabled : null]} onPress={handleEnableBiometrics} disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}>
+                  {updatingBiometric ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Activar biometría</Text>}
+                </TouchableOpacity>
+              )}
             </View>
-          ) : null}
+          </View>
+          <TouchableOpacity style={[styles.card, styles.cardActive]} onPress={() => router.push('/cambiar-password')}>
+            <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Seguridad</Text>
+            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Cambiar contraseña de tu cuenta</Text>
+          </TouchableOpacity>
         </View>
         </View>
       </ScrollView>
@@ -1207,20 +1194,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   card: {
-    borderRadius: 20,
-    padding: 22,
-    marginBottom: 20,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
   },
   accordionSection: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   accordionHeader: {
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1237,7 +1224,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   accordionBody: {
-    marginTop: 10,
+    marginTop: 8,
     marginBottom: 0,
   },
   mpCard: {
@@ -1250,6 +1237,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     gap: 12,
   },
   connectButton: {
@@ -1363,7 +1351,7 @@ const styles = StyleSheet.create({
     width: '50%',
   },
   businessSaveButton: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     marginTop: 14,
   },
   adminWarningBox: {
@@ -1410,13 +1398,15 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
+    minHeight: 40,
   },
   preferenceRow: {
     marginTop: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
   },
   interesesLoading: {
     marginTop: 16,
@@ -1498,8 +1488,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 10,
+    minHeight: 36,
     color: '#E2E8F0',
     backgroundColor: '#020817',
   },
@@ -1548,6 +1539,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     gap: 10,
   },
   saveInteresesButton: {
@@ -1559,6 +1551,7 @@ const styles = StyleSheet.create({
     minWidth: 190,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-end',
   },
   saveInteresesButtonText: {
     color: '#DBEAFE',
