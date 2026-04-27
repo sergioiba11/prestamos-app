@@ -58,8 +58,6 @@ export default function ClientesScreen() {
 
     try {
       const listado = await fetchAdminClientesListado()
-      console.log('clientes screen listado', listado)
-      if (listado.length === 0) console.warn('clientes screen sin resultados')
       setClientes(listado)
     } catch (err: any) {
       setError(err?.message || 'No se pudieron cargar los clientes')
@@ -71,7 +69,6 @@ export default function ClientesScreen() {
   }, [])
 
   const goEditarCliente = useCallback((clienteId: string) => {
-    console.log('[clientes] editar cliente id', clienteId)
     setMenuAbiertoPara(null)
     router.push(`/cliente/${clienteId}/editar` as any)
   }, [])
