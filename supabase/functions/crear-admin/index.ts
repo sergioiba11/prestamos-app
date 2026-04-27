@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
       .trim()
       .toLowerCase()
     const password = String(body?.password || '').trim()
+    const adminPassword = String(body?.adminPassword || '').trim()
     const telefono = String(body?.telefono || '').trim()
 
     if (!nombre) {
@@ -88,6 +89,19 @@ Deno.serve(async (req) => {
           ok: false,
           error:
             'La contraseña del administrador debe tener al menos 6 caracteres',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    if (!adminPassword) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'La contraseña del admin actual es obligatoria',
         }),
         {
           status: 400,
@@ -165,6 +179,51 @@ Deno.serve(async (req) => {
     }
 
     console.log('[crear-admin] Admin autorizado:', adminRow.id)
+
+    const adminEmailForReauth = String(user.email || adminRow.email || '').trim()
+    if (!adminEmailForReauth) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'No se pudo validar la identidad del admin actual',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    const authValidationClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+
+    const { data: reauthData, error: reauthError } =
+      await authValidationClient.auth.signInWithPassword({
+        email: adminEmailForReauth,
+        password: adminPassword,
+      })
+
+    const isWrongAdminPassword =
+      !!reauthError || !reauthData?.user || reauthData.user.id !== user.id
+
+    await authValidationClient.auth.signOut()
+
+    if (isWrongAdminPassword) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'La contraseña del admin actual es incorrecta',
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
 
     const { data: existingUsuario } = await adminClient
       .from('usuarios')
