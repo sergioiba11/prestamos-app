@@ -22,7 +22,6 @@ export default function ClientesLista() {
       .select('*')
 
     if (error) {
-      console.log(error)
       return
     }
 
