@@ -261,14 +261,26 @@ export default function AdminHome() {
     [],
   )
 
-  const pendingPaymentsPreview = isCompactMobile ? pendingPayments.slice(0, 3) : pendingPayments
-  const activeClientsPreview = isCompactMobile ? activeClients.slice(0, 4) : activeClients.slice(0, 6)
+  const pendingPaymentsPreview = isCompactMobile ? pendingPayments.slice(0, 2) : pendingPayments
+  const activeClientsPreview = isCompactMobile ? activeClients.slice(0, 2) : activeClients.slice(0, 6)
+  const moraValue = resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora actual'
+  const shouldStackImportantMetrics = isCompactMobile && moraValue.length >= 14
+  const secondaryActions = [
+    { key: 'nuevo-cliente', label: 'Nuevo cliente', icon: 'person-add-outline' as const, route: '/nuevo-cliente' },
+    { key: 'clientes', label: 'Ver clientes', icon: 'people-outline' as const, route: '/clientes' },
+    { key: 'prestamos', label: 'Ver préstamos', icon: 'document-text-outline' as const, route: '/prestamos' },
+    { key: 'historial', label: 'Historial', icon: 'time-outline' as const, route: '/historial-prestamos' },
+  ]
+  const secondaryActionRows = [
+    secondaryActions.slice(0, 2),
+    secondaryActions.slice(2, 4),
+  ]
   const mobileMetricItems = useMemo(
     () => [
       { key: 'cobrarHoy', label: 'A cobrar hoy', value: money(kpis.cobrarHoy) },
       { key: 'pagosPendientes', label: 'Pagos pendientes', value: String(kpis.pagosPendientes) },
       { key: 'pendienteTotal', label: 'Pendiente total', value: money(resumenCaja.pendienteTotal) },
-      { key: 'moraEstimada', label: 'Mora estimada', value: resumenCaja.moraEstimada > 0 ? money(resumenCaja.moraEstimada) : 'Sin mora', isMora: true },
+      { key: 'moraEstimada', label: 'Mora estimada', value: moraValue, isMora: true },
       { key: 'cobrarSemana', label: 'A cobrar semana', value: money(kpis.cobrarSemana) },
       { key: 'clientesActivos', label: 'Clientes activos', value: String(kpis.clientesActivos) },
       { key: 'clientesDemorados', label: 'Clientes demorados', value: String(kpis.clientesDemorados) },
@@ -277,7 +289,7 @@ export default function AdminHome() {
       { key: 'cobradoSemana', label: 'Cobrado semana', value: money(resumenCaja.cobradoSemana) },
       { key: 'noLeidas', label: 'No leídas', value: String(unreadCount) },
     ],
-    [kpis, resumenCaja, unreadCount],
+    [kpis, moraValue, resumenCaja, unreadCount],
   )
   const mobileMetricsVisible = showAllMobileMetrics ? mobileMetricItems : mobileMetricItems.slice(0, 4)
 
@@ -381,10 +393,23 @@ export default function AdminHome() {
             style={[isDesktop ? styles.sectionCardDesktopCompact : undefined, isCompactMobile && styles.sectionCardMobileCompact]}
           >
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Acciones rápidas</Text>
-            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }, isDesktop && styles.featureActionsWrapDesktop, isCompactMobile && styles.featureActionsWrapMobileCompact]}>
+            <View
+              style={[
+                styles.featureActionsWrap,
+                isMobile && { flexDirection: 'column' },
+                isDesktop && styles.featureActionsWrapDesktop,
+                isCompactMobile && styles.featureActionsWrapMobileCompact,
+              ]}
+            >
               <Pressable
                 onPress={() => router.push('/nuevo-prestamo' as any)}
-                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, isCompactMobile && styles.featureActionCardMobileCompact, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.featureActionCard,
+                  isMobile && styles.featureActionCardMobile,
+                  isDesktop && styles.featureActionCardDesktop,
+                  isCompactMobile && styles.featureActionCardMobileCompact,
+                  hovered && styles.cardHover,
+                ]}
               >
                 <LinearGradient
                   colors={['#2563EB', '#1E3A8A']}
@@ -401,7 +426,13 @@ export default function AdminHome() {
               </Pressable>
               <Pressable
                 onPress={() => router.push('/cargar-pago' as any)}
-                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, isCompactMobile && styles.featureActionCardMobileCompact, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.featureActionCard,
+                  isMobile && styles.featureActionCardMobile,
+                  isDesktop && styles.featureActionCardDesktop,
+                  isCompactMobile && styles.featureActionCardMobileCompact,
+                  hovered && styles.cardHover,
+                ]}
               >
                 <LinearGradient
                   colors={['#7C3AED', '#4C1D95']}
@@ -419,58 +450,26 @@ export default function AdminHome() {
             </View>
 
             <View style={[styles.smallActionGrid, isDesktop && styles.smallActionGridDesktop, isCompactMobile && styles.smallActionGridMobileCompact]}>
-              <Pressable
-                style={({ hovered }) => [
-                  styles.smallAction,
-                  isDesktop && styles.smallActionDesktop,
-                  isCompactMobile && styles.smallActionMobileCompact,
-                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
-                  hovered && styles.cardHover,
-                ]}
-                onPress={() => router.push('/nuevo-cliente' as any)}
-              >
-                <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
-                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Nuevo cliente</Text>
-              </Pressable>
-              <Pressable
-                style={({ hovered }) => [
-                  styles.smallAction,
-                  isDesktop && styles.smallActionDesktop,
-                  isCompactMobile && styles.smallActionMobileCompact,
-                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
-                  hovered && styles.cardHover,
-                ]}
-                onPress={() => router.push('/clientes' as any)}
-              >
-                <Ionicons name="people-outline" size={16} color="#93C5FD" />
-                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver clientes</Text>
-              </Pressable>
-              <Pressable
-                style={({ hovered }) => [
-                  styles.smallAction,
-                  isDesktop && styles.smallActionDesktop,
-                  isCompactMobile && styles.smallActionMobileCompact,
-                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
-                  hovered && styles.cardHover,
-                ]}
-                onPress={() => router.push('/prestamos' as any)}
-              >
-                <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
-                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver préstamos</Text>
-              </Pressable>
-              <Pressable
-                style={({ hovered }) => [
-                  styles.smallAction,
-                  isDesktop && styles.smallActionDesktop,
-                  isCompactMobile && styles.smallActionMobileCompact,
-                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
-                  hovered && styles.cardHover,
-                ]}
-                onPress={() => router.push('/historial-prestamos' as any)}
-              >
-                <Ionicons name="time-outline" size={16} color="#93C5FD" />
-                <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Historial</Text>
-              </Pressable>
+              {secondaryActionRows.map((row, rowIndex) => (
+                <View key={`secondary-row-${rowIndex}`} style={styles.smallActionRow}>
+                  {row.map((action) => (
+                    <Pressable
+                      key={action.key}
+                      style={({ hovered }) => [
+                        styles.smallAction,
+                        isDesktop && styles.smallActionDesktop,
+                        isCompactMobile && styles.smallActionMobileCompact,
+                        { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                        hovered && styles.cardHover,
+                      ]}
+                      onPress={() => router.push(action.route as any)}
+                    >
+                      <Ionicons name={action.icon} size={16} color="#93C5FD" />
+                      <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>{action.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ))}
             </View>
           </GradientCard>
 
@@ -482,18 +481,36 @@ export default function AdminHome() {
                   <Text style={[styles.linkText, { color: colors.primary }]}>{showAllMobileMetrics ? 'Ver menos' : 'Ver más métricas'}</Text>
                 </TouchableOpacity>
               </View>
-              <View style={styles.mobileSummaryGrid}>
+              <View
+                style={[
+                  styles.mobileSummaryGrid,
+                  Platform.OS === 'web'
+                    ? ({ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 } as const)
+                    : null,
+                ]}
+              >
                 {mobileMetricsVisible.map((metric) => {
+                  const shouldSpanTwoColumns =
+                    shouldStackImportantMetrics && (metric.key === 'pendienteTotal' || metric.key === 'moraEstimada')
                   const metricCard = (
                     <View
                       key={metric.key}
                       style={[
                         styles.mobileMetricCard,
+                        shouldSpanTwoColumns && styles.mobileMetricCardWide,
                         { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
                         metric.isMora && styles.mobileMetricCardWarning,
                       ]}
                     >
-                      <Text style={[styles.mobileMetricValue, { color: metric.isMora ? colors.warning : colors.textPrimary }]} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.mobileMetricValue,
+                          metric.isMora && styles.mobileMetricValueMora,
+                          metric.isMora && metric.value === 'Sin mora actual' && styles.mobileMetricValueMoraNoDebt,
+                          { color: metric.isMora ? colors.warning : colors.textPrimary },
+                        ]}
+                        numberOfLines={1}
+                      >
                         {metric.value}
                       </Text>
                       <Text style={[styles.mobileMetricLabel, { color: colors.textSecondary }]} numberOfLines={2}>
@@ -503,7 +520,7 @@ export default function AdminHome() {
                   )
                   if (metric.isMora) {
                     return (
-                      <Pressable key={metric.key} onPress={() => router.push('/detalle-mora' as any)}>
+                      <Pressable key={metric.key} style={shouldSpanTwoColumns ? styles.mobileMetricCardWide : undefined} onPress={() => router.push('/detalle-mora' as any)}>
                         {metricCard}
                       </Pressable>
                     )
@@ -570,7 +587,7 @@ export default function AdminHome() {
                 </View>
               ) : (
                 <ScrollView
-                  horizontal={isCompactMobile}
+                  horizontal={false}
                   style={[styles.pendingList, isDesktop && styles.pendingListDesktop, isCompactMobile && styles.pendingListMobile]}
                   contentContainerStyle={[styles.pendingListContent, isCompactMobile && styles.pendingListContentMobile]}
                   nestedScrollEnabled
@@ -629,7 +646,7 @@ export default function AdminHome() {
                 </View>
               ) : (
                 <ScrollView
-                  horizontal={isCompactMobile}
+                  horizontal={false}
                   style={[styles.clientListScroll, isDesktop && styles.clientListScrollDesktop, isCompactMobile && styles.clientListScrollMobile]}
                   contentContainerStyle={[styles.clientList, isCompactMobile && styles.clientListMobile]}
                   showsHorizontalScrollIndicator={false}
@@ -847,6 +864,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
+  featureActionCardMobile: { width: '100%', minWidth: 0 },
   featureActionCardDesktop: { minHeight: 80 },
   featureActionCardMobileCompact: { minHeight: 92 },
   featureGradient: {
@@ -865,7 +883,8 @@ const styles = StyleSheet.create({
   featureSubtitle: { color: '#DBEAFE', marginTop: 4, fontSize: 11 },
   featureSubtitleDesktop: { marginTop: 2, fontSize: 9 },
   featureSubtitleMobileCompact: { marginTop: 2, fontSize: 9 },
-  smallActionGrid: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  smallActionGrid: { marginTop: 10, gap: 8 },
+  smallActionRow: { flexDirection: 'row', gap: 8, width: '100%' },
   smallActionGridDesktop: { marginTop: 8, gap: 6 },
   smallActionGridMobileCompact: { marginTop: 8, gap: 8 },
   smallAction: {
@@ -880,10 +899,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
-  smallActionMobileCompact: { width: '49%', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, gap: 5 },
-  mobileSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  smallActionMobileCompact: { flex: 1, minWidth: 0, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, gap: 5 },
+  mobileSummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, width: '100%' },
   mobileMetricCard: {
-    width: '48%',
+    width: '100%',
+    flexBasis: '48%',
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     minHeight: 74,
     borderRadius: 10,
     borderWidth: 1,
@@ -891,8 +914,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     justifyContent: 'space-between',
   },
+  mobileMetricCardWide: { flexBasis: '100%' },
   mobileMetricCardWarning: { borderColor: 'rgba(245,158,11,0.5)' },
   mobileMetricValue: { fontSize: 14, fontWeight: '800' },
+  mobileMetricValueMora: { fontSize: 13 },
+  mobileMetricValueMoraNoDebt: { fontSize: 16 },
   mobileMetricLabel: { fontSize: 10, fontWeight: '600', marginTop: 4 },
   smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 10 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -932,7 +958,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 10,
   },
-  pendingRowMobile: { width: 280, marginBottom: 0, alignItems: 'flex-start' },
+  pendingRowMobile: { width: '100%', marginBottom: 0, alignItems: 'flex-start' },
   pendingClient: { color: '#F8FAFC', fontWeight: '700', fontSize: 13 },
   pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 11 },
   pendingLateText: { marginTop: 2, fontSize: 10, fontWeight: '700' },
@@ -958,7 +984,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  clientRowMobile: { width: 290 },
+  clientRowMobile: { width: '100%' },
   avatarCircle: {
     width: 34,
     height: 34,
