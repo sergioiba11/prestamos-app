@@ -3,7 +3,7 @@ import { router } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 import { useAppTheme } from '../context/AppThemeContext'
-import { DetalleMoraData, PrestamoMoraDetalleItem, fetchDetalleMoraData } from '../lib/admin-dashboard'
+import { DetalleMoraData, PrestamoMoraDetalleItem, PrestamoProximoMoraItem, fetchDetalleMoraData } from '../lib/admin-dashboard'
 
 function money(v: number) {
   return `$${Number(v || 0).toLocaleString('es-AR')}`
@@ -29,6 +29,7 @@ export default function DetalleMoraScreen() {
     clientesConMora: 0,
     prestamosDemoradosOVencidos: 0,
     prestamos: [],
+    proximosEnMora: [],
   })
 
   const load = useCallback(async (silent = false) => {
@@ -100,6 +101,21 @@ export default function DetalleMoraScreen() {
             ))}
           </View>
         )}
+
+        <View style={[styles.sectionCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Próximos en mora</Text>
+          {data.proximosEnMora.length === 0 ? (
+            <View style={styles.sectionEmpty}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No hay préstamos próximos a entrar en mora</Text>
+            </View>
+          ) : (
+            <View style={styles.listWrap}>
+              {data.proximosEnMora.map((prestamo) => (
+                <PrestamoProximoMoraCard key={prestamo.prestamoId} prestamo={prestamo} />
+              ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
     </View>
   )
@@ -145,6 +161,25 @@ function PrestamoMoraCard({ prestamo, isMobile }: { prestamo: PrestamoMoraDetall
   )
 }
 
+function PrestamoProximoMoraCard({ prestamo }: { prestamo: PrestamoProximoMoraItem }) {
+  const { theme } = useAppTheme()
+  const colors = theme.colors
+
+  const remainingColor =
+    prestamo.diasRestantes < 1 ? colors.danger : prestamo.diasRestantes < 3 ? colors.warning : colors.textPrimary
+  const remainingText = prestamo.diasRestantes < 1 ? 'entra hoy' : `${prestamo.diasRestantes} días`
+
+  return (
+    <View style={[styles.loanCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+      <Text style={[styles.loanTitle, { color: colors.textPrimary }]}>{prestamo.cliente}</Text>
+      <Text style={[styles.fieldValue, { color: colors.textPrimary }]}>DNI: {prestamo.dni}</Text>
+      <Text style={[styles.fieldValue, { color: colors.textPrimary }]}>Saldo: {money(prestamo.saldoPendiente)}</Text>
+      <Text style={[styles.fieldValue, { color: colors.textPrimary }]}>Inicio mora: {prestamo.fechaInicioMora}</Text>
+      <Text style={[styles.fieldValue, { color: remainingColor }]}>Entra en mora en: {remainingText}</Text>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   page: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -170,6 +205,9 @@ const styles = StyleSheet.create({
   kpiLabel: { fontSize: 12 },
   kpiValue: { fontSize: 24, fontWeight: '800', marginTop: 3 },
   empty: { borderWidth: 1, borderRadius: 12, padding: 18, alignItems: 'center', gap: 8 },
+  sectionCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '800' },
+  sectionEmpty: { paddingVertical: 6 },
   emptyText: { fontWeight: '600' },
   listWrap: { gap: 8 },
   loanCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 8 },
