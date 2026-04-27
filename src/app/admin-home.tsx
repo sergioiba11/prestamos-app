@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ViewStyle } from 'react-native'
+import { AppState, type AppStateStatus, type ViewStyle } from 'react-native'
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +22,6 @@ import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
 import { useAppTheme } from '../context/AppThemeContext'
 import {
-  ClienteAdminListadoItem,
   ClienteDemoradoItem,
   ClientePrestamoActivo,
   PagoPendienteItem,
@@ -84,6 +83,7 @@ export default function AdminHome() {
     : null
 
   const [loading, setLoading] = useState(true)
+  const [refetching, setRefetching] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [adminName, setAdminName] = useState('Administrador')
   const [adminRole, setAdminRole] = useState('Administrador')
@@ -112,6 +112,8 @@ export default function AdminHome() {
   const [pendingPaymentsError, setPendingPaymentsError] = useState<string | null>(null)
   const [lateClientsExpanded, setLateClientsExpanded] = useState(false)
   const notificationsButtonRef = useRef<View | null>(null)
+  const hasLoadedOnceRef = useRef(false)
+  const loadingDashboardRef = useRef(false)
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -123,9 +125,16 @@ export default function AdminHome() {
     }
   }, [])
 
-  const loadData = useCallback(async () => {
+  const loadDashboardData = useCallback(async () => {
+    if (loadingDashboardRef.current) return
+    loadingDashboardRef.current = true
+
     try {
-      setLoading(true)
+      if (!hasLoadedOnceRef.current) {
+        setLoading(true)
+      } else {
+        setRefetching(true)
+      }
 
       const {
         data: { user },
@@ -145,78 +154,46 @@ export default function AdminHome() {
       }
 
       const data = await fetchAdminPanelData()
-      const clientesById = new Map<string, ClienteAdminListadoItem>(
-        data.clientesListado.map((cliente) => [cliente.clienteId, cliente]),
-      )
-
-      const { data: pendingPaymentsData, error: pendingPaymentsErrorResponse } = await supabase
-        .from('pagos')
-        .select('id, cliente_id, prestamo_id, monto, metodo, created_at, estado')
-        .eq('estado', 'pendiente_aprobacion')
-        .order('created_at', { ascending: false })
-
-      console.log('lista pagos pendientes:', pendingPaymentsData)
-      console.log('error lista pagos pendientes:', pendingPaymentsErrorResponse)
-
-      if (pendingPaymentsErrorResponse) {
-        setPendingPaymentsError(pendingPaymentsErrorResponse.message)
-        setPendingPayments([])
-      } else {
-        setPendingPaymentsError(null)
-        const pendingItems = (pendingPaymentsData || [])
-          .map((pago: any) => {
-            const cliente = clientesById.get(String(pago.cliente_id || ''))
-            const createdAt = String(pago.created_at || '')
-            const createdDate = new Date(createdAt)
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-            createdDate.setHours(0, 0, 0, 0)
-            const pendingDays = Number.isNaN(createdDate.getTime())
-              ? 0
-              : Math.max(Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)), 0)
-
-            return {
-              id: String(pago.id),
-              clienteId: String(pago.cliente_id || ''),
-              cliente: cliente?.nombre || String(pago.cliente_id || 'Cliente sin identificar'),
-              dni: cliente?.dni || '—',
-              monto: Number(pago.monto || 0),
-              metodo: String(pago.metodo || 'Sin método'),
-              createdAt,
-              estadoValidacion: String(pago.estado || 'pendiente_aprobacion'),
-              prestamoId: pago.prestamo_id ? String(pago.prestamo_id) : undefined,
-              telefono: cliente?.telefono || undefined,
-              pendingDays,
-            } as PagoPendienteItem
-          })
-          .sort((a, b) => (b.pendingDays || 0) - (a.pendingDays || 0) || b.monto - a.monto)
-        setPendingPayments(pendingItems)
-      }
-
-      const totalPagosPendientes = pendingPaymentsData?.length || 0
-
-      setKpis({
-        ...data.kpis,
-        pagosPendientes: totalPagosPendientes,
-      })
+      setPendingPaymentsError(null)
+      setPendingPayments(data.pagosPendientesList || [])
+      setKpis(data.kpis)
       setResumenCaja(data.resumenCaja)
       setActiveClients(data.activosCards)
       setLateClients(data.clientesDemorados)
       setLateClientsIds(data.clientesDemoradosIds)
       await loadNotifications()
+      hasLoadedOnceRef.current = true
     } catch (err: any) {
-      console.error('admin-home loadData error', err)
+      console.error('admin-home loadDashboardData error', err)
       Alert.alert('Error', err?.message || 'No se pudo cargar el panel admin.')
     } finally {
       setLoading(false)
+      setRefetching(false)
+      loadingDashboardRef.current = false
     }
   }, [loadNotifications])
 
+  useEffect(() => {
+    void loadDashboardData()
+  }, [loadDashboardData])
+
   useFocusEffect(
     useCallback(() => {
-      void loadData()
-    }, [loadData]),
+      if (!hasLoadedOnceRef.current) return undefined
+      void loadDashboardData()
+      return undefined
+    }, [loadDashboardData]),
   )
+
+  useEffect(() => {
+    const onAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active' && hasLoadedOnceRef.current) {
+        void loadDashboardData()
+      }
+    }
+    const subscription = AppState.addEventListener('change', onAppStateChange)
+    return () => subscription.remove()
+  }, [loadDashboardData])
 
   const onNavigate = (key: AdminNavKey) => {
     setMenuOpen(false)
@@ -252,7 +229,7 @@ export default function AdminHome() {
         accion,
       })
 
-      await loadData()
+      await loadDashboardData()
 
       if (accion === 'aprobar') {
         router.push(buildAprobacionRedirect(result, pagoId) as any)
@@ -323,9 +300,12 @@ export default function AdminHome() {
               <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop, isCompactMobile && styles.pageTitleMobileCompact, { color: colors.textPrimary }]}>
                 Bienvenido, {adminName}
               </Text>
-              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop, isCompactMobile && styles.pageSubtitleMobileCompact, { color: colors.textSecondary }]}>
-                Dashboard financiero · {todayLabel}
-              </Text>
+              <View style={styles.subtitleWrap}>
+                <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop, isCompactMobile && styles.pageSubtitleMobileCompact, { color: colors.textSecondary }]}>
+                  Dashboard financiero · {todayLabel}
+                </Text>
+                {refetching ? <ActivityIndicator size="small" color={colors.primary} style={styles.refetchIndicator} /> : null}
+              </View>
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>
@@ -689,9 +669,11 @@ const styles = StyleSheet.create({
   pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 24 },
   pageTitleDesktop: { fontSize: 22, lineHeight: 26 },
   pageTitleMobileCompact: { fontSize: 22, lineHeight: 26 },
+  subtitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
   pageSubtitleDesktop: { marginTop: 2, fontSize: 11 },
   pageSubtitleMobileCompact: { marginTop: 3, fontSize: 11 },
+  refetchIndicator: { marginTop: 4 },
   headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
     minHeight: 42,
