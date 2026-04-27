@@ -594,19 +594,34 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
 
   for (const prestamo of prestamos) {
     const estado = low(prestamo.estado)
-    if (!['atrasado', 'demorado', 'en_mora', 'vencido'].includes(estado)) continue
+    const fechaInicioMora = (prestamo.fecha_inicio_mora || '').slice(0, 10)
+    const moraPorPrestamo =
+      estado !== 'pagado' &&
+      estado !== 'cancelado' &&
+      Boolean(fechaInicioMora) &&
+      fechaInicioMora <= todayKey
+
+    if (!moraPorPrestamo) continue
+
     const clienteId = prestamo.cliente_id
     if (!clienteId) continue
-    if (clientesMoraMap.has(clienteId)) continue
     const cliente = clientesById.get(clienteId)
-    const diasAtraso = getDiffDaysFromToday(prestamo.fecha_limite)
+    const diasAtraso = Math.max(getDiffDaysFromToday(prestamo.fecha_inicio_mora), 0)
+    const saldoPendiente = Math.max(
+      toNumber(prestamo.saldo_pendiente),
+      cliente?.deudaActiva || 0,
+      cliente?.restante || 0,
+      toNumber(prestamo.total_a_pagar),
+    )
+    const prev = clientesMoraMap.get(clienteId)
+
     clientesMoraMap.set(clienteId, {
       clienteId,
-      nombre: cliente?.nombre || 'Cliente',
-      dni: cliente?.dni || '—',
-      telefono: cliente?.telefono || 'Sin teléfono',
-      saldoPendiente: Math.max(toNumber(prestamo.saldo_pendiente), 0, cliente?.deudaActiva || 0, cliente?.restante || 0),
-      diasAtraso: Math.max(diasAtraso, 0),
+      nombre: cliente?.nombre || prev?.nombre || 'Cliente',
+      dni: cliente?.dni || prev?.dni || '—',
+      telefono: cliente?.telefono || prev?.telefono || 'Sin teléfono',
+      saldoPendiente: Math.max(prev?.saldoPendiente || 0, saldoPendiente),
+      diasAtraso: Math.max(prev?.diasAtraso || 0, diasAtraso),
     })
   }
 
