@@ -85,6 +85,7 @@ export default function Configuraciones() {
   const [adminTelefono, setAdminTelefono] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [adminPasswordRepeat, setAdminPasswordRepeat] = useState('')
+  const [adminCurrentPassword, setAdminCurrentPassword] = useState('')
   const [countdownSeconds, setCountdownSeconds] = useState(5)
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminStatus, setAdminStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -275,14 +276,28 @@ export default function Configuraciones() {
   }
 
   const toggleSection = (section: AccordionKey) => {
-    if (section === 'administradores' && !openSections.administradores) {
-      setCountdownSeconds(5)
-    }
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }))
   }
 
+  const adminNombreTrimmed = adminNombre.trim()
+  const adminEmailTrimmed = adminEmail.trim().toLowerCase()
+  const adminPasswordTrimmed = adminPassword.trim()
+  const adminPasswordRepeatTrimmed = adminPasswordRepeat.trim()
+  const adminCurrentPasswordTrimmed = adminCurrentPassword.trim()
+  const adminFormReadyForCountdown = Boolean(
+    adminNombreTrimmed &&
+      adminEmailTrimmed &&
+      adminPasswordTrimmed &&
+      adminPasswordRepeatTrimmed &&
+      adminCurrentPasswordTrimmed
+  )
+
   useEffect(() => {
     if (!openSections.administradores) return
+    if (!adminFormReadyForCountdown) {
+      setCountdownSeconds(5)
+      return
+    }
     if (countdownSeconds <= 0) return
 
     const timeoutId = setTimeout(() => {
@@ -290,7 +305,7 @@ export default function Configuraciones() {
     }, 1000)
 
     return () => clearTimeout(timeoutId)
-  }, [countdownSeconds, openSections.administradores])
+  }, [adminFormReadyForCountdown, countdownSeconds, openSections.administradores])
 
   const validarIntereses = useCallback(() => {
     const errors: Record<number, string> = {}
@@ -497,6 +512,7 @@ export default function Configuraciones() {
     setAdminTelefono('')
     setAdminPassword('')
     setAdminPasswordRepeat('')
+    setAdminCurrentPassword('')
     setCountdownSeconds(5)
   }, [])
 
@@ -508,8 +524,9 @@ export default function Configuraciones() {
     const telefono = adminTelefono.trim()
     const password = adminPassword.trim()
     const repeatPassword = adminPasswordRepeat.trim()
+    const currentAdminPassword = adminCurrentPassword.trim()
 
-    if (!nombre || !email || !password || !repeatPassword) {
+    if (!nombre || !email || !password || !repeatPassword || !currentAdminPassword) {
       setAdminStatus({ type: 'error', message: 'Completá nombre, email y contraseña.' })
       Alert.alert('Error', 'Completá nombre, email y contraseña.')
       return
@@ -548,6 +565,7 @@ export default function Configuraciones() {
           email,
           telefono: telefono || null,
           password,
+          adminPassword: currentAdminPassword,
         },
       })
 
@@ -569,7 +587,7 @@ export default function Configuraciones() {
     } finally {
       setAdminLoading(false)
     }
-  }, [adminEmail, adminLoading, adminNombre, adminPassword, adminPasswordRepeat, adminTelefono, countdownSeconds, esAdmin, limpiarFormularioAdmin])
+  }, [adminCurrentPassword, adminEmail, adminLoading, adminNombre, adminPassword, adminPasswordRepeat, adminTelefono, countdownSeconds, esAdmin, limpiarFormularioAdmin])
 
   useFocusEffect(
     useCallback(() => {
@@ -1029,6 +1047,17 @@ export default function Configuraciones() {
                     editable={esAdmin && !adminLoading}
                   />
                 </View>
+                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
+                    value={adminCurrentPassword}
+                    onChangeText={setAdminCurrentPassword}
+                    placeholder="Tu contraseña de admin"
+                    placeholderTextColor={colors.textSecondary}
+                    secureTextEntry
+                    editable={esAdmin && !adminLoading}
+                  />
+                </View>
               </View>
 
               {adminStatus ? (
@@ -1045,16 +1074,20 @@ export default function Configuraciones() {
                 style={[
                   styles.saveInteresesButton,
                   !isWeb && styles.mobileFullButton,
-                  (adminLoading || !esAdmin || countdownSeconds > 0) && styles.connectButtonDisabled,
+                  (adminLoading || !esAdmin || !adminFormReadyForCountdown || countdownSeconds > 0) && styles.connectButtonDisabled,
                 ]}
                 onPress={crearAdmin}
-                disabled={adminLoading || !esAdmin || countdownSeconds > 0}
+                disabled={adminLoading || !esAdmin || !adminFormReadyForCountdown || countdownSeconds > 0}
               >
                 {adminLoading ? (
                   <ActivityIndicator size="small" color="#DBEAFE" />
                 ) : (
                   <Text style={styles.saveInteresesButtonText}>
-                    {countdownSeconds > 0 ? `Confirmar en ${countdownSeconds}s` : 'Crear administrador'}
+                    {!adminFormReadyForCountdown
+                      ? 'Completá los campos para confirmar'
+                      : countdownSeconds > 0
+                        ? `Confirmar en ${countdownSeconds}s`
+                        : 'Crear administrador'}
                   </Text>
                 )}
               </TouchableOpacity>
