@@ -528,21 +528,15 @@ export default function Configuraciones() {
     const repeatPassword = adminPasswordRepeat.trim()
     const currentAdminPassword = adminCurrentPassword.trim()
 
-    if (!nombre) {
-      setAdminStatus({ type: 'error', message: 'El nombre y apellido es obligatorio' })
-      Alert.alert('Error', 'El nombre y apellido es obligatorio')
+    if (!nombre || !email || !password || !repeatPassword || !currentAdminPassword) {
+      setAdminStatus({ type: 'error', message: 'Faltan datos obligatorios' })
+      Alert.alert('Error', 'Faltan datos obligatorios')
       return
     }
 
     if (!esNombreCompletoValido(nombre)) {
       setAdminStatus({ type: 'error', message: 'Ingresar nombre completo' })
       Alert.alert('Error', 'Ingresar nombre completo')
-      return
-    }
-
-    if (!email || !password || !repeatPassword || !currentAdminPassword) {
-      setAdminStatus({ type: 'error', message: 'Completá email y contraseña.' })
-      Alert.alert('Error', 'Completá email y contraseña.')
       return
     }
 
@@ -577,18 +571,35 @@ export default function Configuraciones() {
         body: {
           nombre,
           email,
-          telefono: telefono || null,
+          telefono,
           password,
           adminPassword: currentAdminPassword,
         },
       })
 
+      console.log('crear-admin response:', { data, error })
+
       if (error) {
-        throw new Error(error.message || 'No se pudo crear el admin')
+        let errorData: any = data
+        const errorContext = (error as any)?.context
+        if (errorContext && typeof errorContext.json === 'function') {
+          try {
+            errorData = await errorContext.clone().json()
+          } catch {
+            // no-op
+          }
+        }
+        if (errorData?.detalle) {
+          console.log('[crear-admin] detalle:', errorData.detalle)
+        }
+        throw new Error(errorData?.error || error.message || 'No se pudo crear el administrador')
       }
 
       if (!data?.ok) {
-        throw new Error(data?.error || 'No se pudo crear el admin')
+        if (data?.detalle) {
+          console.log('[crear-admin] detalle:', data.detalle)
+        }
+        throw new Error(data?.error || 'No se pudo crear el administrador')
       }
 
       setAdminStatus({ type: 'success', message: 'Administrador creado correctamente.' })

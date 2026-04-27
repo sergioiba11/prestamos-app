@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+const jsonResponse = (status: number, payload: Record<string, unknown>) =>
+  new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -14,13 +20,7 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Método no permitido' }),
-        {
-          status: 405,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(405, { ok: false, error: 'Método no permitido' })
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -28,32 +28,20 @@ Deno.serve(async (req) => {
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'Faltan variables de entorno de Supabase',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(500, {
+        ok: false,
+        error: 'Faltan variables de entorno de Supabase',
+      })
     }
 
     const authHeader = req.headers.get('Authorization')
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Falta token de autorización' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(401, { ok: false, error: 'Falta token de autorización' })
     }
 
     const token = authHeader.replace('Bearer ', '').trim()
 
-    const body = await req.json()
+    const body = await req.json().catch(() => null)
     const nombre = String(body?.nombre || '').trim()
     const email = String(body?.email || '')
       .trim()
@@ -62,52 +50,20 @@ Deno.serve(async (req) => {
     const adminPassword = String(body?.adminPassword || '').trim()
     const telefono = String(body?.telefono || '').trim()
 
-    if (!nombre) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'El nombre es obligatorio' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+    if (!nombre || !email || !password || !adminPassword) {
+      return jsonResponse(400, { ok: false, error: 'Faltan datos obligatorios' })
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Email inválido' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(400, { ok: false, error: 'Email inválido' })
     }
 
     if (password.length < 6) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error:
-            'La contraseña del administrador debe tener al menos 6 caracteres',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    if (!adminPassword) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'La contraseña del admin actual es obligatoria',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(400, {
+        ok: false,
+        error: 'La contraseña del administrador debe tener al menos 6 caracteres',
+      })
     }
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -135,63 +91,40 @@ Deno.serve(async (req) => {
     } = await userClient.auth.getUser()
 
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ ok: false, error: 'Sesión inválida o expirada' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(401, { ok: false, error: 'Sesión inválida o expirada' })
     }
 
     console.log('[crear-admin] Usuario autenticado:', user.id)
 
     const { data: adminRow, error: adminRowError } = await adminClient
       .from('usuarios')
-      .select('id, email, rol, nombre')
-      .eq('id', user.id)
+      .select('id, usuario_id, email, rol, nombre')
+      .or(`id.eq.${user.id},usuario_id.eq.${user.id}`)
       .maybeSingle()
 
     if (adminRowError) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'No se pudo validar el rol del usuario',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(500, {
+        ok: false,
+        error: 'No se pudo validar el rol del usuario',
+        detalle: adminRowError.message,
+      })
     }
 
     if (!adminRow || adminRow.rol !== 'admin') {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'No tenés permisos para crear administradores',
-        }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(403, {
+        ok: false,
+        error: 'No tenés permisos para crear administradores',
+      })
     }
 
     console.log('[crear-admin] Admin autorizado:', adminRow.id)
 
     const adminEmailForReauth = String(user.email || adminRow.email || '').trim()
     if (!adminEmailForReauth) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'No se pudo validar la identidad del admin actual',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(400, {
+        ok: false,
+        error: 'No se pudo validar la identidad del admin actual',
+      })
     }
 
     const authValidationClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -213,35 +146,23 @@ Deno.serve(async (req) => {
     await authValidationClient.auth.signOut()
 
     if (isWrongAdminPassword) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'La contraseña del admin actual es incorrecta',
-        }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(401, {
+        ok: false,
+        error: 'La contraseña del admin actual es incorrecta',
+      })
     }
 
     const { data: existingUsuario } = await adminClient
       .from('usuarios')
       .select('id, email')
-      .eq('email', email)
+      .ilike('email', email)
       .maybeSingle()
 
     if (existingUsuario) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'Ya existe un usuario con ese email',
-        }),
-        {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(409, {
+        ok: false,
+        error: 'Ya existe un usuario con ese email',
+      })
     }
 
     const { data: createdAuth, error: createAuthError } =
@@ -257,16 +178,17 @@ Deno.serve(async (req) => {
       })
 
     if (createAuthError || !createdAuth.user) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: createAuthError?.message || 'No se pudo crear el auth user',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      const authErrorMessage = String(createAuthError?.message || '')
+      const alreadyExistsInAuth =
+        authErrorMessage.toLowerCase().includes('already') &&
+        authErrorMessage.toLowerCase().includes('registered')
+      return jsonResponse(400, {
+        ok: false,
+        error: alreadyExistsInAuth
+          ? 'Ya existe un usuario con ese email'
+          : createAuthError?.message || 'No se pudo crear el auth user',
+        detalle: createAuthError?.message || null,
+      })
     }
 
     const adminId = createdAuth.user.id
@@ -276,6 +198,7 @@ Deno.serve(async (req) => {
       .from('usuarios')
       .insert({
         id: adminId,
+        usuario_id: adminId,
         nombre,
         email,
         telefono: telefono || null,
@@ -283,49 +206,63 @@ Deno.serve(async (req) => {
       })
 
     if (insertUsuarioError) {
+      const mayNotHaveUsuarioIdColumn =
+        insertUsuarioError.code === 'PGRST204' &&
+        String(insertUsuarioError.message || '')
+          .toLowerCase()
+          .includes('usuario_id')
+      if (mayNotHaveUsuarioIdColumn) {
+        const { error: fallbackInsertError } = await adminClient
+          .from('usuarios')
+          .insert({
+            id: adminId,
+            nombre,
+            email,
+            telefono: telefono || null,
+            rol: 'admin',
+          })
+
+        if (!fallbackInsertError) {
+          return jsonResponse(200, {
+            ok: true,
+            message: 'Administrador creado correctamente',
+            admin: {
+              id: adminId,
+              nombre,
+              email,
+              telefono: telefono || null,
+              rol: 'admin',
+            },
+          })
+        }
+      }
+
       await adminClient.auth.admin.deleteUser(adminId)
 
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error:
-            insertUsuarioError.message ||
-            'No se pudo guardar el administrador en usuarios',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return jsonResponse(400, {
+        ok: false,
+        error:
+          insertUsuarioError.message ||
+          'No se pudo guardar el administrador en usuarios',
+        detalle: insertUsuarioError.message,
+      })
     }
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        message: 'Administrador creado correctamente',
-        admin: {
-          id: adminId,
-          nombre,
-          email,
-          telefono: telefono || null,
-          rol: 'admin',
-        },
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return jsonResponse(200, {
+      ok: true,
+      message: 'Administrador creado correctamente',
+      admin: {
+        id: adminId,
+        nombre,
+        email,
+        telefono: telefono || null,
+        rol: 'admin',
+      },
+    })
   } catch (error: any) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: error?.message || 'Error interno del servidor',
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return jsonResponse(500, {
+      ok: false,
+      error: error?.message || 'Error interno del servidor',
+    })
   }
 })
