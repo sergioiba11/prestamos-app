@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   Linking,
   Modal,
@@ -121,6 +123,13 @@ type CrearPagoMpResponse = {
   init_point?: string
   qr_url?: string
   qr_base64?: string
+}
+
+type ConfirmacionPagoVisual = {
+  titulo: string
+  subtitulo: string
+  monto: number
+  metodo: MetodoPagoUi
 }
 
 function normalizarMetodoPago(metodo: MetodoPagoUi): MetodoPagoApi {
@@ -300,6 +309,9 @@ export default function CargarPago() {
   const sobranteRef = useRef<View | null>(null)
   const ultimoMetodoRef = useRef<MetodoPagoUi>('efectivo')
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const confirmacionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const confirmacionOpacity = useRef(new Animated.Value(0)).current
+  const confirmacionScale = useRef(new Animated.Value(0.85)).current
 
   const clienteIdParam = useMemo(() => {
     const raw = params.cliente_id
@@ -342,6 +354,7 @@ export default function CargarPago() {
     qrBase64: string | null
   } | null>(null)
   const [reglasMora, setReglasMora] = useState<ConfigMoraRow[]>(REGLAS_MORA_DEFAULT)
+  const [confirmacionVisual, setConfirmacionVisual] = useState<ConfirmacionPagoVisual | null>(null)
   const { width } = useWindowDimensions()
   const contentMaxWidth = 1280
   const isDesktop = width >= 1024
@@ -365,6 +378,35 @@ export default function CargarPago() {
 
     return () => clearTimeout(timeout)
   }, [busqueda])
+
+  useEffect(() => {
+    if (!confirmacionVisual) return
+    confirmacionOpacity.setValue(0)
+    confirmacionScale.setValue(0.85)
+    Animated.parallel([
+      Animated.timing(confirmacionOpacity, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(confirmacionScale, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.out(Easing.back(1.2)),
+        useNativeDriver: true,
+      }),
+    ]).start()
+  }, [confirmacionOpacity, confirmacionScale, confirmacionVisual])
+
+  useEffect(
+    () => () => {
+      if (confirmacionTimeoutRef.current) {
+        clearTimeout(confirmacionTimeoutRef.current)
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     if (clienteSeleccionado?.id) {
@@ -430,6 +472,27 @@ export default function CargarPago() {
       setMpEstado({ connected: false, aliasCuenta: null, mpUserId: null })
     }
   }
+
+  const formatMetodoConfirmacion = useCallback((metodoPago: MetodoPagoUi) => {
+    if (metodoPago === 'transferencia') return 'Transferencia'
+    if (metodoPago === 'mp') return 'Mercado Pago'
+    return 'Efectivo'
+  }, [])
+
+  const mostrarConfirmacionVisual = useCallback(
+    (data: ConfirmacionPagoVisual, duracionMs = 950) =>
+      new Promise<void>((resolve) => {
+        if (confirmacionTimeoutRef.current) {
+          clearTimeout(confirmacionTimeoutRef.current)
+        }
+        setConfirmacionVisual(data)
+        confirmacionTimeoutRef.current = setTimeout(() => {
+          setConfirmacionVisual(null)
+          resolve()
+        }, duracionMs)
+      }),
+    []
+  )
 
   const cargarConfigMora = async () => {
     try {
@@ -1048,7 +1111,12 @@ export default function CargarPago() {
 
       if (metodo === 'transferencia') {
         if (json.ok && json.estado === 'pendiente_aprobacion' && json.impactado === false) {
-          Alert.alert('Transferencia pendiente', 'La transferencia quedó pendiente de validación')
+          await mostrarConfirmacionVisual({
+            titulo: 'Pago enviado a aprobación',
+            subtitulo: 'El administrador deberá aprobarlo antes de impactar el préstamo',
+            monto: Number(montoAplicado.toFixed(2)),
+            metodo,
+          })
           void cargarCuotasPrestamo(prestamoSeleccionado.id)
           setMonto('')
           setComprobante('')
@@ -1129,6 +1197,13 @@ export default function CargarPago() {
         Alert.alert('Error', 'El pago no quedó aprobado correctamente')
         return
       }
+
+      await mostrarConfirmacionVisual({
+        titulo: 'Pago cargado',
+        subtitulo: 'El comprobante se generó correctamente',
+        monto: Number(montoAplicado.toFixed(2)),
+        metodo,
+      })
 
       router.push({
         pathname: '/pago-aprobado',
@@ -1823,6 +1898,36 @@ export default function CargarPago() {
           </View>
         </View>
       </Modal>
+      <Modal visible={Boolean(confirmacionVisual)} transparent animationType="fade">
+        <View style={styles.successOverlay}>
+          <Animated.View
+            style={[
+              styles.successCard,
+              {
+                opacity: confirmacionOpacity,
+                transform: [{ scale: confirmacionScale }],
+              },
+            ]}
+          >
+            <View style={styles.successIconCircle}>
+              <Text style={styles.successIcon}>✓</Text>
+            </View>
+            <Text style={styles.successTitle}>{confirmacionVisual?.titulo || 'Pago cargado'}</Text>
+            <Text style={styles.successSubtitle}>
+              {confirmacionVisual?.subtitulo || 'El comprobante se generó correctamente'}
+            </Text>
+
+            <View style={styles.successDataWrap}>
+              <Text style={styles.successAmount}>
+                {formatearMoneda(Number(confirmacionVisual?.monto || 0))}
+              </Text>
+              <Text style={styles.successMethod}>
+                Método: {formatMetodoConfirmacion(confirmacionVisual?.metodo || 'efectivo')}
+              </Text>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </>
   )
 }
@@ -2318,6 +2423,71 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  successCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  successIconCircle: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  successIcon: {
+    color: '#FFFFFF',
+    fontSize: 44,
+    fontWeight: '800',
+    lineHeight: 46,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  successSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  successDataWrap: {
+    marginTop: 18,
+    alignItems: 'center',
+    gap: 4,
+  },
+  successAmount: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  successMethod: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
   },
 
   modalCard: {
