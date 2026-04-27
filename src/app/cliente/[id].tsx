@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Platform,
@@ -30,6 +30,17 @@ function shortId(value?: string | null) {
   return `#${String(value).slice(0, 8)}`
 }
 
+const OVERDUE_LOAN_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
+const PENDING_PAYMENT_STATES = new Set(['pendiente_aprobacion'])
+
+function hasDatePassed(value?: string | null) {
+  if (!value || value === '—') return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayYmd = today.toISOString().slice(0, 10)
+  return String(value).slice(0, 10) < todayYmd
+}
+
 export default function ClienteDetalleUnificadoScreen() {
   const params = useLocalSearchParams()
   const scrollRef = useRef<ScrollView | null>(null)
@@ -50,7 +61,39 @@ export default function ClienteDetalleUnificadoScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [detalle, setDetalle] = useState<ClienteDetalleConsolidado | null>(null)
+  const [visiblePayments, setVisiblePayments] = useState(8)
   const prestamosPagados = detalle?.historialPrestamos.filter((prestamo) => prestamo.estado === 'pagado') || []
+  const pagosCliente = detalle?.pagosCliente || []
+
+  const resumenCliente = useMemo(() => {
+    const activos = detalle?.prestamosActivos || []
+    const saldoPendienteTotal = activos.reduce((acc, prestamo) => acc + Number(prestamo.saldoPendiente || 0), 0)
+    const prestamosDemorados = activos.filter((prestamo) => {
+      if (Number(prestamo.saldoPendiente || 0) <= 0) return false
+      if (OVERDUE_LOAN_STATES.has(prestamo.estado)) return true
+      return hasDatePassed(prestamo.fechaLimite) || hasDatePassed(prestamo.proximaCuota)
+    })
+    const pendingPaymentsCount = pagosCliente.filter((pago) => PENDING_PAYMENT_STATES.has(String(pago.estado || '').toLowerCase())).length
+
+    let estadoGeneral: 'Al día' | 'Demorado' | 'Con pagos pendientes' = 'Al día'
+    if (prestamosDemorados.length > 0 || Boolean(detalle?.cliente?.tienePrestamoVencido)) {
+      estadoGeneral = 'Demorado'
+    } else if (pendingPaymentsCount > 0) {
+      estadoGeneral = 'Con pagos pendientes'
+    }
+
+    return {
+      estadoGeneral,
+      saldoPendienteTotal,
+      prestamosDemorados: prestamosDemorados.length,
+      pendingPaymentsCount,
+      ultimoPago: pagosCliente[0]?.createdAt || null,
+    }
+  }, [detalle, pagosCliente])
+
+  useEffect(() => {
+    setVisiblePayments(8)
+  }, [clienteId, detalle?.cliente?.clienteId])
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const nextVisible = event.nativeEvent.contentOffset.y > 280
@@ -163,18 +206,25 @@ export default function ClienteDetalleUnificadoScreen() {
 
             <View style={styles.metricsRow}>
               <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{detalle.prestamosActivos.length}</Text>
-                <Text style={styles.metricLabel}>Activos</Text>
+                <Text style={styles.metricValue}>{resumenCliente.estadoGeneral}</Text>
+                <Text style={styles.metricLabel}>Estado general</Text>
               </View>
               <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{prestamosPagados.length}</Text>
-                <Text style={styles.metricLabel}>Pagados</Text>
+                <Text style={styles.metricValue}>{money(resumenCliente.saldoPendienteTotal)}</Text>
+                <Text style={styles.metricLabel}>Saldo pendiente total</Text>
               </View>
               <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{detalle.pagosCliente.length}</Text>
-                <Text style={styles.metricLabel}>Pagos</Text>
+                <Text style={styles.metricValue}>{resumenCliente.prestamosDemorados}</Text>
+                <Text style={styles.metricLabel}>Préstamos demorados</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>{date(resumenCliente.ultimoPago)}</Text>
+                <Text style={styles.metricLabel}>Último pago</Text>
               </View>
             </View>
+            {resumenCliente.pendingPaymentsCount > 0 ? (
+              <Text style={styles.pendingNote}>Tiene {resumenCliente.pendingPaymentsCount} pago(s) pendientes de aprobación.</Text>
+            ) : null}
           </View>
 
           <View style={[styles.mainLayout, isWeb && styles.mainLayoutWeb]}>
@@ -208,6 +258,11 @@ export default function ClienteDetalleUnificadoScreen() {
                   detalle.prestamosActivos.map((prestamo) => {
                     const badge = badgePrestamo(prestamo.estado)
                     const sinSaldo = Number(prestamo.saldoPendiente || 0) <= 0
+                    const isDemorado =
+                      !sinSaldo &&
+                      (OVERDUE_LOAN_STATES.has(prestamo.estado) || hasDatePassed(prestamo.fechaLimite) || hasDatePassed(prestamo.proximaCuota))
+                    const estadoPrestamoTexto = sinSaldo ? 'Pagado / Sin saldo' : isDemorado ? 'Demorado' : 'Activo'
+                    const referenciaDemora = hasDatePassed(prestamo.proximaCuota) ? prestamo.proximaCuota : prestamo.fechaLimite
                     return (
                       <View key={prestamo.id} style={styles.loanCard}>
                         <View style={styles.itemTopRow}>
@@ -219,11 +274,20 @@ export default function ClienteDetalleUnificadoScreen() {
                         <Text style={styles.itemMeta}>Monto: {money(prestamo.monto)}</Text>
                         <Text style={styles.itemMeta}>Total: {money(prestamo.totalAPagar)}</Text>
                         <Text style={styles.itemMeta}>Restante: {money(prestamo.saldoPendiente)}</Text>
+                        <Text style={styles.itemMetaStrong}>Estado: {estadoPrestamoTexto}</Text>
                         <Text style={styles.itemMeta}>Próxima cuota: {date(prestamo.proximaCuota)}</Text>
+                        {isDemorado ? (
+                          <Text style={styles.itemMetaAlert}>Mora desde: {date(referenciaDemora)}</Text>
+                        ) : (
+                          <Text style={styles.itemMeta}>Vence: {date(prestamo.fechaLimite)}</Text>
+                        )}
+                        {isDemorado ? (
+                          <Text style={styles.loanWarnText}>
+                            Este préstamo aparece demorado porque la fecha de pago ya venció y queda saldo pendiente.
+                          </Text>
+                        ) : null}
                         {sinSaldo ? (
-                          <View style={styles.okPill}>
-                            <Text style={styles.okPillText}>Al día · Sin saldo pendiente</Text>
-                          </View>
+                          <Text style={styles.loanInfoText}>Este préstamo no tiene saldo pendiente. Revisar si corresponde marcarlo como pagado.</Text>
                         ) : null}
                       </View>
                     )
@@ -249,34 +313,50 @@ export default function ClienteDetalleUnificadoScreen() {
             <View style={[styles.rightColumn, isWeb && styles.rightColumnWeb]}>
               <View style={[styles.card, styles.paymentsPanel]}>
                 <Text style={styles.sectionTitle}>Pagos del cliente</Text>
-                {detalle.pagosCliente.length === 0 ? (
+                {pagosCliente.length === 0 ? (
                   <Text style={styles.empty}>Sin pagos registrados.</Text>
                 ) : (
-                  detalle.pagosCliente.map((pago) => {
-                    const badge = badgePago(pago.estado)
-                    return (
-                      <View key={pago.id} style={styles.paymentCard}>
-                        <View style={styles.itemTopRow}>
-                          <View>
-                            <Text style={styles.itemTitle}>{date(pago.createdAt)}</Text>
-                            <Text style={styles.paymentAmount}>{money(pago.monto)}</Text>
-                          </View>
-                          <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}> 
-                            <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
-                          </View>
-                        </View>
+                  <>
+                    <View style={[styles.paymentsScrollArea, isWeb && styles.paymentsScrollAreaWeb]}>
+                      {pagosCliente.slice(0, visiblePayments).map((pago) => {
+                        const badge = badgePago(pago.estado)
+                        return (
+                          <View key={pago.id} style={styles.paymentCard}>
+                            <View style={styles.itemTopRow}>
+                              <View>
+                                <Text style={styles.itemTitle}>{date(pago.createdAt)}</Text>
+                                <Text style={styles.paymentAmount}>{money(pago.monto)}</Text>
+                              </View>
+                              <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
+                                <Text style={[styles.badgeText, { color: badge.text }]}>{badge.label}</Text>
+                              </View>
+                            </View>
 
-                        <Text style={styles.itemMeta}>Método: {pago.metodo || '—'}</Text>
-                        <Text style={styles.itemMeta}>Préstamo: {shortId(pago.prestamoId)}</Text>
+                            <Text style={styles.itemMeta}>Método: {pago.metodo || '—'}</Text>
+                            <Text style={styles.itemMeta}>Préstamo: {shortId(pago.prestamoId)}</Text>
 
-                        {pago.tieneComprobante ? (
-                          <TouchableOpacity style={styles.receiptButton} onPress={() => router.push(`/pago-aprobado?id=${pago.id}` as any)}>
-                            <Text style={styles.receiptButtonText}>Ver comprobante</Text>
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                    )
-                  })
+                            {pago.tieneComprobante ? (
+                              <TouchableOpacity style={styles.receiptButton} onPress={() => router.push(`/pago-aprobado?id=${pago.id}` as any)}>
+                                <Text style={styles.receiptButtonText}>Ver comprobante</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        )
+                      })}
+                    </View>
+                    <View style={styles.morePaymentsRow}>
+                      {visiblePayments < pagosCliente.length ? (
+                        <TouchableOpacity style={styles.secondaryBtn} onPress={() => setVisiblePayments((prev) => Math.min(prev + 8, pagosCliente.length))}>
+                          <Text style={styles.secondaryText}>Ver más pagos</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      {visiblePayments > 8 ? (
+                        <TouchableOpacity style={styles.secondaryBtn} onPress={() => setVisiblePayments(8)}>
+                          <Text style={styles.secondaryText}>Ver menos</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </>
                 )}
               </View>
             </View>
@@ -313,10 +393,11 @@ const styles = StyleSheet.create({
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderRadius: 999, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#020817', paddingHorizontal: 11, paddingVertical: 6 },
   chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
-  metricsRow: { flexDirection: 'row', gap: 8 },
+  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   metricItem: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#020817', paddingVertical: 12, paddingHorizontal: 10 },
   metricValue: { color: '#F8FAFC', fontSize: 20, fontWeight: '800' },
   metricLabel: { color: '#94A3B8', fontWeight: '600', marginTop: 2 },
+  pendingNote: { color: '#FDE68A', fontWeight: '600', fontSize: 12 },
 
   mainLayout: { gap: 12 },
   mainLayoutWeb: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -341,25 +422,20 @@ const styles = StyleSheet.create({
   itemTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
   itemTitle: { color: '#F8FAFC', fontWeight: '700' },
   itemMeta: { color: '#94A3B8' },
+  itemMetaStrong: { color: '#E2E8F0', fontWeight: '700', marginTop: 2 },
+  itemMetaAlert: { color: '#FCA5A5', fontWeight: '700' },
+  loanWarnText: { color: '#FCA5A5', fontSize: 12, lineHeight: 18, marginTop: 2 },
+  loanInfoText: { color: '#93C5FD', fontSize: 12, lineHeight: 18, marginTop: 2 },
   paymentAmount: { color: '#F8FAFC', fontSize: 18, fontWeight: '800', marginTop: 1 },
 
   paymentsPanel: { gap: 8 },
+  paymentsScrollArea: { gap: 8 },
+  paymentsScrollAreaWeb: { maxHeight: 620, overflowY: 'auto' as any, paddingRight: 4 },
   paymentCard: { borderLeftWidth: 2, borderLeftColor: '#1E293B', borderWidth: 1, borderColor: '#1E293B', borderRadius: 16, backgroundColor: '#020817', padding: 12, gap: 5 },
+  morePaymentsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
 
   badge: { borderWidth: 1, borderRadius: 999, alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4 },
   badgeText: { fontWeight: '700', fontSize: 11, textTransform: 'capitalize' },
-
-  okPill: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#14532D',
-    backgroundColor: '#052E16',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  okPillText: { color: '#86EFAC', fontWeight: '700', fontSize: 12 },
 
   receiptButton: {
     marginTop: 6,
