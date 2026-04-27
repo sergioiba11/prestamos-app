@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native'
+import { ActivityIndicator, Alert, LayoutAnimation, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View } from 'react-native'
 import { useAuth } from '../context/AuthContext'
 import { useAppTheme } from '../context/AppThemeContext'
 import {
@@ -47,7 +47,7 @@ type MoraRow = {
   porcentaje_diario: string
 }
 
-type AccordionKey = 'mercado-pago' | 'datos-negocio' | 'tasas-interes' | 'mora-atraso' | 'administradores'
+type AccordionKey = 'mercado-pago' | 'tasas-interes' | 'mora-atraso' | 'administradores' | 'biometria' | 'seguridad'
 
 const MP_CLIENT_ID = process.env.EXPO_PUBLIC_MP_CLIENT_ID
 const MP_REDIRECT_URI = process.env.EXPO_PUBLIC_MP_REDIRECT_URI
@@ -868,38 +868,6 @@ export default function Configuraciones() {
         </View>
 
         <View style={styles.accordionSection}>
-          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('datos-negocio')} activeOpacity={0.85}>
-            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Datos del negocio</Text>
-            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'datos-negocio' ? '−' : '+'}</Text>
-          </TouchableOpacity>
-          {openSection === 'datos-negocio' ? (
-            <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.businessGrid}>
-                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-                  <TextInput style={styles.input} value={negocioNombre} onChangeText={setNegocioNombre} placeholder="Nombre del negocio" placeholderTextColor="#64748B" />
-                </View>
-                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-                  <TextInput style={styles.input} value={negocioTelefono} onChangeText={setNegocioTelefono} placeholder="Teléfono del negocio" placeholderTextColor="#64748B" />
-                </View>
-                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-                  <TextInput style={styles.input} value={negocioAlias} onChangeText={setNegocioAlias} placeholder="Alias/CVU principal de cobro" placeholderTextColor="#64748B" />
-                </View>
-                <View style={[styles.businessField, isWeb && styles.businessFieldWeb]}>
-                  <TextInput style={styles.input} value={brandingPrimario} onChangeText={setBrandingPrimario} placeholder="Color principal (ej: #2563EB)" placeholderTextColor="#64748B" />
-                </View>
-              </View>
-              <View style={styles.preferenceRow}>
-                <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Enviar comprobante por SMS</Text>
-                <Switch value={preferenciaComprobanteSms} onValueChange={setPreferenciaComprobanteSms} trackColor={{ true: '#2563EB', false: '#334155' }} />
-              </View>
-              <TouchableOpacity style={[styles.connectButton, styles.businessSaveButton, !isWeb && styles.mobileFullButton]} onPress={guardarDatosNegocio} disabled={savingBusinessData}>
-                {savingBusinessData ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Guardar configuración</Text>}
-              </TouchableOpacity>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.accordionSection}>
           <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('tasas-interes')} activeOpacity={0.85}>
             <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Tasas de interés</Text>
             <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'tasas-interes' ? '−' : '+'}</Text>
@@ -1127,26 +1095,43 @@ export default function Configuraciones() {
           ) : null}
         </View>
 
-        <View style={styles.accordionBody}>
-          <View style={[styles.card, styles.cardActive]}>
-            <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Ingreso con biometría</Text>
-            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{biometricMessage}</Text>
-            <View style={styles.buttonRow}>
-              {biometricStatus === 'enabled' ? (
-                <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
-                  {updatingBiometric ? <ActivityIndicator size="small" color="#FECACA" /> : <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>}
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={[styles.connectButton, (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric) ? styles.connectButtonDisabled : null]} onPress={handleEnableBiometrics} disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}>
-                  {updatingBiometric ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Activar biometría</Text>}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          <TouchableOpacity style={[styles.card, styles.cardActive]} onPress={() => router.push('/cambiar-password')}>
-            <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Seguridad</Text>
-            <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Cambiar contraseña de tu cuenta</Text>
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('biometria')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Biometría</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'biometria' ? '−' : '+'}</Text>
           </TouchableOpacity>
+          {openSection === 'biometria' ? (
+            <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitleActive, { color: colors.textPrimary }]}>Ingreso con biometría</Text>
+              <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>{biometricMessage}</Text>
+              <View style={styles.buttonRow}>
+                {biometricStatus === 'enabled' ? (
+                  <TouchableOpacity style={[styles.disconnectButton, updatingBiometric ? styles.connectButtonDisabled : null]} onPress={handleDisableBiometrics} disabled={updatingBiometric}>
+                    {updatingBiometric ? <ActivityIndicator size="small" color="#FECACA" /> : <Text style={styles.disconnectButtonText}>Desactivar biometría</Text>}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={[styles.connectButton, (biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric) ? styles.connectButtonDisabled : null]} onPress={handleEnableBiometrics} disabled={biometricStatus === 'unsupported' || biometricStatus === 'not_enrolled' || updatingBiometric}>
+                    {updatingBiometric ? <ActivityIndicator size="small" color="#082F49" /> : <Text style={styles.connectButtonText}>Activar biometría</Text>}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.accordionSection}>
+          <TouchableOpacity style={[styles.accordionHeader, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => toggleSection('seguridad')} activeOpacity={0.85}>
+            <Text style={[styles.accordionTitle, { color: colors.textPrimary }]}>Seguridad</Text>
+            <Text style={[styles.accordionChevron, { color: colors.textSecondary }]}>{openSection === 'seguridad' ? '−' : '+'}</Text>
+          </TouchableOpacity>
+          {openSection === 'seguridad' ? (
+            <View style={[styles.card, styles.cardActive, styles.accordionBody, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTextActive, { color: colors.textSecondary }]}>Cambiar contraseña de tu cuenta.</Text>
+              <TouchableOpacity style={[styles.saveInteresesButton, !isWeb && styles.mobileFullButton, { marginTop: 12 }]} onPress={() => router.push('/cambiar-password')}>
+                <Text style={styles.saveInteresesButtonText}>Cambiar contraseña</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
         </View>
       </ScrollView>
@@ -1161,8 +1146,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 28,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   container: {
     width: '100%',
@@ -1173,7 +1158,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
     gap: 12,
   },
   title: {
@@ -1195,18 +1180,18 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
+    padding: 14,
+    marginBottom: 10,
   },
   accordionSection: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   accordionHeader: {
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: '#1E293B',
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1224,7 +1209,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   accordionBody: {
-    marginTop: 8,
+    marginTop: 6,
     marginBottom: 0,
   },
   mpCard: {
@@ -1233,7 +1218,7 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   buttonRow: {
-    marginTop: 14,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
