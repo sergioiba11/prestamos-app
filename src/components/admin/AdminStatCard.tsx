@@ -8,23 +8,32 @@ export function AdminStatCard({
   subtitle,
   icon,
   tone,
+  compact = false,
 }: {
   label: string
   value: string
   subtitle?: string
   icon: keyof typeof Ionicons.glyphMap
   tone: 'blue' | 'violet' | 'teal' | 'orange'
+  compact?: boolean
 }) {
   const { theme } = useAppTheme()
   const colors = theme.colors
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: theme.isLight ? colors.border : toneStyles[tone].card.borderColor }, toneStyles[tone].card]}>
-      <View style={[styles.iconWrap, toneStyles[tone].iconWrap, theme.isLight && { backgroundColor: colors.primarySoft }]}>
-        <Ionicons name={icon} size={18} color={toneStyles[tone].iconColor} />
+    <View
+      style={[
+        styles.card,
+        compact && styles.cardCompact,
+        { backgroundColor: colors.surface, borderColor: theme.isLight ? colors.border : toneStyles[tone].card.borderColor },
+        toneStyles[tone].card,
+      ]}
+    >
+      <View style={[styles.iconWrap, compact && styles.iconWrapCompact, toneStyles[tone].iconWrap, theme.isLight && { backgroundColor: colors.primarySoft }]}>
+        <Ionicons name={icon} size={compact ? 16 : 18} color={toneStyles[tone].iconColor} />
       </View>
-      <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.value, { color: colors.textPrimary }]}>{value}</Text>
-      {subtitle ? <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
+      <Text style={[styles.label, compact && styles.labelCompact, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.value, compact && styles.valueCompact, { color: colors.textPrimary }]}>{value}</Text>
+      {subtitle ? <Text style={[styles.subtitle, compact && styles.subtitleCompact, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
     </View>
   )
 }
@@ -38,6 +47,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
     padding: 14,
   },
+  cardCompact: {
+    minWidth: 0,
+    width: '48%',
+    flexGrow: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
   iconWrap: {
     width: 36,
     height: 36,
@@ -46,9 +63,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 10,
   },
+  iconWrapCompact: { width: 30, height: 30, borderRadius: 8, marginBottom: 6 },
   label: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  labelCompact: { fontSize: 11 },
   value: { color: '#fff', fontWeight: '800', fontSize: 24, marginTop: 5 },
+  valueCompact: { fontSize: 19, marginTop: 3 },
   subtitle: { color: '#64748B', fontSize: 11, marginTop: 4 },
+  subtitleCompact: { fontSize: 10, marginTop: 3 },
 })
 
 const toneStyles = {

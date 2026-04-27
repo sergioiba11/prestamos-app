@@ -70,6 +70,7 @@ export default function AdminHome() {
   const { width } = useWindowDimensions()
   const isMobile = width < 1024
   const isDesktop = !isMobile
+  const isCompactMobile = width < 768
 
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -258,6 +259,9 @@ export default function AdminHome() {
     }
   }, [activeClients])
 
+  const pendingPaymentsPreview = isCompactMobile ? pendingPayments.slice(0, 3) : pendingPayments
+  const activeClientsPreview = isCompactMobile ? activeClients.slice(0, 4) : activeClients.slice(0, 6)
+
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
@@ -299,8 +303,12 @@ export default function AdminHome() {
         <ScrollView contentContainerStyle={[styles.content, { backgroundColor: colors.background }, isMobile ? styles.mobileContent : styles.desktopContent]}>
           <View style={[styles.pageTopRow, isDesktop && styles.pageTopRowDesktop]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop, { color: colors.textPrimary }]}>Bienvenido, {adminName}</Text>
-              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop, { color: colors.textSecondary }]}>Dashboard financiero · {todayLabel}</Text>
+              <Text style={[styles.pageTitle, isDesktop && styles.pageTitleDesktop, isCompactMobile && styles.pageTitleMobileCompact, { color: colors.textPrimary }]}>
+                Bienvenido, {adminName}
+              </Text>
+              <Text style={[styles.pageSubtitle, isDesktop && styles.pageSubtitleDesktop, isCompactMobile && styles.pageSubtitleMobileCompact, { color: colors.textSecondary }]}>
+                Dashboard financiero · {todayLabel}
+              </Text>
             </View>
             {!isMobile ? (
               <View style={styles.headerActions}>
@@ -344,68 +352,108 @@ export default function AdminHome() {
             }}
           />
 
-          <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop]}>
-            <AdminStatCard label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
-            <AdminStatCard label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
-            <AdminStatCard label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
-            <AdminStatCard label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
-            {isMobile ? <AdminStatCard label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
-          </View>
+          {!isCompactMobile ? (
+            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
+              <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+              <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+              <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+              {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
+            </View>
+          ) : null}
 
           <GradientCard
             isLight={theme.isLight}
             surfaceColor={colors.surface}
             borderColor={colors.border}
-            style={isDesktop ? styles.sectionCardDesktopCompact : undefined}
+            style={[isDesktop ? styles.sectionCardDesktopCompact : undefined, isCompactMobile && styles.sectionCardMobileCompact]}
           >
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Acciones rápidas</Text>
-            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }, isDesktop && styles.featureActionsWrapDesktop]}>
+            <View style={[styles.featureActionsWrap, isMobile && { flexDirection: 'column' }, isDesktop && styles.featureActionsWrapDesktop, isCompactMobile && styles.featureActionsWrapMobileCompact]}>
               <Pressable
                 onPress={() => router.push('/nuevo-prestamo' as any)}
-                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, isCompactMobile && styles.featureActionCardMobileCompact, hovered && styles.cardHover]}
               >
-                <LinearGradient colors={['#2563EB', '#1E3A8A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop]}>
-                  <Ionicons name="wallet-outline" size={isDesktop ? 22 : 24} color="#DBEAFE" />
-                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop]}>Nuevo préstamo</Text>
-                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop]}>Crear préstamo y plan de cuotas</Text>
+                <LinearGradient
+                  colors={['#2563EB', '#1E3A8A']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop, isCompactMobile && styles.featureGradientMobileCompact]}
+                >
+                  <Ionicons name="wallet-outline" size={isCompactMobile ? 20 : isDesktop ? 22 : 24} color="#DBEAFE" />
+                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop, isCompactMobile && styles.featureTitleMobileCompact]}>Nuevo préstamo</Text>
+                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop, isCompactMobile && styles.featureSubtitleMobileCompact]}>
+                    Crear préstamo y plan de cuotas
+                  </Text>
                 </LinearGradient>
               </Pressable>
               <Pressable
                 onPress={() => router.push('/cargar-pago' as any)}
-                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, hovered && styles.cardHover]}
+                style={({ hovered }) => [styles.featureActionCard, isDesktop && styles.featureActionCardDesktop, isCompactMobile && styles.featureActionCardMobileCompact, hovered && styles.cardHover]}
               >
-                <LinearGradient colors={['#7C3AED', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop]}>
-                  <Ionicons name="cash-outline" size={isDesktop ? 22 : 24} color="#EDE9FE" />
-                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop]}>Registrar pago</Text>
-                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop]}>Cargar abono recibido del cliente</Text>
+                <LinearGradient
+                  colors={['#7C3AED', '#4C1D95']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.featureGradient, isDesktop && styles.featureGradientDesktop, isCompactMobile && styles.featureGradientMobileCompact]}
+                >
+                  <Ionicons name="cash-outline" size={isCompactMobile ? 20 : isDesktop ? 22 : 24} color="#EDE9FE" />
+                  <Text style={[styles.featureTitle, isDesktop && styles.featureTitleDesktop, isCompactMobile && styles.featureTitleMobileCompact]}>Registrar pago</Text>
+                  <Text style={[styles.featureSubtitle, isDesktop && styles.featureSubtitleDesktop, isCompactMobile && styles.featureSubtitleMobileCompact]}>
+                    Cargar abono recibido del cliente
+                  </Text>
                 </LinearGradient>
               </Pressable>
             </View>
 
-            <View style={[styles.smallActionGrid, isDesktop && styles.smallActionGridDesktop]}>
+            <View style={[styles.smallActionGrid, isDesktop && styles.smallActionGridDesktop, isCompactMobile && styles.smallActionGridMobileCompact]}>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.smallAction,
+                  isDesktop && styles.smallActionDesktop,
+                  isCompactMobile && styles.smallActionMobileCompact,
+                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                  hovered && styles.cardHover,
+                ]}
                 onPress={() => router.push('/nuevo-cliente' as any)}
               >
                 <Ionicons name="person-add-outline" size={16} color="#93C5FD" />
                 <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Nuevo cliente</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.smallAction,
+                  isDesktop && styles.smallActionDesktop,
+                  isCompactMobile && styles.smallActionMobileCompact,
+                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                  hovered && styles.cardHover,
+                ]}
                 onPress={() => router.push('/clientes' as any)}
               >
                 <Ionicons name="people-outline" size={16} color="#93C5FD" />
                 <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver clientes</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.smallAction,
+                  isDesktop && styles.smallActionDesktop,
+                  isCompactMobile && styles.smallActionMobileCompact,
+                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                  hovered && styles.cardHover,
+                ]}
                 onPress={() => router.push('/prestamos' as any)}
               >
                 <Ionicons name="document-text-outline" size={16} color="#93C5FD" />
                 <Text style={[styles.smallActionText, { color: colors.textPrimary }]}>Ver préstamos</Text>
               </Pressable>
               <Pressable
-                style={({ hovered }) => [styles.smallAction, isDesktop && styles.smallActionDesktop, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
+                style={({ hovered }) => [
+                  styles.smallAction,
+                  isDesktop && styles.smallActionDesktop,
+                  isCompactMobile && styles.smallActionMobileCompact,
+                  { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                  hovered && styles.cardHover,
+                ]}
                 onPress={() => router.push('/historial-prestamos' as any)}
               >
                 <Ionicons name="time-outline" size={16} color="#93C5FD" />
@@ -414,8 +462,23 @@ export default function AdminHome() {
             </View>
           </GradientCard>
 
+          {isCompactMobile ? (
+            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
+              <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+              <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+              <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+              {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
+            </View>
+          ) : null}
+
           <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.pendingCard, isDesktop && styles.mainGridCardDesktop]}>
+            <GradientCard
+              isLight={theme.isLight}
+              surfaceColor={colors.surface}
+              borderColor={colors.border}
+              style={[styles.pendingCard, isDesktop && styles.mainGridCardDesktop, isCompactMobile && styles.listCardMobileCompact]}
+            >
               <View style={styles.cardHeaderRow}>
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Pagos pendientes</Text>
                 <TouchableOpacity onPress={() => router.push('/pagos-pendientes' as any)}>
@@ -432,15 +495,17 @@ export default function AdminHome() {
                 </View>
               ) : (
                 <ScrollView
-                  style={[styles.pendingList, isDesktop && styles.pendingListDesktop]}
-                  contentContainerStyle={styles.pendingListContent}
+                  horizontal={isCompactMobile}
+                  style={[styles.pendingList, isDesktop && styles.pendingListDesktop, isCompactMobile && styles.pendingListMobile]}
+                  contentContainerStyle={[styles.pendingListContent, isCompactMobile && styles.pendingListContentMobile]}
                   nestedScrollEnabled
-                  showsVerticalScrollIndicator
+                  showsVerticalScrollIndicator={!isCompactMobile}
+                  showsHorizontalScrollIndicator={false}
                 >
-                  {pendingPayments.map((p) => {
+                  {pendingPaymentsPreview.map((p) => {
                     const processing = processingPaymentId === p.id
                     return (
-                      <View key={p.id} style={[styles.pendingRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                      <View key={p.id} style={[styles.pendingRow, isCompactMobile && styles.pendingRowMobile, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{p.cliente}</Text>
                           <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {p.dni} · {p.metodo}</Text>
@@ -468,7 +533,12 @@ export default function AdminHome() {
               )}
             </GradientCard>
 
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.clientsCard, isDesktop && styles.mainGridCardDesktop]}>
+            <GradientCard
+              isLight={theme.isLight}
+              surfaceColor={colors.surface}
+              borderColor={colors.border}
+              style={[styles.clientsCard, isDesktop && styles.mainGridCardDesktop, isCompactMobile && styles.listCardMobileCompact]}
+            >
               <View style={styles.cardHeaderRow}>
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Clientes con préstamos activos</Text>
                 <TouchableOpacity onPress={() => router.push('/clientes' as any)}>
@@ -482,11 +552,21 @@ export default function AdminHome() {
                   <Text style={[styles.emptySubtle, { color: colors.textSecondary }]}>Todavía no hay clientes activos.</Text>
                 </View>
               ) : (
-                <ScrollView style={[styles.clientListScroll, isDesktop && styles.clientListScrollDesktop]} contentContainerStyle={styles.clientList}>
-                  {activeClients.slice(0, 6).map((client) => (
+                <ScrollView
+                  horizontal={isCompactMobile}
+                  style={[styles.clientListScroll, isDesktop && styles.clientListScrollDesktop, isCompactMobile && styles.clientListScrollMobile]}
+                  contentContainerStyle={[styles.clientList, isCompactMobile && styles.clientListMobile]}
+                  showsHorizontalScrollIndicator={false}
+                >
+                  {activeClientsPreview.map((client) => (
                     <Pressable
                       key={client.clienteId}
-                      style={({ hovered }) => [styles.clientRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }, hovered && styles.cardHover]}
+                      style={({ hovered }) => [
+                        styles.clientRow,
+                        isCompactMobile && styles.clientRowMobile,
+                        { borderColor: colors.border, backgroundColor: colors.surfaceSoft },
+                        hovered && styles.cardHover,
+                      ]}
                       onPress={() => router.push(`/cliente/${client.clienteId}` as any)}
                     >
                       <View style={[styles.avatarCircle, { backgroundColor: colors.primarySoft, borderColor: colors.border }]}>
@@ -559,8 +639,10 @@ const styles = StyleSheet.create({
   pageTopRowDesktop: { marginBottom: 2 },
   pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 28 },
   pageTitleDesktop: { fontSize: 28, lineHeight: 32 },
+  pageTitleMobileCompact: { fontSize: 22, lineHeight: 26 },
   pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
   pageSubtitleDesktop: { marginTop: 2, fontSize: 12 },
+  pageSubtitleMobileCompact: { marginTop: 3, fontSize: 11 },
   headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
     minHeight: 42,
@@ -615,6 +697,7 @@ const styles = StyleSheet.create({
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   kpiGrid: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   kpiGridDesktop: { flexWrap: 'nowrap', gap: 10, alignItems: 'stretch' },
+  kpiGridMobileCompact: { gap: 8 },
   sectionCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -628,6 +711,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   sectionCardDesktopCompact: { padding: 14, borderRadius: 14 },
+  sectionCardMobileCompact: { padding: 12, borderRadius: 14 },
   cardHover: {
     transform: [{ translateY: -2 }],
     shadowOpacity: 0.5,
@@ -637,6 +721,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
   featureActionsWrap: { flexDirection: 'row', gap: 12, marginTop: 12 },
   featureActionsWrapDesktop: { marginTop: 10, gap: 10 },
+  featureActionsWrapMobileCompact: { marginTop: 8, gap: 8 },
   featureActionCard: {
     flex: 1,
     minHeight: 144,
@@ -644,6 +729,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   featureActionCardDesktop: { minHeight: 100 },
+  featureActionCardMobileCompact: { minHeight: 108 },
   featureGradient: {
     flex: 1,
     borderRadius: 16,
@@ -653,12 +739,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   featureGradientDesktop: { borderRadius: 14, padding: 12, minHeight: 98 },
+  featureGradientMobileCompact: { borderRadius: 12, padding: 12, minHeight: 96 },
   featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 18, marginTop: 10 },
   featureTitleDesktop: { fontSize: 16, marginTop: 6 },
+  featureTitleMobileCompact: { fontSize: 16, marginTop: 5 },
   featureSubtitle: { color: '#DBEAFE', marginTop: 6, fontSize: 12 },
   featureSubtitleDesktop: { marginTop: 3, fontSize: 11 },
+  featureSubtitleMobileCompact: { marginTop: 3, fontSize: 10 },
   smallActionGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   smallActionGridDesktop: { marginTop: 10, gap: 8 },
+  smallActionGridMobileCompact: { marginTop: 8, gap: 8 },
   smallAction: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -671,6 +761,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
+  smallActionMobileCompact: { width: '48%', justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
   smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 12 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   mainGridDesktop: { flexWrap: 'nowrap', gap: 10 },
@@ -694,7 +785,9 @@ const styles = StyleSheet.create({
   emptySubtle: { color: '#94A3B8' },
   pendingList: { maxHeight: 350 },
   pendingListDesktop: { maxHeight: 206 },
+  pendingListMobile: { maxHeight: undefined },
   pendingListContent: { paddingRight: 4, paddingBottom: 2 },
+  pendingListContentMobile: { paddingRight: 0, paddingBottom: 0, gap: 8 },
   pendingRow: {
     borderWidth: 1,
     borderColor: '#1E293B',
@@ -707,6 +800,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 10,
   },
+  pendingRowMobile: { width: 280, marginBottom: 0, alignItems: 'flex-start' },
   pendingClient: { color: '#F8FAFC', fontWeight: '700' },
   pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
   pendingActions: { alignItems: 'flex-end', gap: 7 },
@@ -718,7 +812,9 @@ const styles = StyleSheet.create({
   smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   clientListScroll: { maxHeight: 350 },
   clientListScrollDesktop: { maxHeight: 206 },
+  clientListScrollMobile: { maxHeight: undefined },
   clientList: { gap: 8, paddingRight: 4, paddingBottom: 2 },
+  clientListMobile: { gap: 8, paddingRight: 0, paddingBottom: 0 },
   clientRow: {
     borderRadius: 14,
     borderWidth: 1,
@@ -729,6 +825,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  clientRowMobile: { width: 290 },
   avatarCircle: {
     width: 34,
     height: 34,
@@ -756,6 +853,7 @@ const styles = StyleSheet.create({
   },
   bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   bottomStatsGridDesktop: { flexWrap: 'nowrap', gap: 8 },
+  listCardMobileCompact: { padding: 12 },
   bottomStatCard: {
     flex: 1,
     minWidth: 170,
