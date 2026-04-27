@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native'
 import { normalizeDni } from '../lib/onboarding'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../lib/nombre'
 import { supabase } from '../lib/supabase'
 
 export default function RegisterScreen() {
@@ -53,7 +54,7 @@ export default function RegisterScreen() {
   const submit = async () => {
     if (loading) return
 
-    const nombreLimpio = nombre.trim()
+    const nombreLimpio = normalizarNombreCompleto(nombre)
     const dniLimpio = normalizeDni(dni)
     const emailLimpio = email.trim().toLowerCase()
     const telefonoLimpio = telefono.trim()
@@ -62,7 +63,17 @@ export default function RegisterScreen() {
     setError('')
     setSuccess('')
 
-    if (!nombreLimpio || !dniLimpio || !emailLimpio || !telefonoLimpio || !passwordLimpia) {
+    if (!nombreLimpio) {
+      setError('El nombre y apellido es obligatorio')
+      return
+    }
+
+    if (!esNombreCompletoValido(nombreLimpio)) {
+      setError('Ingresar nombre completo')
+      return
+    }
+
+    if (!dniLimpio || !emailLimpio || !telefonoLimpio || !passwordLimpia) {
       setError('Completá todos los campos.')
       return
     }

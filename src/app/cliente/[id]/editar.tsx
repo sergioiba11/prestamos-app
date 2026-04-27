@@ -3,10 +3,10 @@ import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { ClienteEditableAdmin, fetchClienteEditableById, updateClienteEditableByAdmin } from '../../../lib/admin-clientes'
 import { createSystemActivity } from '../../../lib/activity'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../../../lib/nombre'
 
 type FormState = {
   nombre: string
-  apellido: string
   dni: string
   telefono: string
   direccion: string
@@ -34,13 +34,12 @@ export default function ClienteEditScreen() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [cliente, setCliente] = useState<ClienteEditableAdmin | null>(null)
-  const [form, setForm] = useState<FormState>({ nombre: '', apellido: '', dni: '', telefono: '', direccion: '' })
+  const [form, setForm] = useState<FormState>({ nombre: '', dni: '', telefono: '', direccion: '' })
   const [initialSnapshot, setInitialSnapshot] = useState('')
 
   const applyClienteToForm = (data: ClienteEditableAdmin) => {
     const next: FormState = {
-      nombre: data.nombre || '',
-      apellido: data.apellido || '',
+      nombre: normalizarNombreCompleto([data.nombre, data.apellido].filter(Boolean).join(' ')),
       dni: data.dni || '',
       telefono: data.telefono || '',
       direccion: data.direccion || '',
@@ -80,8 +79,7 @@ export default function ClienteEditScreen() {
   const onSave = async () => {
     if (!cliente) return
 
-    const nombre = form.nombre.trim()
-    const apellido = form.apellido.trim()
+    const nombre = normalizarNombreCompleto(form.nombre)
     const dni = normalizeDni(form.dni)
     const telefono = form.telefono.trim()
     const direccion = form.direccion.trim()
@@ -89,11 +87,12 @@ export default function ClienteEditScreen() {
     setSuccess('')
     setError('')
 
-    if (!nombre) return setError('El nombre es obligatorio.')
+    if (!nombre) return setError('El nombre y apellido es obligatorio')
+    if (!esNombreCompletoValido(nombre)) return setError('Ingresar nombre completo')
     if (!dni) return setError('El DNI es obligatorio.')
     if (!isValidDni(dni)) return setError('El DNI debe ser numérico y tener entre 6 y 12 dígitos.')
 
-    const currentSnapshot = JSON.stringify({ nombre, apellido, dni, telefono, direccion })
+    const currentSnapshot = JSON.stringify({ nombre, dni, telefono, direccion })
     if (currentSnapshot === initialSnapshot) {
       setError('No hay cambios para guardar.')
       return
@@ -101,11 +100,11 @@ export default function ClienteEditScreen() {
 
     try {
       setSaving(true)
-      console.log('[cliente-edit] save start', { clienteId: cliente.id, nombre, apellido, dni, telefono, direccion })
+      console.log('[cliente-edit] save start', { clienteId: cliente.id, nombre, dni, telefono, direccion })
       const result = await updateClienteEditableByAdmin({
         clienteId: cliente.id,
         nombre,
-        apellido,
+        apellido: '',
         dni,
         telefono,
         direccion,
@@ -117,13 +116,13 @@ export default function ClienteEditScreen() {
       await createSystemActivity({
         tipo: 'cliente_editado',
         titulo: 'Cliente editado',
-        descripcion: `Se actualizó el cliente ${nombre}${apellido ? ` ${apellido}` : ''}`.trim(),
+        descripcion: `Se actualizó el cliente ${nombre}`.trim(),
         entidad_tipo: 'cliente',
         entidad_id: cliente.id,
         prioridad: 'normal',
         visible_en_notificaciones: true,
         metadata: {
-          cambios: { nombre, apellido, telefono, direccion },
+          cambios: { nombre, telefono, direccion },
           route: `/cliente/${cliente.id}` ,
         },
       })
@@ -132,7 +131,7 @@ export default function ClienteEditScreen() {
         await createSystemActivity({
           tipo: 'dni_editado',
           titulo: 'DNI de cliente editado',
-          descripcion: `Se modificó el DNI del cliente ${nombre}${apellido ? ` ${apellido}` : ''}`.trim(),
+          descripcion: `Se modificó el DNI del cliente ${nombre}`.trim(),
           entidad_tipo: 'cliente',
           entidad_id: cliente.id,
           prioridad: 'alta',
@@ -171,11 +170,8 @@ export default function ClienteEditScreen() {
         <Text style={styles.title}>Editar cliente</Text>
         <Text style={styles.subtitle}>Atención: el DNI solo puede modificarse una vez.</Text>
 
-        <Text style={styles.label}>Nombre</Text>
-        <TextInput style={styles.input} value={form.nombre} onChangeText={(value) => setForm((prev) => ({ ...prev, nombre: value }))} placeholder="Nombre" placeholderTextColor="#64748B" />
-
-        <Text style={styles.label}>Apellido (si aplica)</Text>
-        <TextInput style={styles.input} value={form.apellido} onChangeText={(value) => setForm((prev) => ({ ...prev, apellido: value }))} placeholder="Apellido" placeholderTextColor="#64748B" />
+        <Text style={styles.label}>Nombre y apellido</Text>
+        <TextInput style={styles.input} value={form.nombre} onChangeText={(value) => setForm((prev) => ({ ...prev, nombre: value }))} placeholder="Nombre completo" placeholderTextColor="#64748B" />
 
         <Text style={styles.label}>DNI</Text>
         <TextInput

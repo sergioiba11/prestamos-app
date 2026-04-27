@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../../lib/nombre'
 import { supabase } from '../../lib/supabase'
 
 type ClientEditable = {
@@ -50,12 +51,17 @@ export function EditClientModal({
       setMsg('')
 
       const dniNormalizado = dni.trim()
-      const nombreNormalizado = nombre.trim()
+      const nombreNormalizado = normalizarNombreCompleto(nombre)
       const telefonoNormalizado = telefono.trim()
       const direccionNormalizada = direccion.trim()
 
       if (!nombreNormalizado) {
-        setMsg('El nombre es obligatorio.')
+        setMsg('El nombre y apellido es obligatorio')
+        return
+      }
+
+      if (!esNombreCompletoValido(nombreNormalizado)) {
+        setMsg('Ingresar nombre completo')
         return
       }
 
@@ -109,7 +115,7 @@ export function EditClientModal({
         <View style={styles.card}>
           <Text style={styles.title}>Editar cliente</Text>
 
-          <TextInput style={styles.input} placeholder="Nombre" placeholderTextColor="#64748B" value={nombre} onChangeText={setNombre} />
+          <TextInput style={styles.input} placeholder="Nombre completo" placeholderTextColor="#64748B" value={nombre} onChangeText={setNombre} />
           <TextInput
             style={client?.dni_editado ? styles.inputDisabled : styles.input}
             placeholder="DNI"

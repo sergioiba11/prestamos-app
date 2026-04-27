@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native'
 import { safeGoBack } from '../lib/navigation'
+import { esNombreCompletoValido, normalizarNombreCompleto } from '../lib/nombre'
 import { supabase } from '../lib/supabase'
 import { createSystemActivity } from '../lib/activity'
 
@@ -32,15 +33,25 @@ export default function NuevoCliente() {
   const guardarCliente = async () => {
     if (loading) return
 
-    const nombreLimpio = nombre.trim()
+    const nombreLimpio = normalizarNombreCompleto(nombre)
     const telefonoLimpio = telefono.trim()
     const direccionLimpia = direccion.trim()
     const dniLimpio = dni.trim()
     const emailLimpio = email.trim().toLowerCase()
     const passwordLimpia = password.trim()
 
-    if (!nombreLimpio || !emailLimpio || !passwordLimpia) {
-      mostrarMensaje('Error', 'Completá nombre, email y contraseña')
+    if (!nombreLimpio) {
+      mostrarMensaje('Error', 'El nombre y apellido es obligatorio')
+      return
+    }
+
+    if (!esNombreCompletoValido(nombreLimpio)) {
+      mostrarMensaje('Error', 'Ingresar nombre completo')
+      return
+    }
+
+    if (!emailLimpio || !passwordLimpia) {
+      mostrarMensaje('Error', 'Completá email y contraseña')
       return
     }
 
@@ -176,7 +187,7 @@ console.log('TOKEN FINAL:', tokenAntes)
 
       <TextInput
         style={styles.input}
-        placeholder="Nombre"
+        placeholder="Nombre completo"
         placeholderTextColor="#94A3B8"
         value={nombre}
         onChangeText={setNombre}
