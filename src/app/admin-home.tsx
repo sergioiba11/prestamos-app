@@ -20,7 +20,14 @@ import { AdminNotificationsPanel, AdminNotification } from '../components/admin/
 import { AdminNavKey, AdminSidebar } from '../components/admin/AdminSidebar'
 import { AdminStatCard } from '../components/admin/AdminStatCard'
 import { useAppTheme } from '../context/AppThemeContext'
-import { ClienteAdminListadoItem, ClientePrestamoActivo, PagoPendienteItem, fetchAdminPanelData } from '../lib/admin-dashboard'
+import {
+  ClienteAdminListadoItem,
+  ClienteDemoradoItem,
+  ClientePrestamoActivo,
+  PagoPendienteItem,
+  ResumenCaja,
+  fetchAdminPanelData,
+} from '../lib/admin-dashboard'
 import {
   getTopNotifications,
   getUnreadNotificationsCount,
@@ -82,11 +89,21 @@ export default function AdminHome() {
   const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null)
   const [kpis, setKpis] = useState({
     cobrarHoy: 0,
+    cobrarSemana: 0,
     clientesActivos: 0,
+    clientesDemorados: 0,
     prestamosVencidos: 0,
     pagosPendientes: 0,
   })
+  const [resumenCaja, setResumenCaja] = useState<ResumenCaja>({
+    cobradoHoy: 0,
+    cobradoSemana: 0,
+    pendienteTotal: 0,
+    moraEstimada: 0,
+  })
   const [activeClients, setActiveClients] = useState<ClientePrestamoActivo[]>([])
+  const [lateClients, setLateClients] = useState<ClienteDemoradoItem[]>([])
+  const [lateClientsIds, setLateClientsIds] = useState<string[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
   const [pendingPaymentsError, setPendingPaymentsError] = useState<string | null>(null)
   const notificationsButtonRef = useRef<View | null>(null)
@@ -141,21 +158,33 @@ export default function AdminHome() {
         setPendingPayments([])
       } else {
         setPendingPaymentsError(null)
-        const pendingItems = (pendingPaymentsData || []).map((pago: any) => {
-          const cliente = clientesById.get(String(pago.cliente_id || ''))
-          return {
-            id: String(pago.id),
-            clienteId: String(pago.cliente_id || ''),
-            cliente: cliente?.nombre || String(pago.cliente_id || 'Cliente sin identificar'),
-            dni: cliente?.dni || '—',
-            monto: Number(pago.monto || 0),
-            metodo: String(pago.metodo || 'Sin método'),
-            createdAt: String(pago.created_at || ''),
-            estadoValidacion: String(pago.estado || 'pendiente_aprobacion'),
-            prestamoId: pago.prestamo_id ? String(pago.prestamo_id) : undefined,
-            telefono: cliente?.telefono || undefined,
-          } as PagoPendienteItem
-        })
+        const pendingItems = (pendingPaymentsData || [])
+          .map((pago: any) => {
+            const cliente = clientesById.get(String(pago.cliente_id || ''))
+            const createdAt = String(pago.created_at || '')
+            const createdDate = new Date(createdAt)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            createdDate.setHours(0, 0, 0, 0)
+            const pendingDays = Number.isNaN(createdDate.getTime())
+              ? 0
+              : Math.max(Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)), 0)
+
+            return {
+              id: String(pago.id),
+              clienteId: String(pago.cliente_id || ''),
+              cliente: cliente?.nombre || String(pago.cliente_id || 'Cliente sin identificar'),
+              dni: cliente?.dni || '—',
+              monto: Number(pago.monto || 0),
+              metodo: String(pago.metodo || 'Sin método'),
+              createdAt,
+              estadoValidacion: String(pago.estado || 'pendiente_aprobacion'),
+              prestamoId: pago.prestamo_id ? String(pago.prestamo_id) : undefined,
+              telefono: cliente?.telefono || undefined,
+              pendingDays,
+            } as PagoPendienteItem
+          })
+          .sort((a, b) => (b.pendingDays || 0) - (a.pendingDays || 0) || b.monto - a.monto)
         setPendingPayments(pendingItems)
       }
 
@@ -165,7 +194,10 @@ export default function AdminHome() {
         ...data.kpis,
         pagosPendientes: totalPagosPendientes,
       })
+      setResumenCaja(data.resumenCaja)
       setActiveClients(data.activosCards)
+      setLateClients(data.clientesDemorados)
+      setLateClientsIds(data.clientesDemoradosIds)
       await loadNotifications()
     } catch (err: any) {
       console.error('admin-home loadData error', err)
@@ -355,7 +387,9 @@ export default function AdminHome() {
           {!isCompactMobile ? (
             <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
               <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
               <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atrasos vigentes" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
               <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
               <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
               {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
@@ -465,7 +499,9 @@ export default function AdminHome() {
           {isCompactMobile ? (
             <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact]}>
               <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+              <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
               <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+              <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atrasos vigentes" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
               <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
               <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
               {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
@@ -510,6 +546,7 @@ export default function AdminHome() {
                           <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{p.cliente}</Text>
                           <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {p.dni} · {p.metodo}</Text>
                           <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>{formatDate(p.createdAt)}</Text>
+                          <Text style={[styles.pendingLateText, { color: colors.warning }]}>Pendiente hace {p.pendingDays || 0} días</Text>
                         </View>
                         <View style={styles.pendingActions}>
                           <Text style={[styles.pendingAmount, { color: colors.primary }]}>{money(p.monto)}</Text>
@@ -578,7 +615,11 @@ export default function AdminHome() {
                         <Text style={[styles.clientMeta, { color: colors.textSecondary }]}>DNI: {client.dni}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                        <Text style={styles.statusChip}>Activo</Text>
+                        {lateClientsIds.includes(client.clienteId) ? (
+                          <Text style={styles.statusChipLate}>Demorado</Text>
+                        ) : (
+                          <Text style={styles.statusChip}>Activo</Text>
+                        )}
                         <Text style={[styles.clientAmount, { color: colors.primary }]}>{money(client.prestamoActivo)}</Text>
                       </View>
                     </Pressable>
@@ -587,6 +628,73 @@ export default function AdminHome() {
               )}
             </GradientCard>
           </View>
+
+          <GradientCard
+            isLight={theme.isLight}
+            surfaceColor={colors.surface}
+            borderColor={colors.border}
+            style={[isCompactMobile && styles.listCardMobileCompact]}
+          >
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Clientes demorados</Text>
+              <Text style={[styles.linkText, { color: colors.warning }]}>{lateClients.length} con atraso</Text>
+            </View>
+            {lateClients.length === 0 ? (
+              <View style={[styles.emptyWrap, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                <Ionicons name="checkmark-circle-outline" size={22} color="#22C55E" />
+                <Text style={[styles.emptySubtle, { color: colors.textSecondary }]}>No hay clientes demorados hoy.</Text>
+              </View>
+            ) : (
+              <View style={styles.lateClientsWrap}>
+                {lateClients.slice(0, isCompactMobile ? 4 : 6).map((cliente) => (
+                  <View key={cliente.clienteId} style={[styles.lateClientRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{cliente.nombre}</Text>
+                      <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {cliente.dni} · {cliente.telefono}</Text>
+                      <Text style={[styles.pendingLateText, { color: colors.warning }]}>Atraso: {cliente.diasAtraso} días</Text>
+                    </View>
+                    <View style={styles.lateActionsCol}>
+                      <Text style={[styles.pendingAmount, { color: colors.primary }]}>{money(cliente.saldoPendiente)}</Text>
+                      <View style={styles.pendingBtnsRow}>
+                        <TouchableOpacity style={styles.btnBase} onPress={() => router.push('/cargar-pago' as any)}>
+                          <LinearGradient colors={['#2563EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                            <Text style={styles.smallBtnText}>Registrar pago</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.btnBase} onPress={() => router.push(`/cliente/${cliente.clienteId}` as any)}>
+                          <LinearGradient colors={['#334155', '#0F172A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                            <Text style={styles.smallBtnText}>Ver detalle</Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </GradientCard>
+
+          <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[isCompactMobile && styles.listCardMobileCompact]}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Resumen de caja</Text>
+            <View style={[styles.cashSummaryGrid, isDesktop && styles.cashSummaryGridDesktop]}>
+              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cobrado hoy</Text>
+                <Text style={[styles.bottomValue, { color: colors.success }]}>{money(resumenCaja.cobradoHoy)}</Text>
+              </View>
+              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cobrado esta semana</Text>
+                <Text style={[styles.bottomValue, { color: colors.success }]}>{money(resumenCaja.cobradoSemana)}</Text>
+              </View>
+              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Pendiente total</Text>
+                <Text style={[styles.bottomValue, { color: colors.textPrimary }]}>{money(resumenCaja.pendienteTotal)}</Text>
+              </View>
+              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Mora estimada</Text>
+                <Text style={[styles.bottomValue, { color: '#FCA5A5' }]}>{money(resumenCaja.moraEstimada)}</Text>
+              </View>
+            </View>
+          </GradientCard>
 
           <View style={[styles.bottomStatsGrid, isDesktop && styles.bottomStatsGridDesktop]}>
             <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
@@ -803,6 +911,7 @@ const styles = StyleSheet.create({
   pendingRowMobile: { width: 280, marginBottom: 0, alignItems: 'flex-start' },
   pendingClient: { color: '#F8FAFC', fontWeight: '700' },
   pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
+  pendingLateText: { marginTop: 3, fontSize: 11, fontWeight: '700' },
   pendingActions: { alignItems: 'flex-end', gap: 7 },
   pendingBtnsRow: { flexDirection: 'row', gap: 6 },
   pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
@@ -850,6 +959,36 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(22,163,74,0.2)',
     color: '#86EFAC',
+  },
+  statusChipLate: {
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'capitalize',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(220,38,38,0.22)',
+    color: '#FCA5A5',
+  },
+  lateClientsWrap: { gap: 8 },
+  lateClientRow: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  lateActionsCol: { alignItems: 'flex-end', gap: 8 },
+  cashSummaryGrid: { marginTop: 10, gap: 8, flexDirection: 'row', flexWrap: 'wrap' },
+  cashSummaryGridDesktop: { flexWrap: 'nowrap' },
+  cashCard: {
+    flex: 1,
+    minWidth: 160,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
   },
   bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   bottomStatsGridDesktop: { flexWrap: 'nowrap', gap: 8 },

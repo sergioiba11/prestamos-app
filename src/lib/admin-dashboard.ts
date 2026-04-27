@@ -100,7 +100,9 @@ export type ClienteAdminListadoItem = {
 
 export type AdminKpis = {
   cobrarHoy: number
+  cobrarSemana: number
   clientesActivos: number
+  clientesDemorados: number
   prestamosVencidos: number
   pagosPendientes: number
 }
@@ -131,6 +133,24 @@ export type PagoPendienteItem = {
   estadoValidacion?: string
   prestamoId?: string
   telefono?: string
+  pendingDays?: number
+}
+
+
+export type ResumenCaja = {
+  cobradoHoy: number
+  cobradoSemana: number
+  pendienteTotal: number
+  moraEstimada: number
+}
+
+export type ClienteDemoradoItem = {
+  clienteId: string
+  nombre: string
+  dni: string
+  telefono: string
+  saldoPendiente: number
+  diasAtraso: number
 }
 
 export type HistorialPrestamoItem = {
@@ -158,7 +178,10 @@ export type HistorialPrestamoItem = {
 
 export type AdminDashboardData = {
   kpis: AdminKpis
+  resumenCaja: ResumenCaja
   activosCards: ClientePrestamoActivo[]
+  clientesDemorados: ClienteDemoradoItem[]
+  clientesDemoradosIds: string[]
   pagosPendientesList: PagoPendienteItem[]
   historial: HistorialPrestamoItem[]
   clientesListado: ClienteAdminListadoItem[]
@@ -167,6 +190,7 @@ export type AdminDashboardData = {
 const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pendiente'])
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
 const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
+const OVERDUE_QUOTA_STATES = new Set(['pendiente', 'parcial', 'vencida', 'vencido'])
 const PENDING_VALIDATION_STATES = new Set(['pendiente_aprobacion'])
 
 function low(value?: string | null): string {
@@ -180,6 +204,16 @@ function ymd(value?: string | null): string {
 function toNumber(value: unknown): number {
   return Number(value || 0)
 }
+function getDiffDaysFromToday(value?: string | null): number {
+  if (!value) return 0
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 0
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  date.setHours(0, 0, 0, 0)
+  return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 
 function resolveDniEditado(value: unknown): boolean {
   if (typeof value === 'boolean') return value
@@ -508,36 +542,101 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const todayKey = today.toISOString().slice(0, 10)
+  const weekAhead = new Date(today)
+  weekAhead.setDate(weekAhead.getDate() + 7)
+  const weekAheadKey = weekAhead.toISOString().slice(0, 10)
+  const weekStart = new Date(today)
+  weekStart.setDate(weekStart.getDate() - 6)
+  const weekStartKey = weekStart.toISOString().slice(0, 10)
 
   const cobrarHoy = cuotas.reduce((acc, cuota) => {
-    const estado = low(cuota.estado)
-    if (!PENDING_QUOTA_STATES.has(estado)) return acc
     if ((cuota.fecha_vencimiento || '').slice(0, 10) !== todayKey) return acc
 
     const saldoPendiente = toNumber(cuota.saldo_pendiente)
-    const fallback = toNumber(cuota.monto_cuota) - toNumber(cuota.monto_pagado)
-    return acc + (saldoPendiente > 0 ? saldoPendiente : Math.max(fallback, 0))
+    if (saldoPendiente <= 0) return acc
+    return acc + saldoPendiente
   }, 0)
+
+  const cobrarSemana = cuotas.reduce((acc, cuota) => {
+    const fechaVencimiento = (cuota.fecha_vencimiento || '').slice(0, 10)
+    if (!fechaVencimiento) return acc
+    if (fechaVencimiento < todayKey || fechaVencimiento > weekAheadKey) return acc
+    const saldoPendiente = toNumber(cuota.saldo_pendiente)
+    if (saldoPendiente <= 0) return acc
+    return acc + saldoPendiente
+  }, 0)
+
+  const pendienteTotal = cuotas.reduce((acc, cuota) => acc + Math.max(toNumber(cuota.saldo_pendiente), 0), 0)
+
+  const clientesMoraMap = new Map<string, ClienteDemoradoItem>()
+  for (const cuota of cuotas) {
+    const fechaVencimiento = (cuota.fecha_vencimiento || '').slice(0, 10)
+    if (!fechaVencimiento || fechaVencimiento >= todayKey) continue
+    const estado = low(cuota.estado)
+    if (!OVERDUE_QUOTA_STATES.has(estado)) continue
+    const saldoPendiente = toNumber(cuota.saldo_pendiente)
+    if (saldoPendiente <= 0) continue
+    const prestamo = prestamosById.get(cuota.prestamo_id)
+    if (!prestamo?.cliente_id) continue
+    const cliente = clientesById.get(prestamo.cliente_id)
+    const diasAtraso = getDiffDaysFromToday(fechaVencimiento)
+    const prev = clientesMoraMap.get(prestamo.cliente_id)
+
+    clientesMoraMap.set(prestamo.cliente_id, {
+      clienteId: prestamo.cliente_id,
+      nombre: cliente?.nombre || 'Cliente',
+      dni: cliente?.dni || '—',
+      telefono: cliente?.telefono || 'Sin teléfono',
+      saldoPendiente: (prev?.saldoPendiente || 0) + saldoPendiente,
+      diasAtraso: Math.max(prev?.diasAtraso || 0, diasAtraso),
+    })
+  }
+
+  for (const prestamo of prestamos) {
+    const estado = low(prestamo.estado)
+    if (!['atrasado', 'demorado', 'en_mora', 'vencido'].includes(estado)) continue
+    const clienteId = prestamo.cliente_id
+    if (!clienteId) continue
+    if (clientesMoraMap.has(clienteId)) continue
+    const cliente = clientesById.get(clienteId)
+    const diasAtraso = getDiffDaysFromToday(prestamo.fecha_limite)
+    clientesMoraMap.set(clienteId, {
+      clienteId,
+      nombre: cliente?.nombre || 'Cliente',
+      dni: cliente?.dni || '—',
+      telefono: cliente?.telefono || 'Sin teléfono',
+      saldoPendiente: Math.max(toNumber(prestamo.saldo_pendiente), 0, cliente?.deudaActiva || 0, cliente?.restante || 0),
+      diasAtraso: Math.max(diasAtraso, 0),
+    })
+  }
+
+  const clientesDemorados = Array.from(clientesMoraMap.values()).sort(
+    (a, b) => b.diasAtraso - a.diasAtraso || b.saldoPendiente - a.saldoPendiente,
+  )
 
   const pagosPendientesRaw = pagos.filter((pago) => isPendingValidationPayment(pago))
 
-  const pagosPendientesList: PagoPendienteItem[] = pagosPendientesRaw.slice(0, 8).map((pago) => {
-    const resolvedClienteId = resolvePagoClienteId(pago, prestamosById)
-    const cliente = resolvedClienteId ? clientesById.get(resolvedClienteId) : undefined
-
-    return {
-      id: pago.id,
-      clienteId: resolvedClienteId || '',
-      cliente: cliente?.nombre || 'Cliente',
-      dni: cliente?.dni || '—',
-      monto: toNumber(pago.monto),
-      metodo: pago.metodo || 'Sin método',
-      createdAt: pago.created_at || '',
-      estadoValidacion: low(pago.estado) || (isApprovedPayment(pago) ? 'aprobado' : 'pendiente_aprobacion'),
-      prestamoId: pago.prestamo_id || undefined,
-      telefono: cliente?.telefono || undefined,
-    }
-  })
+  const pagosPendientesList: PagoPendienteItem[] = pagosPendientesRaw
+    .map((pago) => {
+      const resolvedClienteId = resolvePagoClienteId(pago, prestamosById)
+      const cliente = resolvedClienteId ? clientesById.get(resolvedClienteId) : undefined
+      const pendingDays = getDiffDaysFromToday(pago.created_at)
+      return {
+        id: pago.id,
+        clienteId: resolvedClienteId || '',
+        cliente: cliente?.nombre || 'Cliente',
+        dni: cliente?.dni || '—',
+        monto: toNumber(pago.monto),
+        metodo: pago.metodo || 'Sin método',
+        createdAt: pago.created_at || '',
+        estadoValidacion: low(pago.estado) || (isApprovedPayment(pago) ? 'aprobado' : 'pendiente_aprobacion'),
+        prestamoId: pago.prestamo_id || undefined,
+        telefono: cliente?.telefono || undefined,
+        pendingDays,
+      } as PagoPendienteItem & { pendingDays: number }
+    })
+    .sort((a, b) => b.pendingDays - a.pendingDays || b.monto - a.monto)
+    .slice(0, 8)
 
   const activos = clientesListado.filter(hasActiveLoan)
   const activosCards = activos.map(toActivoCard)
@@ -618,19 +717,44 @@ export async function fetchAdminPanelData(): Promise<AdminDashboardData> {
   }).length
 
   const prestamosVencidosListado = clientesListado.filter(hasOverdueLoan).length
+  const prestamosDemorados = prestamos.filter((prestamo) => ['atrasado', 'demorado', 'en_mora', 'vencido'].includes(low(prestamo.estado))).length
+
+  const pagosAprobados = pagos.filter((pago) => isApprovedPayment(pago))
+  const cobradoHoy = pagosAprobados.reduce((acc, pago) => {
+    const createdAt = (pago.created_at || '').slice(0, 10)
+    if (createdAt !== todayKey) return acc
+    return acc + Math.max(toNumber(pago.monto), 0)
+  }, 0)
+  const cobradoSemana = pagosAprobados.reduce((acc, pago) => {
+    const createdAt = (pago.created_at || '').slice(0, 10)
+    if (!createdAt || createdAt < weekStartKey || createdAt > todayKey) return acc
+    return acc + Math.max(toNumber(pago.monto), 0)
+  }, 0)
+
+  const moraEstimada = clientesDemorados.reduce((acc, cliente) => acc + Math.max(cliente.saldoPendiente, 0), 0)
 
   console.log('[admin-dashboard] historial size', historial.length)
 
   const kpis: AdminKpis = {
     cobrarHoy,
+    cobrarSemana,
     clientesActivos: activos.length,
-    prestamosVencidos: Math.max(prestamosVencidosByPrestamo, prestamosVencidosListado),
+    clientesDemorados: clientesDemorados.length,
+    prestamosVencidos: Math.max(prestamosVencidosByPrestamo, prestamosVencidosListado, prestamosDemorados),
     pagosPendientes: pagosPendientesRaw.length,
   }
 
   return {
     kpis,
+    resumenCaja: {
+      cobradoHoy,
+      cobradoSemana,
+      pendienteTotal,
+      moraEstimada,
+    },
     activosCards,
+    clientesDemorados,
+    clientesDemoradosIds: clientesDemorados.map((cliente) => cliente.clienteId),
     pagosPendientesList,
     historial,
     clientesListado,
