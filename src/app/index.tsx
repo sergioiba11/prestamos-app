@@ -1,6 +1,8 @@
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, Stack } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -12,67 +14,85 @@ import {
 import { goByRole } from '../lib/auth-routing'
 import { supabase } from '../lib/supabase'
 
+const MIN_SPLASH_MS = 1000
+const STATUS_STEPS = ['Cargando usuarios...', 'Cargando préstamos...', 'Sincronizando pagos...']
+
 export default function Index() {
   const fadeAnim = useRef(new Animated.Value(0)).current
-  const scaleAnim = useRef(new Animated.Value(0.82)).current
+  const scaleAnim = useRef(new Animated.Value(0.94)).current
   const textFadeAnim = useRef(new Animated.Value(0)).current
-  const glowAnim = useRef(new Animated.Value(0.4)).current
-  const [dots, setDots] = useState('')
+  const pulseAnim = useRef(new Animated.Value(0)).current
+  const [dots, setDots] = useState('...')
+  const [statusStep, setStatusStep] = useState(0)
 
   useEffect(() => {
     let mounted = true
+    const splashStartedAt = Date.now()
 
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 900,
+        duration: 750,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
-        friction: 6,
-        tension: 55,
+        friction: 7,
+        tension: 52,
         useNativeDriver: true,
       }),
       Animated.timing(textFadeAnim, {
         toValue: 1,
-        duration: 1200,
+        duration: 900,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
     ]).start()
 
-    const glowLoop = Animated.loop(
+    const pulseLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(glowAnim, {
+        Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1200,
+          duration: 1600,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-        Animated.timing(glowAnim, {
-          toValue: 0.4,
-          duration: 1200,
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 1600,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
       ])
     )
 
-    glowLoop.start()
+    pulseLoop.start()
 
     const dotsInterval = setInterval(() => {
       setDots((prev) => {
-        if (prev === '...') return ''
-        return prev + '.'
+        if (prev === '.') return '...'
+        if (prev === '..') return '.'
+        return '..'
       })
-    }, 400)
+    }, 450)
+
+    const statusInterval = setInterval(() => {
+      setStatusStep((prev) => (prev + 1) % STATUS_STEPS.length)
+    }, 850)
 
     const boot = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession()
+
+      if (!mounted) return
+
+      const elapsed = Date.now() - splashStartedAt
+      const remaining = Math.max(0, MIN_SPLASH_MS - elapsed)
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining))
+      }
 
       if (!mounted) return
 
@@ -84,26 +104,40 @@ export default function Index() {
       router.replace('/login' as any)
     }
 
-    const timer = setTimeout(() => {
-      boot()
-    }, 2200)
+    boot()
 
     return () => {
       mounted = false
-      clearTimeout(timer)
       clearInterval(dotsInterval)
-      glowLoop.stop()
+      clearInterval(statusInterval)
+      pulseLoop.stop()
     }
-  }, [fadeAnim, scaleAnim, textFadeAnim, glowAnim])
+  }, [fadeAnim, pulseAnim, scaleAnim, textFadeAnim])
+
+  const pulseScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.05],
+  })
+
+  const pulseOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.55, 1],
+  })
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={styles.container}>
+      <LinearGradient
+        colors={['#020817', '#0B1220', '#1E3A8A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.container}
+      >
         <StatusBar barStyle="light-content" backgroundColor="#020817" />
 
         <View style={styles.topGlow} />
+        <View style={styles.centerGlow} />
         <View style={styles.bottomGlow} />
 
         <Animated.View
@@ -111,7 +145,7 @@ export default function Index() {
             styles.logoWrapper,
             {
               opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }],
+              transform: [{ scale: scaleAnim }, { scale: pulseScale }],
             },
           ]}
         >
@@ -119,8 +153,8 @@ export default function Index() {
             style={[
               styles.logoGlow,
               {
-                opacity: glowAnim,
-                transform: [{ scale: glowAnim }],
+                opacity: pulseOpacity,
+                transform: [{ scale: pulseScale }],
               },
             ]}
           />
@@ -140,9 +174,13 @@ export default function Index() {
             },
           ]}
         >
-          <Text style={styles.loadingText}>Cargando{dots}</Text>
+          <Text style={styles.loadingText}>Preparando tu panel{dots}</Text>
+          <Text style={styles.statusStep}>{STATUS_STEPS[statusStep]}</Text>
+          <ActivityIndicator size="small" color="#2563EB" style={styles.spinner} />
         </Animated.View>
-      </View>
+
+        <Text style={styles.footerText}>CrediTodo · Panel financiero</Text>
+      </LinearGradient>
     </>
   )
 }
@@ -150,7 +188,6 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#020817',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -158,34 +195,43 @@ const styles = StyleSheet.create({
 
   topGlow: {
     position: 'absolute',
-    top: -180,
-    width: 420,
-    height: 420,
+    top: -210,
+    width: 440,
+    height: 440,
     borderRadius: 999,
-    backgroundColor: 'rgba(37, 99, 235, 0.10)',
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+  },
+
+  centerGlow: {
+    position: 'absolute',
+    top: '42%',
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14, 165, 233, 0.06)',
   },
 
   bottomGlow: {
     position: 'absolute',
-    bottom: -180,
-    width: 380,
-    height: 380,
+    bottom: -200,
+    width: 400,
+    height: 400,
     borderRadius: 999,
-    backgroundColor: 'rgba(14, 165, 233, 0.08)',
+    backgroundColor: 'rgba(59, 130, 246, 0.10)',
   },
 
   logoWrapper: {
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: 34,
   },
 
   logoGlow: {
     position: 'absolute',
-    width: 220,
-    height: 220,
+    width: 230,
+    height: 230,
     borderRadius: 999,
-    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    backgroundColor: 'rgba(34, 211, 238, 0.10)',
   },
 
   logo: {
@@ -195,15 +241,38 @@ const styles = StyleSheet.create({
 
   loadingWrapper: {
     position: 'absolute',
-    bottom: 120,
+    bottom: 112,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 24,
   },
 
   loadingText: {
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,255,255,0.88)',
     fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  statusStep: {
+    marginTop: 8,
+    color: 'rgba(226, 232, 240, 0.86)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.3,
+  },
+
+  spinner: {
+    marginTop: 14,
+  },
+
+  footerText: {
+    position: 'absolute',
+    bottom: 40,
+    color: 'rgba(203, 213, 225, 0.64)',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    fontWeight: '500',
   },
 })
