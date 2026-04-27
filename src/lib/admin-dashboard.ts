@@ -191,7 +191,7 @@ const ACTIVE_STATES = new Set(['activo', 'atrasado', 'en_mora', 'vencido', 'pend
 const OVERDUE_STATES = new Set(['vencido', 'atrasado', 'en_mora'])
 const PENDING_QUOTA_STATES = new Set(['pendiente', 'parcial'])
 const OVERDUE_QUOTA_STATES = new Set(['pendiente', 'parcial', 'vencida', 'vencido'])
-const PENDING_VALIDATION_STATES = new Set(['pendiente_aprobacion'])
+const PENDING_VALIDATION_STATES = new Set(['pendiente_aprobacion', 'pendiente'])
 
 function low(value?: string | null): string {
   return String(value || '').toLowerCase()
