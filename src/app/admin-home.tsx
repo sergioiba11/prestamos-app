@@ -110,6 +110,7 @@ export default function AdminHome() {
   const [lateClientsIds, setLateClientsIds] = useState<string[]>([])
   const [pendingPayments, setPendingPayments] = useState<PagoPendienteItem[]>([])
   const [pendingPaymentsError, setPendingPaymentsError] = useState<string | null>(null)
+  const [lateClientsExpanded, setLateClientsExpanded] = useState(false)
   const notificationsButtonRef = useRef<View | null>(null)
 
   const loadNotifications = useCallback(async () => {
@@ -275,26 +276,6 @@ export default function AdminHome() {
     [],
   )
 
-  const dashboardStats = useMemo(() => {
-    const totalMontoPendiente = activeClients.reduce((acc, item) => acc + Number(item.prestamoActivo || 0), 0)
-    const cuotasPendientes = activeClients.filter((item) => item.estado !== 'cancelado').length
-    const upcoming = activeClients.filter((item) => {
-      if (!item.proximoPago || item.proximoPago === '—') return false
-      const d = new Date(item.proximoPago)
-      if (Number.isNaN(d.getTime())) return false
-      const diff = d.getTime() - Date.now()
-      const days = diff / (1000 * 60 * 60 * 24)
-      return days >= 0 && days <= 7
-    }).length
-
-    return {
-      cuotasPendientes,
-      totalMontoPendiente,
-      upcoming,
-      prestamosActivos: activeClients.length,
-    }
-  }, [activeClients])
-
   const pendingPaymentsPreview = isCompactMobile ? pendingPayments.slice(0, 3) : pendingPayments
   const activeClientsPreview = isCompactMobile ? activeClients.slice(0, 4) : activeClients.slice(0, 6)
 
@@ -388,17 +369,19 @@ export default function AdminHome() {
             }}
           />
 
-          {!isCompactMobile ? (
-            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
-              <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
-              <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
-              <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
-              <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atrasos vigentes" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
-              <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
-              <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
-              {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
-            </View>
-          ) : null}
+          <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
+            <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Vence hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
+            <AdminStatCard compact={isCompactMobile} label="A cobrar semana" subtitle="Próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
+            <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
+            <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atraso vigente" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
+            <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
+            <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
+            <AdminStatCard compact={isCompactMobile} label="Cobrado hoy" subtitle="Ingresos del día" value={money(resumenCaja.cobradoHoy)} icon="trending-up-outline" tone="teal" />
+            <AdminStatCard compact={isCompactMobile} label="Cobrado semana" subtitle="Ingresos semanales" value={money(resumenCaja.cobradoSemana)} icon="bar-chart-outline" tone="blue" />
+            <AdminStatCard compact={isCompactMobile} label="Pendiente total" subtitle="Saldo por cobrar" value={money(resumenCaja.pendienteTotal)} icon="wallet-outline" tone="violet" />
+            <AdminStatCard compact={isCompactMobile} label="Mora estimada" subtitle="Riesgo actual" value={money(resumenCaja.moraEstimada)} icon="warning-outline" tone="orange" />
+            {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
+          </View>
 
           <GradientCard
             isLight={theme.isLight}
@@ -499,18 +482,6 @@ export default function AdminHome() {
               </Pressable>
             </View>
           </GradientCard>
-
-          {isCompactMobile ? (
-            <View style={[styles.kpiGrid, isDesktop && styles.kpiGridDesktop, isCompactMobile && styles.kpiGridMobileCompact, kpiGridWebStyle as any]}>
-              <AdminStatCard compact={isCompactMobile} label="A cobrar hoy" subtitle="Cuotas con vencimiento hoy" value={money(kpis.cobrarHoy)} icon="calendar-outline" tone="blue" />
-              <AdminStatCard compact={isCompactMobile} label="A cobrar esta semana" subtitle="Cuotas próximos 7 días" value={money(kpis.cobrarSemana)} icon="time-outline" tone="teal" />
-              <AdminStatCard compact={isCompactMobile} label="Clientes activos" subtitle="Con préstamos vigentes" value={String(kpis.clientesActivos)} icon="people-outline" tone="violet" />
-              <AdminStatCard compact={isCompactMobile} label="Clientes demorados" subtitle="Con atrasos vigentes" value={String(kpis.clientesDemorados)} icon="alert-outline" tone="orange" />
-              <AdminStatCard compact={isCompactMobile} label="Préstamos vencidos" subtitle="Requieren atención" value={String(kpis.prestamosVencidos)} icon="alert-circle-outline" tone="orange" />
-              <AdminStatCard compact={isCompactMobile} label="Pagos pendientes" subtitle="Por aprobar" value={String(kpis.pagosPendientes)} icon="cash-outline" tone="teal" />
-              {isMobile ? <AdminStatCard compact={isCompactMobile} label="No leídas" subtitle="Notificaciones" value={String(unreadCount)} icon="notifications-outline" tone="teal" /> : null}
-            </View>
-          ) : null}
 
           <View style={[styles.mainGrid, isDesktop && styles.mainGridDesktop]}>
             <GradientCard
@@ -639,85 +610,51 @@ export default function AdminHome() {
             borderColor={colors.border}
             style={[isCompactMobile && styles.listCardMobileCompact]}
           >
-            <View style={styles.cardHeaderRow}>
+            <Pressable style={styles.accordionHeader} onPress={() => setLateClientsExpanded((prev) => !prev)}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Clientes demorados</Text>
-              <Text style={[styles.linkText, { color: colors.warning }]}>{lateClients.length} con atraso</Text>
-            </View>
-            {lateClients.length === 0 ? (
-              <View style={[styles.emptyWrap, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                <Ionicons name="checkmark-circle-outline" size={22} color="#22C55E" />
-                <Text style={[styles.emptySubtle, { color: colors.textSecondary }]}>No hay clientes demorados hoy.</Text>
+              <View style={styles.accordionHeaderRight}>
+                <Text style={[styles.linkText, { color: colors.warning }]}>{lateClients.length} con atraso</Text>
+                <Ionicons name={lateClientsExpanded ? 'chevron-up-outline' : 'chevron-down-outline'} size={16} color={colors.warning} />
               </View>
-            ) : (
-              <View style={styles.lateClientsWrap}>
-                {lateClients.slice(0, isCompactMobile ? 4 : 6).map((cliente) => (
-                  <View key={cliente.clienteId} style={[styles.lateClientRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{cliente.nombre}</Text>
-                      <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {cliente.dni} · {cliente.telefono}</Text>
-                      <Text style={[styles.pendingLateText, { color: colors.warning }]}>Atraso: {cliente.diasAtraso} días</Text>
-                    </View>
-                    <View style={styles.lateActionsCol}>
-                      <Text style={[styles.pendingAmount, { color: colors.primary }]}>{money(cliente.saldoPendiente)}</Text>
-                      <View style={styles.pendingBtnsRow}>
-                        <TouchableOpacity style={styles.btnBase} onPress={() => router.push('/cargar-pago' as any)}>
-                          <LinearGradient colors={['#2563EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
-                            <Text style={styles.smallBtnText}>Registrar pago</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.btnBase} onPress={() => router.push(`/cliente/${cliente.clienteId}` as any)}>
-                          <LinearGradient colors={['#334155', '#0F172A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
-                            <Text style={styles.smallBtnText}>Ver detalle</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
+            </Pressable>
+            {lateClientsExpanded ? (
+              lateClients.length === 0 ? (
+                <View style={[styles.emptyWrap, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                  <Ionicons name="checkmark-circle-outline" size={20} color="#22C55E" />
+                  <Text style={[styles.emptySubtle, { color: colors.textSecondary }]}>No hay clientes demorados hoy.</Text>
+                </View>
+              ) : (
+                <View style={styles.lateClientsWrap}>
+                  {lateClients.slice(0, isCompactMobile ? 4 : 6).map((cliente) => (
+                    <View key={cliente.clienteId} style={[styles.lateClientRow, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pendingClient, { color: colors.textPrimary }]}>{cliente.nombre}</Text>
+                        <Text style={[styles.pendingMeta, { color: colors.textSecondary }]}>DNI: {cliente.dni} · {cliente.telefono}</Text>
+                        <Text style={[styles.pendingLateText, { color: colors.warning }]}>Atraso: {cliente.diasAtraso} días</Text>
+                      </View>
+                      <View style={styles.lateActionsCol}>
+                        <Text style={[styles.pendingAmount, { color: colors.primary }]}>{money(cliente.saldoPendiente)}</Text>
+                        <View style={styles.pendingBtnsRow}>
+                          <TouchableOpacity style={styles.btnBase} onPress={() => router.push('/cargar-pago' as any)}>
+                            <LinearGradient colors={['#2563EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                              <Text style={styles.smallBtnText}>Registrar pago</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.btnBase} onPress={() => router.push(`/cliente/${cliente.clienteId}` as any)}>
+                            <LinearGradient colors={['#334155', '#0F172A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.btnGradient}>
+                              <Text style={styles.smallBtnText}>Ver detalle</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                ))}
-              </View>
+                  ))}
+                </View>
+              )
+            ) : (
+              <Text style={[styles.accordionHint, { color: colors.textSecondary }]}>Expandí para ver el detalle de clientes con mora.</Text>
             )}
           </GradientCard>
-
-          <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[isCompactMobile && styles.listCardMobileCompact]}>
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Resumen de caja</Text>
-            <View style={[styles.cashSummaryGrid, isDesktop && styles.cashSummaryGridDesktop]}>
-              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cobrado hoy</Text>
-                <Text style={[styles.bottomValue, { color: colors.success }]}>{money(resumenCaja.cobradoHoy)}</Text>
-              </View>
-              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cobrado esta semana</Text>
-                <Text style={[styles.bottomValue, { color: colors.success }]}>{money(resumenCaja.cobradoSemana)}</Text>
-              </View>
-              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Pendiente total</Text>
-                <Text style={[styles.bottomValue, { color: colors.textPrimary }]}>{money(resumenCaja.pendienteTotal)}</Text>
-              </View>
-              <View style={[styles.cashCard, { borderColor: colors.border, backgroundColor: colors.surfaceSoft }]}>
-                <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Mora estimada</Text>
-                <Text style={[styles.bottomValue, { color: '#FCA5A5' }]}>{money(resumenCaja.moraEstimada)}</Text>
-              </View>
-            </View>
-          </GradientCard>
-
-          <View style={[styles.bottomStatsGrid, isDesktop && styles.bottomStatsGridDesktop]}>
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Cuotas pendientes</Text>
-              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.cuotasPendientes}</Text>
-            </GradientCard>
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Monto pendiente</Text>
-              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{money(dashboardStats.totalMontoPendiente)}</Text>
-            </GradientCard>
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Próximos vencimientos</Text>
-              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.upcoming}</Text>
-            </GradientCard>
-            <GradientCard isLight={theme.isLight} surfaceColor={colors.surface} borderColor={colors.border} style={[styles.bottomStatCard, isDesktop && styles.bottomStatCardDesktop]}>
-              <Text style={[styles.bottomLabel, { color: colors.textSecondary }]}>Préstamos activos</Text>
-              <Text style={[styles.bottomValue, { color: colors.textPrimary }, isDesktop && styles.bottomValueDesktop]}>{dashboardStats.prestamosActivos}</Text>
-            </GradientCard>
-          </View>
         </ScrollView>
       </View>
 
@@ -742,18 +679,18 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: '#020817' },
   mainWrap: { flex: 1 },
-  content: { padding: 16, gap: 14, paddingBottom: 24, backgroundColor: '#020817', width: '100%', maxWidth: 1400, alignSelf: 'center' },
-  desktopContent: { padding: 14, gap: 10, paddingBottom: 14 },
+  content: { padding: 12, gap: 10, paddingBottom: 16, backgroundColor: '#020817', width: '100%', maxWidth: 1400, alignSelf: 'center' },
+  desktopContent: { padding: 10, gap: 8, paddingBottom: 10 },
   mobileContent: { paddingTop: 78 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020817' },
   loadingText: { color: '#94A3B8', marginTop: 10 },
   pageTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   pageTopRowDesktop: { marginBottom: 2 },
   pageTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 24 },
-  pageTitleDesktop: { fontSize: 24, lineHeight: 28 },
+  pageTitleDesktop: { fontSize: 22, lineHeight: 26 },
   pageTitleMobileCompact: { fontSize: 22, lineHeight: 26 },
   pageSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, textTransform: 'capitalize' },
-  pageSubtitleDesktop: { marginTop: 2, fontSize: 12 },
+  pageSubtitleDesktop: { marginTop: 2, fontSize: 11 },
   pageSubtitleMobileCompact: { marginTop: 3, fontSize: 11 },
   headerActions: { position: 'relative', zIndex: 100, overflow: 'visible' },
   notificationsBtn: {
@@ -807,30 +744,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   unreadText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  kpiGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  kpiGridDesktop: { gap: 8, alignItems: 'stretch' },
-  kpiGridMobileCompact: { gap: 8 },
+  kpiGrid: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  kpiGridDesktop: { gap: 6, alignItems: 'stretch' },
+  kpiGridMobileCompact: { gap: 6 },
   sectionCard: {
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
     backgroundColor: '#020617',
-    padding: 16,
+    padding: 12,
     shadowColor: '#000',
     shadowOpacity: 0.4,
     shadowRadius: 25,
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
-  sectionCardDesktopCompact: { padding: 14, borderRadius: 14 },
-  sectionCardMobileCompact: { padding: 12, borderRadius: 14 },
+  sectionCardDesktopCompact: { padding: 12, borderRadius: 12 },
+  sectionCardMobileCompact: { padding: 10, borderRadius: 12 },
   cardHover: {
     transform: [{ translateY: -2 }],
     shadowOpacity: 0.5,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 12 },
   },
-  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 14 },
+  sectionTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 13 },
   featureActionsWrap: { flexDirection: 'row', gap: 10, marginTop: 10 },
   featureActionsWrapDesktop: { marginTop: 8, gap: 8 },
   featureActionsWrapMobileCompact: { marginTop: 8, gap: 8 },
@@ -840,7 +777,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
-  featureActionCardDesktop: { minHeight: 88 },
+  featureActionCardDesktop: { minHeight: 80 },
   featureActionCardMobileCompact: { minHeight: 108 },
   featureGradient: {
     flex: 1,
@@ -850,13 +787,13 @@ const styles = StyleSheet.create({
     padding: 12,
     justifyContent: 'space-between',
   },
-  featureGradientDesktop: { borderRadius: 12, padding: 10, minHeight: 86 },
+  featureGradientDesktop: { borderRadius: 12, padding: 9, minHeight: 80 },
   featureGradientMobileCompact: { borderRadius: 12, padding: 12, minHeight: 96 },
   featureTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 15, marginTop: 6 },
-  featureTitleDesktop: { fontSize: 14, marginTop: 4 },
+  featureTitleDesktop: { fontSize: 13, marginTop: 3 },
   featureTitleMobileCompact: { fontSize: 16, marginTop: 5 },
   featureSubtitle: { color: '#DBEAFE', marginTop: 4, fontSize: 11 },
-  featureSubtitleDesktop: { marginTop: 2, fontSize: 10 },
+  featureSubtitleDesktop: { marginTop: 2, fontSize: 9 },
   featureSubtitleMobileCompact: { marginTop: 3, fontSize: 10 },
   smallActionGrid: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   smallActionGridDesktop: { marginTop: 8, gap: 6 },
@@ -874,28 +811,28 @@ const styles = StyleSheet.create({
   },
   smallActionDesktop: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 9, gap: 6 },
   smallActionMobileCompact: { width: '48%', justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
-  smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 11 },
+  smallActionText: { color: '#E2E8F0', fontWeight: '700', fontSize: 10 },
   mainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   mainGridDesktop: { flexWrap: 'nowrap', gap: 8 },
   pendingCard: { flex: 1.2, minWidth: 320 },
   clientsCard: { flex: 1, minWidth: 320 },
   mainGridCardDesktop: { flex: 1, minWidth: 0, maxWidth: '50%', minHeight: 262, maxHeight: 262, padding: 14 },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  linkText: { color: '#93C5FD', fontWeight: '700', fontSize: 12 },
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  linkText: { color: '#93C5FD', fontWeight: '700', fontSize: 11 },
   errorText: { color: '#FCA5A5', fontSize: 12 },
   emptyWrap: {
-    minHeight: 96,
+    minHeight: 84,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#1E293B',
     backgroundColor: '#0F172A',
   },
   emptyTitle: { color: '#D1FAE5', fontWeight: '700' },
   emptySubtle: { color: '#94A3B8' },
-  pendingList: { maxHeight: 350 },
+  pendingList: { maxHeight: 320 },
   pendingListDesktop: { maxHeight: 206 },
   pendingListMobile: { maxHeight: undefined },
   pendingListContent: { paddingRight: 4, paddingBottom: 2 },
@@ -903,8 +840,8 @@ const styles = StyleSheet.create({
   pendingRow: {
     borderWidth: 1,
     borderColor: '#1E293B',
-    borderRadius: 14,
-    padding: 11,
+    borderRadius: 12,
+    padding: 9,
     backgroundColor: '#020617',
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -913,27 +850,27 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   pendingRowMobile: { width: 280, marginBottom: 0, alignItems: 'flex-start' },
-  pendingClient: { color: '#F8FAFC', fontWeight: '700' },
-  pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 12 },
-  pendingLateText: { marginTop: 3, fontSize: 11, fontWeight: '700' },
+  pendingClient: { color: '#F8FAFC', fontWeight: '700', fontSize: 13 },
+  pendingMeta: { color: '#94A3B8', marginTop: 2, fontSize: 11 },
+  pendingLateText: { marginTop: 2, fontSize: 10, fontWeight: '700' },
   pendingActions: { alignItems: 'flex-end', gap: 7 },
   pendingBtnsRow: { flexDirection: 'row', gap: 6 },
-  pendingAmount: { color: '#BFDBFE', fontWeight: '800' },
+  pendingAmount: { color: '#BFDBFE', fontWeight: '800', fontSize: 13 },
   btnBase: { borderRadius: 8, overflow: 'hidden' },
-  btnGradient: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  btnGradient: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6 },
   btnDisabled: { opacity: 0.65 },
-  smallBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  smallBtnText: { color: '#fff', fontSize: 10, fontWeight: '600' },
   clientListScroll: { maxHeight: 350 },
   clientListScrollDesktop: { maxHeight: 206 },
   clientListScrollMobile: { maxHeight: undefined },
   clientList: { gap: 8, paddingRight: 4, paddingBottom: 2 },
   clientListMobile: { gap: 8, paddingRight: 0, paddingBottom: 0 },
   clientRow: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#1E293B',
     backgroundColor: '#020617',
-    padding: 10,
+    padding: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -950,9 +887,9 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   avatarText: { color: '#E2E8F0', fontWeight: '800' },
-  clientName: { color: '#E2E8F0', fontWeight: '600', fontSize: 14 },
-  clientMeta: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
-  clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 14 },
+  clientName: { color: '#E2E8F0', fontWeight: '600', fontSize: 13 },
+  clientMeta: { color: '#94A3B8', fontSize: 10, marginTop: 2 },
+  clientAmount: { color: '#C7D2FE', fontWeight: '800', fontSize: 13 },
   statusChip: {
     borderRadius: 999,
     fontSize: 10,
@@ -976,40 +913,19 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
   },
   lateClientsWrap: { gap: 8 },
+  accordionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  accordionHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  accordionHint: { marginTop: 8, fontSize: 11 },
   lateClientRow: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 10,
+    padding: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   lateActionsCol: { alignItems: 'flex-end', gap: 8 },
-  cashSummaryGrid: { marginTop: 10, gap: 8, flexDirection: 'row', flexWrap: 'wrap' },
-  cashSummaryGridDesktop: { flexWrap: 'nowrap' },
-  cashCard: {
-    flex: 1,
-    minWidth: 160,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
-  },
-  bottomStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  bottomStatsGridDesktop: { flexWrap: 'nowrap', gap: 8 },
   listCardMobileCompact: { padding: 12 },
-  bottomStatCard: {
-    flex: 1,
-    minWidth: 170,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    backgroundColor: 'transparent',
-    padding: 14,
-  },
-  bottomStatCardDesktop: { minWidth: 0, padding: 10, borderRadius: 12 },
-  bottomLabel: { color: '#94A3B8', fontSize: 12 },
-  bottomValue: { color: '#E2E8F0', fontWeight: '800', fontSize: 18, marginTop: 8 },
-  bottomValueDesktop: { fontSize: 16, marginTop: 6 },
   modalWrap: { flex: 1, flexDirection: 'row' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2,6,23,0.62)' },
 })
