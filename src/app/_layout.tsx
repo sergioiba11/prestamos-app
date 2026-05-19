@@ -63,6 +63,7 @@ export default function RootLayout() {
           <Stack.Screen name="detalle-mora" options={{ headerShown: false }} />
           <Stack.Screen name="cliente-detalle" options={{ headerShown: false }} />
           <Stack.Screen name="cliente/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="clouva/index" options={{ headerShown: false }} />
         </Stack>
       </OnboardingProvider>
       </AppThemeProvider>
